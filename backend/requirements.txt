@@ -1,0 +1,6 @@
+torch
+openai
+pinecone-client
+funasr
+fastapi
+uvicorn
