@@ -1,6 +1,3 @@
-torch
-openai
-pinecone-client
-funasr
-fastapi
-uvicorn
+# Backend dependencies
+fastapi>=0.104.0
+uvicorn>=0.24.0
