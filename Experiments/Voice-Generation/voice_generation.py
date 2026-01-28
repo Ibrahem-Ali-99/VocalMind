@@ -19,8 +19,8 @@ import time
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 client = ElevenLabs(api_key=ELEVENLABS_API_KEY) if ELEVENLABS_API_KEY else None
-AGENT_VOICE = "21m00Tcm4TlvDq8ikWAM"   # Adam - professional male
-CLIENT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # Bella - warm female
+AGENT_VOICE = os.getenv("ELEVENLABS_AGENT_VOICE_ID")  # Adam - professional male
+CLIENT_VOICE = os.getenv("ELEVENLABS_CLIENT_VOICE_ID")  # Bella - warm female
 
 # The conversation
 conversation = [
