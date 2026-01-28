@@ -1,0 +1,44 @@
+name: RAG Experiments CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Experiments/Rag/**"
+      - ".github/workflows/rag_ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Experiments/Rag/**"
+      - ".github/workflows/rag_ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  rag-tests:
+    name: 🧪 RAG Experiments
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Experiments/Rag
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint (Ruff)
+        run: uvx ruff check .

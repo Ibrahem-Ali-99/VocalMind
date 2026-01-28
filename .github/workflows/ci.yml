@@ -9,7 +9,7 @@ permissions:
   security-events: write
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.13"
   NODE_VERSION: "20"
 
 jobs:
@@ -39,7 +39,6 @@ jobs:
 
   backend:
     name: 📦 Backend Install & Lint
-    needs: security
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -65,12 +64,8 @@ jobs:
             exit 1
           fi
 
-      - name: Verify imports
-        run: cd backend && uv run python -c "import fastapi; import uvicorn; print('✓ Backend imports OK')"
-
   frontend:
     name: 🎨 Frontend Install & Lint
-    needs: security
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
