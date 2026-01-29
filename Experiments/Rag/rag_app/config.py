@@ -42,30 +42,34 @@ class ChunkingConfig(BaseSettings):
 
 class Settings(BaseSettings):
     """Application-wide settings with environment variable support."""
-    
+
     model_config = SettingsConfigDict(
-        env_file=".env", 
+        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
-        env_nested_delimiter="__"
+        env_nested_delimiter="__",
     )
 
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent
     DATA_DIR: Path = Field(
         default_factory=lambda: Path(__file__).parent.parent / "data",
-        alias="RAG_DATA_DIR"
+        alias="RAG_DATA_DIR",
     )
 
     # Core Settings
-    DATA_LOADER_TYPE: Literal["standard", "herb"] = "standard"
-    
+    DATA_LOADER_TYPE: Literal["standard", "herb", "directory", "ragbench"] = "directory"
+
+    # Metadata Extraction
+    EXTRACT_METADATA: bool = True
+    METADATA_EXTRACT_WORKERS: int = 4
+
     # Sub-configs
     groq: GroqConfig = Field(default_factory=GroqConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     pinecone: PineconeConfig = Field(default_factory=PineconeConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
-    
+
     # App Settings
     similarity_top_k: int = 3
     response_mode: str = "compact"

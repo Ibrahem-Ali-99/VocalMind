@@ -1,14 +1,20 @@
 # Generic RAG System
 
-A flexible Retrieval-Augmented Generation (RAG) system built with [LlamaIndex](https://www.llamaindex.ai/), [Groq](https://groq.com), and [Pinecone](https://www.pinecone.io). This application is designed to ingest documents, index them into a vector store, and provide accurately sourced answers using LLMs.
+A flexible Retrieval-Augmented Generation (RAG) system built with [LlamaIndex](https://www.llamaindex.ai/), [Groq](https://groq.com), and [Pinecone](https://www.pinecone.io). Designed to ingest documents from various sources, index them into a vector store, and provide accurately sourced answers using LLMs.
 
 ## Features
 
 - **High-Performance LLM**: Uses Groq for ultra-fast inference.
 - **Vector Search**: Pinecone for scalable similarity search.
 - **Local Embeddings**: Uses Ollama for generating embeddings locally.
+- **Pluggable Data Loaders**: Strategy pattern supports multiple data sources:
+  - `standard` – Basic file ingestion (PDF, TXT, MD, etc.)
+  - `directory` – Custom directory loader with sidecar metadata (`.meta.json`)
+  - `herb` – HERB enterprise dataset (Slack, PRs, Meetings, Documents)
+  - `ragbench` – HuggingFace RagBench datasets
+- **Heuristic Metadata Extraction**: Fast, loader-based title/summary generation (no LLM calls during ingestion).
 - **Detailed Logging**: Logs every query, including retrieval timing, chunks used, and the final response in JSON format.
-- **Modular Pipeline**: Easy to extend for different data loaders and ingestion strategies.
+- **Evaluation Framework**: Built-in tools to evaluate RAG accuracy using RAGAS and LLM-as-a-Judge.
 
 ## Setup
 
@@ -30,8 +36,6 @@ A flexible Retrieval-Augmented Generation (RAG) system built with [LlamaIndex](h
 
    - **GROQ_API_KEY**: Your Groq API key.
    - **PINECONE_API_KEY**: Your Pinecone API key.
-   - **PINECONE_INDEX_NAME**: (Optional) Name of your index.
-
    - **PINECONE_INDEX_NAME**: (Optional) Name of your index.
 
 3. **Start Local Embeddings (Ollama)**
@@ -77,6 +81,27 @@ Execute a quick single query and exit.
 ```bash
 uv run python -m rag_app.main -q "What is the main topic?"
 ```
+
+### 4. Evaluation
+
+Run the evaluation suite to measure accuracy and performance. This uses the HERB dataset (or your custom data) to benchmark the RAG system.
+
+```bash
+# Run full evaluation (default limit: 10 samples)
+uv run python -m rag_app.main --evaluate
+
+# Run with custom limit
+uv run python -m rag_app.main --evaluate --limit 20
+
+# Filter by product/category
+uv run python -m rag_app.main --evaluate --filter "ActionGenie"
+```
+
+Reports are generated in the `reports/` directory as JSON files, containing:
+
+- Accuracy scores (LLM-as-a-Judge)
+- Latency metrics (retrieval vs synthesis)
+- Detailed Q&A logs with retrieved contexts
 
 ## Logs
 

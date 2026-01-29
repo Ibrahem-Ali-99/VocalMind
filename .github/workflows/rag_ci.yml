@@ -20,10 +20,10 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  rag-tests:
-    name: 🧪 RAG Experiments
+  rag-lint:
+    name: 🔍 Lint & Format
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: Experiments/Rag
@@ -42,3 +42,30 @@ jobs:
 
       - name: Lint (Ruff)
         run: uvx ruff check .
+
+      - name: Format Check (Ruff)
+        run: uvx ruff format --check .
+
+  rag-tests:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: rag-lint
+    defaults:
+      run:
+        working-directory: Experiments/Rag
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run Tests
+        run: uv run pytest tests/ -v --tb=short

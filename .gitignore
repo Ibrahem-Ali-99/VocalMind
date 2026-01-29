@@ -60,3 +60,7 @@ uv.lock
 
 # Project specific
 data/
+reports/
+Experiments/Rag/data/
+Experiments/Rag/logs/
+Experiments/Rag/reports/
