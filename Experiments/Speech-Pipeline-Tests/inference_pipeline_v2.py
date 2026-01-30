@@ -30,61 +30,8 @@ load_dotenv(env_path)
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
-# Device Configuration
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {DEVICE}")
-
 # -----------------------------------------------------------------------------
-# 1. EMOTION MODEL CONFIGURATION & ARCHITECTURE
-# -----------------------------------------------------------------------------
-class EmotionConfig:
-    TEXT_MODEL = "roberta-base"
-    AUDIO_MODEL = "microsoft/wavlm-base-plus"
-    NUM_CLASSES = 3
-    HIDDEN_DIM = 768
-    PROJECTED_DIM = 256
-    DROPOUT = 0.3
-    EMOTION_LABELS = {0: 'Negative', 1: 'Neutral', 2: 'Positive'}
-
-class MultimodalFusionNet3Class(nn.Module):
-    def __init__(self, config=EmotionConfig):
-        super().__init__()
-        self.text_encoder = AutoModel.from_pretrained(config.TEXT_MODEL)
-        self.audio_encoder = AutoModel.from_pretrained(config.AUDIO_MODEL)
-        
-        self.text_proj = nn.Sequential(
-            nn.Linear(config.HIDDEN_DIM, config.PROJECTED_DIM), 
-            nn.GELU(), 
-            nn.Dropout(config.DROPOUT)
-        )
-        self.audio_proj = nn.Sequential(
-            nn.Linear(config.HIDDEN_DIM, config.PROJECTED_DIM), 
-            nn.GELU(), 
-            nn.Dropout(config.DROPOUT)
-        )
-        
-        self.classifier = nn.Sequential(
-            nn.Linear(config.PROJECTED_DIM * 2, 256), 
-            nn.GELU(), 
-            nn.Dropout(config.DROPOUT),
-            nn.Linear(256, 128), 
-            nn.GELU(), 
-            nn.Dropout(config.DROPOUT),
-            nn.Linear(128, config.NUM_CLASSES)
-        )
-
-    def forward(self, input_ids, attention_mask, audio_values):
-        text_out = self.text_encoder(input_ids=input_ids, attention_mask=attention_mask)
-        text_embed = text_out.last_hidden_state[:, 0, :]
-        
-        audio_out = self.audio_encoder(input_values=audio_values)
-        audio_embed = torch.mean(audio_out.last_hidden_state, dim=1)
-        
-        fused = torch.cat([self.text_proj(text_embed), self.audio_proj(audio_embed)], dim=1)
-        return self.classifier(fused)
-
-# -----------------------------------------------------------------------------
-# 2. TEXT POST-PROCESSING
+# 1. TEXT POST-PROCESSING
 # -----------------------------------------------------------------------------
 def post_process_text(text):
     """Clean up ASR output: fix spacing around numbers and punctuation."""
@@ -210,42 +157,26 @@ def detect_speaker_roles(utterances, speaker_segments):
     return speaker_to_role
 
 # -----------------------------------------------------------------------------
-# 5. PIPELINE CLASS (faster-whisper large-v3 + Pyannote)
+# 5. PIPELINE CLASS (faster-whisper + Pyannote)
 # -----------------------------------------------------------------------------
 class VocalMindPipelineV2:
-    def __init__(self, emotion_model_path, whisper_model="medium"):
+    def __init__(self, whisper_model="medium"):
         """
         Production pipeline using:
         - faster-whisper medium for ASR (good speed/accuracy balance)
         - Pyannote 3.1 for speaker diarization
-        - Multimodal emotion recognition
+        - Overlap detection
         
         Options for whisper_model: "base", "small", "medium", "large-v3"
         """
-        # --- Load Emotion Model ---
-        print(f"Loading Emotion Model from {emotion_model_path}...")
-        self.emotion_model = MultimodalFusionNet3Class(EmotionConfig).to(DEVICE)
-        
-        if not os.path.exists(emotion_model_path):
-            raise FileNotFoundError(f"Emotion model not found at {emotion_model_path}")
-            
-        map_location = None if torch.cuda.is_available() else torch.device('cpu')
-        self.emotion_model.load_state_dict(torch.load(emotion_model_path, map_location=map_location, weights_only=True))
-        self.emotion_model.eval()
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(EmotionConfig.TEXT_MODEL)
-        self.audio_processor = Wav2Vec2FeatureExtractor.from_pretrained(EmotionConfig.AUDIO_MODEL)
-        print("Emotion Model Loaded.")
-
-        # --- Load faster-whisper large-v3 ---
+        # --- Load faster-whisper ---
         print(f"Loading faster-whisper ASR ({whisper_model})...")
         from faster_whisper import WhisperModel
         
-        # Use CUDA with float16 for speed, fallback to CPU int8 if no GPU
-        if torch.cuda.is_available():
-            self.asr_model = WhisperModel(whisper_model, device="cuda", compute_type="float16")
-        else:
-            self.asr_model = WhisperModel(whisper_model, device="cpu", compute_type="int8")
+        # Use CPU with int8 for compatibility (faster-whisper has cuBLAS 12 incompatibility with CUDA 13)
+        # CPU int8 is still very fast for medium model
+        self.asr_model = WhisperModel(whisper_model, device="cpu", compute_type="int8")
+        print(f"faster-whisper {whisper_model} Loaded.")
         print(f"faster-whisper {whisper_model} Loaded.")
         
         # --- Load Pyannote for Speaker Diarization ---
@@ -441,8 +372,8 @@ class VocalMindPipelineV2:
         speaker_to_role = detect_speaker_roles(utterances, speaker_segments)
         print(f"Role assignment: {speaker_to_role}")
         
-        # --- Emotion Recognition ---
-        print("\nRunning Emotion Recognition...")
+        # --- Build conversation log ---
+        print("\nBuilding conversation log...")
         conversation_log = []
         low_confidence_count = 0
         overlap_affected_count = 0
@@ -489,45 +420,14 @@ class VocalMindPipelineV2:
             if has_overlap:
                 overlap_flag = f" [OVERLAP with {', '.join(overlap_with)}]"
             
-            # Slice audio
-            start_sample = int(start_sec * 16000)
-            end_sample = int(end_sec * 16000)
-            audio_segment = full_audio[start_sample:end_sample]
-            
-            if len(audio_segment) < 1600:
-                continue
-            
-            # Text preprocessing
-            inputs = self.tokenizer(text, padding='max_length', truncation=True, max_length=64, return_tensors="pt")
-            
-            # Audio feature extraction
-            MAX_AUDIO_LEN = 16000 * 6
-            if len(audio_segment) < MAX_AUDIO_LEN:
-                pad_len = MAX_AUDIO_LEN - len(audio_segment)
-                audio_segment = np.concatenate([audio_segment, np.zeros(pad_len)])
-            else:
-                audio_segment = audio_segment[:MAX_AUDIO_LEN]
-            
-            audio_vals = self.audio_processor(audio_segment, sampling_rate=16000, return_tensors="pt").input_values
-            
-            # Inference
-            inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
-            audio_vals = audio_vals.to(DEVICE)
-            
-            with torch.no_grad():
-                logits = self.emotion_model(inputs['input_ids'], inputs['attention_mask'], audio_vals)
-                pred_idx = torch.argmax(logits, dim=1).item()
-                emotion = EmotionConfig.EMOTION_LABELS[pred_idx]
-            
             role = speaker_to_role.get(speaker, "Unknown")
             
-            log_line = f"{role} ({emotion}): {text}{confidence_flag}{overlap_flag}"
+            log_line = f"{role}: {text}{confidence_flag}{overlap_flag}"
             print(log_line)
             
             conversation_log.append({
                 'speaker': speaker,
                 'role': role,
-                'emotion': emotion,
                 'text': text,
                 'confidence': confidence,
                 'timestamp': (start_sec, end_sec),
@@ -560,15 +460,11 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="VocalMind Inference Pipeline v2")
     parser.add_argument("--audio", type=str, required=True, help="Path to input audio file")
-    parser.add_argument("--model", type=str, 
-                        default=r"C:\Users\Mohammed Hassan\Zewail\Senior Project\VocalMind-repo\VocalMind\Experiments\Emotion-Recognition\best_model_3class.pt",
-                        help="Path to trained emotion model")
+    parser.add_argument("--whisper-model", type=str, default="medium",
+                        choices=["base", "small", "medium", "large-v3"],
+                        help="Whisper model size")
     
     args = parser.parse_args()
-    
-    if not os.path.exists(args.model):
-        print(f"CRITICAL: Emotion model not found at {args.model}")
-        sys.exit(1)
         
-    pipeline = VocalMindPipelineV2(args.model)
+    pipeline = VocalMindPipelineV2(args.whisper_model)
     pipeline.process_file(args.audio)

@@ -14,7 +14,7 @@ project_root = experiments_dir.parent  # VocalMind/
 voice_gen_dir = experiments_dir / "Voice-Generation"
 sys.path.append(str(voice_gen_dir))
 
-def run_demo(model_path):
+def run_demo(whisper_model="medium"):
     print("=== VocalMind End-to-End Demo ===")
     
     # 1. Generate Call
@@ -63,21 +63,15 @@ def run_demo(model_path):
     # 2. Run Inference
     print(f"\n[Step 2] Running Inference Pipeline on {audio_file}...")
     try:
-        # Use v2 pipeline with faster-whisper large-v3
+        # Use v2 pipeline with faster-whisper
         from inference_pipeline_v2 import VocalMindPipelineV2 as VocalMindPipeline
-        
-        if not os.path.exists(model_path):
-             print(f"Model file not found at {model_path}")
-             # Create a dummy model file if it's just a test structure? No, strictly require model.
-             print("Please ensure you have downloaded 'best_model_3class.pt'.")
-             return
 
-        pipeline = VocalMindPipeline(model_path)
+        pipeline = VocalMindPipeline(whisper_model)
         conversation_log = pipeline.process_file(audio_file)
         
         print("\n[Step 3] Output:")
         for turn in conversation_log:
-            print(f"{turn['role']} ({turn['emotion']}): {turn['text']}")
+            print(f"{turn['role']}: {turn['text']}")
             
     except ImportError as e:
         print(f"Error importing pipeline: {e}")
@@ -90,12 +84,10 @@ def run_demo(model_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run full VocalMind demo")
     
-    # Default model path relative to project structure
-    default_model = str(experiments_dir / "Emotion-Recognition" / "best_model_3class.pt")
-    
-    parser.add_argument("--model", type=str, 
-                        default=default_model,
-                        help="Path to emotion model checkpoint")
+    parser.add_argument("--whisper-model", type=str, 
+                        default="medium",
+                        choices=["base", "small", "medium", "large-v3"],
+                        help="Whisper model size")
     
     args = parser.parse_args()
-    run_demo(args.model)
+    run_demo(args.whisper_model)
