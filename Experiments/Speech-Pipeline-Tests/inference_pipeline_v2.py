@@ -101,7 +101,46 @@ def post_process_text(text):
     return text.strip()
 
 # -----------------------------------------------------------------------------
-# 3. SPEAKER ROLE DETECTION
+# 3. OVERLAP DETECTION
+# -----------------------------------------------------------------------------
+def detect_overlaps(speaker_segments):
+    """
+    Detect overlapping speech segments where 2+ speakers talk simultaneously.
+    Returns list of overlap periods and per-segment overlap metadata.
+    """
+    overlaps = []
+    segment_overlaps = {i: [] for i in range(len(speaker_segments))}
+    
+    for i, seg1 in enumerate(speaker_segments):
+        for j, seg2 in enumerate(speaker_segments[i+1:], start=i+1):
+            # Check if segments overlap
+            overlap_start = max(seg1['start'], seg2['start'])
+            overlap_end = min(seg1['end'], seg2['end'])
+            
+            if overlap_start < overlap_end:
+                overlap_duration = overlap_end - overlap_start
+                overlaps.append({
+                    'start': overlap_start,
+                    'end': overlap_end,
+                    'duration': overlap_duration,
+                    'speakers': [seg1['speaker'], seg2['speaker']],
+                    'segments': [i, j]
+                })
+                segment_overlaps[i].append(j)
+                segment_overlaps[j].append(i)
+    
+    # Calculate statistics
+    total_overlap_time = sum(o['duration'] for o in overlaps)
+    
+    return {
+        'overlaps': overlaps,
+        'segment_overlaps': segment_overlaps,
+        'total_overlap_time': total_overlap_time,
+        'overlap_count': len(overlaps)
+    }
+
+# -----------------------------------------------------------------------------
+# 4. SPEAKER ROLE DETECTION
 # -----------------------------------------------------------------------------
 # Keywords that typically indicate Agent speech
 AGENT_KEYWORDS = [
@@ -171,7 +210,7 @@ def detect_speaker_roles(utterances, speaker_segments):
     return speaker_to_role
 
 # -----------------------------------------------------------------------------
-# 4. PIPELINE CLASS (faster-whisper large-v3 + Pyannote)
+# 5. PIPELINE CLASS (faster-whisper large-v3 + Pyannote)
 # -----------------------------------------------------------------------------
 class VocalMindPipelineV2:
     def __init__(self, emotion_model_path, whisper_model="medium"):
@@ -264,6 +303,21 @@ class VocalMindPipelineV2:
         print(f"Found {len(speaker_segments)} speaker segments")
         unique_speakers = list(dict.fromkeys([s['speaker'] for s in speaker_segments]))
         print(f"Speakers detected: {unique_speakers}")
+        
+        # --- Overlap Detection ---
+        print("\nDetecting overlapping speech...")
+        overlap_info = detect_overlaps(speaker_segments)
+        overlaps = overlap_info['overlaps']
+        segment_overlaps = overlap_info['segment_overlaps']
+        total_overlap_time = overlap_info['total_overlap_time']
+        overlap_percentage = (total_overlap_time / duration * 100) if duration > 0 else 0
+        
+        print(f"Found {len(overlaps)} overlapping speech periods")
+        print(f"Total overlap time: {total_overlap_time:.2f}s ({overlap_percentage:.1f}% of call)")
+        if overlaps:
+            print("Sample overlaps:")
+            for i, overlap in enumerate(overlaps[:3]):
+                print(f"  {i+1}. {overlap['start']:.1f}s-{overlap['end']:.1f}s: {overlap['speakers']} ({overlap['duration']:.2f}s)")
         
         # --- ASR with faster-whisper ---
         print("\nRunning ASR (faster-whisper large-v3)...")
@@ -391,8 +445,9 @@ class VocalMindPipelineV2:
         print("\nRunning Emotion Recognition...")
         conversation_log = []
         low_confidence_count = 0
+        overlap_affected_count = 0
         
-        for utt in utterances:
+        for utt_idx, utt in enumerate(utterances):
             text = utt['text']
             start_sec = utt['start']
             end_sec = utt['end']
@@ -402,11 +457,37 @@ class VocalMindPipelineV2:
             if not text.strip():
                 continue
             
+            # Check if this utterance overlaps with any other speakers
+            has_overlap = False
+            overlap_with = []
+            overlap_duration = 0
+            
+            for overlap in overlaps:
+                # Check if utterance overlaps with detected overlap period
+                utt_overlap_start = max(start_sec, overlap['start'])
+                utt_overlap_end = min(end_sec, overlap['end'])
+                
+                if utt_overlap_start < utt_overlap_end:
+                    has_overlap = True
+                    overlap_duration += (utt_overlap_end - utt_overlap_start)
+                    # Get the other speaker(s) in this overlap
+                    other_speakers = [s for s in overlap['speakers'] if s != speaker]
+                    overlap_with.extend(other_speakers)
+            
+            overlap_with = list(dict.fromkeys(overlap_with))  # Remove duplicates
+            if has_overlap:
+                overlap_affected_count += 1
+            
             # Flag low confidence
             confidence_flag = ""
             if confidence < 0.7:
                 confidence_flag = " [LOW CONF]"
                 low_confidence_count += 1
+            
+            # Flag overlaps
+            overlap_flag = ""
+            if has_overlap:
+                overlap_flag = f" [OVERLAP with {', '.join(overlap_with)}]"
             
             # Slice audio
             start_sample = int(start_sec * 16000)
@@ -440,7 +521,7 @@ class VocalMindPipelineV2:
             
             role = speaker_to_role.get(speaker, "Unknown")
             
-            log_line = f"{role} ({emotion}): {text}{confidence_flag}"
+            log_line = f"{role} ({emotion}): {text}{confidence_flag}{overlap_flag}"
             print(log_line)
             
             conversation_log.append({
@@ -449,7 +530,10 @@ class VocalMindPipelineV2:
                 'emotion': emotion,
                 'text': text,
                 'confidence': confidence,
-                'timestamp': (start_sec, end_sec)
+                'timestamp': (start_sec, end_sec),
+                'has_overlap': has_overlap,
+                'overlap_with': overlap_with if has_overlap else None,
+                'overlap_duration': overlap_duration if has_overlap else 0
             })
         
         # Summary
@@ -458,6 +542,9 @@ class VocalMindPipelineV2:
         print(f"{'='*60}")
         print(f"Total utterances: {len(conversation_log)}")
         print(f"Low confidence segments: {low_confidence_count}")
+        print(f"Overlap-affected utterances: {overlap_affected_count} ({overlap_affected_count/len(conversation_log)*100:.1f}%)" if conversation_log else "")
+        print(f"Total overlap periods: {len(overlaps)}")
+        print(f"Total overlap time: {total_overlap_time:.2f}s ({overlap_percentage:.1f}% of call)")
         print(f"Language: {info.language}")
         print(f"Average confidence: {avg_confidence:.2%}")
         
@@ -467,7 +554,7 @@ class VocalMindPipelineV2:
 VocalMindPipeline = VocalMindPipelineV2
 
 # -----------------------------------------------------------------------------
-# 5. MAIN
+# 6. MAIN
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     import argparse
