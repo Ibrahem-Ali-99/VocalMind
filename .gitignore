@@ -64,3 +64,11 @@ reports/
 Experiments/Rag/data/
 Experiments/Rag/logs/
 Experiments/Rag/reports/
+
+# Model files
+best_model_3class.pt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
