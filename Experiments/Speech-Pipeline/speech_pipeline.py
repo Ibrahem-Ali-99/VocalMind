@@ -1,13 +1,14 @@
 """
-VocalMind Inference Pipeline v2 - Production-Ready
-===================================================
-Upgrades from v1:
-- faster-whisper with large-v3 model (better accuracy)
-- Confidence scores for transcriptions
-- Language detection
-- Smarter speaker role detection (Agent vs Customer)
-- Text post-processing (fix number spacing)
-- Original sample rate detection
+VocalMind Speech Pipeline - Core Transcription Module
+======================================================
+This module handles:
+- Audio loading and preprocessing
+- Speaker Diarization (Pyannote 3.1)
+- ASR Transcription (faster-whisper)
+- Word-Speaker Alignment with overlap handling
+- Speaker Role Detection (Agent vs Customer)
+
+Note: Emotion analysis is in speech_pipeline_test.py
 """
 
 import os
@@ -85,6 +86,42 @@ def detect_overlaps(speaker_segments):
         'total_overlap_time': total_overlap_time,
         'overlap_count': len(overlaps)
     }
+
+def is_in_overlap(t, overlaps):
+    """Check if timestamp t falls within any overlap period."""
+    for overlap in overlaps:
+        if overlap['start'] <= t <= overlap['end']:
+            return True
+    return False
+
+# Alignment improvement constants
+PAUSE_THRESHOLD_SEC = 0.4  # 400ms gap = natural turn boundary
+MIN_SEGMENT_DURATION_SEC = 0.15  # Merge segments shorter than 150ms
+
+def merge_short_segments(speaker_segments, min_duration=MIN_SEGMENT_DURATION_SEC):
+    """
+    Merge very short speaker segments into neighbors to reduce noise.
+    Short segments (< min_duration) are merged into the previous segment.
+    """
+    if not speaker_segments:
+        return speaker_segments
+    
+    merged = [speaker_segments[0].copy()]
+    
+    for seg in speaker_segments[1:]:
+        seg_duration = seg['end'] - seg['start']
+        
+        if seg_duration < min_duration:
+            # Merge into previous segment (extend its end time)
+            merged[-1]['end'] = max(merged[-1]['end'], seg['end'])
+        elif seg['speaker'] == merged[-1]['speaker']:
+            # Same speaker, just extend
+            merged[-1]['end'] = seg['end']
+        else:
+            # Different speaker, long enough to keep
+            merged.append(seg.copy())
+    
+    return merged
 
 # -----------------------------------------------------------------------------
 # 4. SPEAKER ROLE DETECTION
@@ -170,13 +207,13 @@ class VocalMindPipelineV2:
         Options for whisper_model: "base", "small", "medium", "large-v3"
         """
         # --- Load faster-whisper ---
+        self.whisper_model_name = whisper_model  # Store for consistent logging
         print(f"Loading faster-whisper ASR ({whisper_model})...")
         from faster_whisper import WhisperModel
         
         # Use CPU with int8 for compatibility (faster-whisper has cuBLAS 12 incompatibility with CUDA 13)
         # CPU int8 is still very fast for medium model
         self.asr_model = WhisperModel(whisper_model, device="cpu", compute_type="int8")
-        print(f"faster-whisper {whisper_model} Loaded.")
         print(f"faster-whisper {whisper_model} Loaded.")
         
         # --- Load Pyannote for Speaker Diarization ---
@@ -186,12 +223,16 @@ class VocalMindPipelineV2:
             raise ValueError("HF_TOKEN not found in .env file. Please add your HuggingFace token.")
         
         from pyannote.audio import Pipeline as PyannotePipeline
+        
+        # Load diarization pipeline
         self.diarization_pipeline = PyannotePipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             token=hf_token
         )
+        
         if torch.cuda.is_available():
             self.diarization_pipeline.to(torch.device("cuda"))
+        
         print("Pyannote Diarization Loaded.")
     
     def process_file(self, audio_path):
@@ -232,6 +273,13 @@ class VocalMindPipelineV2:
             })
         
         print(f"Found {len(speaker_segments)} speaker segments")
+        
+        # Merge very short segments to reduce diarization noise
+        original_count = len(speaker_segments)
+        speaker_segments = merge_short_segments(speaker_segments)
+        if len(speaker_segments) < original_count:
+            print(f"Merged short segments: {original_count} -> {len(speaker_segments)}")
+        
         unique_speakers = list(dict.fromkeys([s['speaker'] for s in speaker_segments]))
         print(f"Speakers detected: {unique_speakers}")
         
@@ -251,7 +299,7 @@ class VocalMindPipelineV2:
                 print(f"  {i+1}. {overlap['start']:.1f}s-{overlap['end']:.1f}s: {overlap['speakers']} ({overlap['duration']:.2f}s)")
         
         # --- ASR with faster-whisper ---
-        print("\nRunning ASR (faster-whisper large-v3)...")
+        print(f"\nRunning ASR (faster-whisper {self.whisper_model_name})...")
         segments, info = self.asr_model.transcribe(
             full_audio,
             beam_size=5,
@@ -304,7 +352,7 @@ class VocalMindPipelineV2:
         current_end = None
         current_confidences = []
         
-        for w in all_words:
+        for i, w in enumerate(all_words):
             word = w['word']
             word_start = w['start']
             word_end = w['end']
@@ -315,6 +363,33 @@ class VocalMindPipelineV2:
             
             word_mid = (word_start + word_end) / 2
             word_speaker = get_speaker_at_time(word_mid)
+            
+            # --- Speaker Continuity Logic for Overlaps ---
+            # If in overlap, prefer continuing current speaker if sentence is incomplete
+            if is_in_overlap(word_mid, overlaps) and current_speaker is not None:
+                # Check previous word ending
+                prev_word = all_words[i-1]['word'] if i > 0 else ""
+                prev_end = all_words[i-1]['end'] if i > 0 else 0
+                
+                # Check for sentence boundary:
+                # 1. Punctuation: .?!
+                # 2. Pause: gap > threshold
+                is_punctuation_end = prev_word.strip()[-1] in ['.', '?', '!', '—', '-'] if prev_word.strip() else True
+                is_pause_boundary = (word_start - prev_end) > PAUSE_THRESHOLD_SEC
+                
+                is_sentence_end = is_punctuation_end or is_pause_boundary
+                
+                if not is_sentence_end:
+                    # Check if current speaker is actually valid for this time (is in the overlap list)
+                    valid_speakers = []
+                    for ov in overlaps:
+                        if ov['start'] <= word_mid <= ov['end']:
+                            valid_speakers = ov['speakers']
+                            break
+                    
+                    if current_speaker in valid_speakers:
+                        word_speaker = current_speaker
+            # ---------------------------------------------
             
             if word_speaker != current_speaker and current_words:
                 utterances.append({
@@ -346,7 +421,7 @@ class VocalMindPipelineV2:
         
         # --- Post-process: merge trailing short segments ---
         final_utterances = []
-        trailing_starters = ['I', 'We', 'You', 'That', 'This', 'It', 'So', 'But', 'And', 'Or', 'If', 'Yes', 'No', 'Ok', 'Okay']
+        trailing_starters = ['I', "I've", "I'm", "I'll", "I'd", 'We', "We're", 'You', "You're", 'That', "That's", 'This', 'It', "It's", 'So', 'But', 'And', 'Or', 'If', 'Yes', 'No', 'Ok', 'Okay']
         
         for i, utt in enumerate(utterances):
             utt = utt.copy()
