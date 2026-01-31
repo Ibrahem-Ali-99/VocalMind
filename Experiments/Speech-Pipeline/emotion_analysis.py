@@ -533,7 +533,7 @@ class SpeechPipelineWithEmotion:
             dims = audio_result.get('dimensions', {})
             dims_str = ""
             if dims:
-                dims_str = f" [V:{dims.get('valence', 0):.2f} A:{dims.get('arousal', 0):.2f}]"
+                dims_str = f" [V:{dims.get('valence', 0):.2f} A:{dims.get('arousal', 0):.2f} D:{dims.get('dominance', 0):.2f}]"
             
             # Check if text emotion was corrected
             corrected_str = ""
