@@ -1,0 +1,24 @@
+[project]
+name = "grad-project"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+description = "WhisperX with speaker diarization and emotion detection"
+dependencies = [
+    "torch==2.4.0",
+    "torchaudio==2.4.0",
+    "torchvision==0.19.0",
+    "whisperx>=3.0",
+    "python-dotenv",
+    "requests",
+    "librosa>=0.10.0",
+    "transformers>=4.30.0",
+    "soundfile>=0.12.0",
+]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "primary"
