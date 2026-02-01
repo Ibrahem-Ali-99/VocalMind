@@ -6,7 +6,7 @@ test.describe('Agent Dashboard', () => {
         await page.fill('input[type="email"]', 'agent@vocalmind.com')
         await page.fill('input[type="password"]', 'password')
         await page.click('button:has-text("Sign In")')
-        await page.waitForURL(/dashboard/)
+        await page.waitForURL(/\/agent\/dashboard/)
     })
 
     test('should show agent dashboard', async ({ page }) => {

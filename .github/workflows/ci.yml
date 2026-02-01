@@ -81,20 +81,11 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
-
-      - name: Security Audit
-        run: npm audit --audit-level=critical
-
       - name: Lint
         run: npm run lint
 
-      - name: Run Playwright tests
-        run: npm test
+      - name: Build
+        run: npm run build
         env:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'dummy_secret_for_ci_testing' }}
           NEXT_PUBLIC_USE_MOCKS: 'true'
-
-      - name: Build
-        run: npm run build

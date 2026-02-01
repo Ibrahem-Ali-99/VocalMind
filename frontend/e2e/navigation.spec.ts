@@ -11,18 +11,18 @@ test.describe('Navigation', () => {
 
     test('should navigate to calls page', async ({ page }) => {
         await page.click('text=Calls')
-        await expect(page).toHaveURL(/calls/)
+        await expect(page).toHaveURL(/\/manager\/calls/)
         await expect(page.locator('text=All Calls')).toBeVisible()
     })
 
     test('should navigate to team page', async ({ page }) => {
         await page.click('text=Team')
-        await expect(page).toHaveURL(/team/)
+        await expect(page).toHaveURL(/\/manager\/team/)
     })
 
     test('should navigate to settings page', async ({ page }) => {
         await page.click('text=Settings')
-        await expect(page).toHaveURL(/settings/)
+        await expect(page).toHaveURL(/\/manager\/settings/)
         await expect(page.locator('text=Profile Settings')).toBeVisible()
     })
 

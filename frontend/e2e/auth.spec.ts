@@ -19,7 +19,7 @@ test.describe('Authentication', () => {
         await page.click('button:has-text("Sign In")')
 
         // Should redirect to dashboard
-        await expect(page).toHaveURL(/dashboard/)
+        await expect(page).toHaveURL(/\/manager\/dashboard/)
     })
 
     test('should show SSO options', async ({ page }) => {

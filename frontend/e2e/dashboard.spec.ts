@@ -23,6 +23,6 @@ test.describe('Dashboard', () => {
 
     test('should navigate to calls page', async ({ page }) => {
         await page.click('text=View All')
-        await expect(page).toHaveURL(/calls/)
+        await expect(page).toHaveURL(/\/manager\/calls/)
     })
 })
