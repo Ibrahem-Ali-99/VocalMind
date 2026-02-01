@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -8,3 +9,79 @@ wheels/
 
 # Virtual environments
 .venv
+=======
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE / Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
+
+# Node modules
+node_modules/
+
+# uv
+uv.lock
+
+# Project specific
+data/
+reports/
+Experiments/Rag/data/
+Experiments/Rag/logs/
+Experiments/Rag/reports/
+
+# Model files
+best_model_3class.pt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+>>>>>>> d0ccfc3a036e218d82db0d2b6c829d6ce6d3c975

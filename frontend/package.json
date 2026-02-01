@@ -1,0 +1,14 @@
+{
+  "name": "vocalmind-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Development server not configured yet'",
+    "build": "echo 'Build not configured yet'",
+    "lint": "eslint src/ --max-warnings=0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "eslint": "^8.56.0"
+  }
+}

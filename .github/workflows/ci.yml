@@ -1,0 +1,88 @@
+name: CI/CD Pipeline
+
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "20"
+
+jobs:
+  security:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Gitleaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2.3.7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: pip-audit
+        run: cd backend && uvx pip-audit . --strict
+
+  backend:
+    name: 📦 Backend Install & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: cd backend && uv sync
+
+      - name: Lint (Ruff)
+        run: cd backend && uv run ruff check . --output-format=github
+
+      - name: License Audit
+        run: |
+          cd backend
+          uv run pip-licenses --format=markdown >> $GITHUB_STEP_SUMMARY
+          if uv run pip-licenses --format=csv | grep -qiE "GPL|LGPL|AGPL"; then
+            echo "::error::Copyleft license detected!"
+            exit 1
+          fi
+
+  frontend:
+    name: 🎨 Frontend Install & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run: { working-directory: frontend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "${{ env.NODE_VERSION }}"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Security Audit
+        run: npm audit --audit-level=high
+
+      - name: Lint (ESLint)
+        run: npx eslint src/ --max-warnings=0
