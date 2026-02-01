@@ -94,6 +94,7 @@ jobs:
         run: npm test
         env:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'dummy_secret_for_ci_testing' }}
+          NEXT_PUBLIC_USE_MOCKS: 'true'
 
       - name: Build
         run: npm run build
