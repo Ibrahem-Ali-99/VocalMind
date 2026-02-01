@@ -14,7 +14,7 @@ This repository is a monorepo containing both production-ready services and rese
 | **ASR** | Research | Jupyter | Notebooks for Automatic Speech Recognition experiments. |
 | **Diarization** | Research | NVIDIA NeMo, Jupyter | Speaker diarization and clustering experiments. |
 | **Voice Gen** | Script | Python | Experimental scripts for TTS and voice synthesis. |
-| **Frontend** | Client | React, Node.js | Initial configuration present. |
+| **Frontend** | Application | Next.js, Tailwind, Playwright | Modern, high-performance dashboard for managers and agents. |
 
 ---
 
@@ -23,12 +23,34 @@ This repository is a monorepo containing both production-ready services and rese
 ### Prerequisites
 
 - **Python 3.11+**
+- **Node.js 20+**
 - **[uv](https://github.com/astral-sh/uv)** (Required for dependency management)
 - **Docker** (For local RAG embeddings)
 
-### 1. 📚 Running the RAG System 
+### 1. 🎨 Running the Frontend (Next.js)
 
-The RAG module is currently the most active component.
+The frontend is a modern Next.js application located in the `frontend` directory.
+
+1. **Navigate to the module:**
+   ```bash
+   cd frontend
+   ```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+3. **Run in development mode:**
+   ```bash
+   npm run dev
+   ```
+4. **Run tests:**
+   ```bash
+   npm test
+   ```
+
+### 2. 📚 Running the RAG System 
+
+The RAG module is currently the most active research component.
 
 1. **Navigate to the module:**
    ```bash
@@ -49,7 +71,7 @@ The RAG module is currently the most active component.
    uv run python -m rag_app.main
    ```
 
-### 2. 🧪 Experiments Modules
+### 3. 🧪 Experiments Modules
 
 To explore the notebooks for ASR or Diarization:
 
@@ -63,7 +85,7 @@ To explore the notebooks for ASR or Diarization:
    ```
    _Open the notebooks in `Experiments/Automatic-Speech-Recognition` or `Experiments/Speaker-Diarization`._
 
-### 3. 🔌 Backend Development
+### 4. 🔌 Backend Development
 
 The backend is initialized for future API development.
 

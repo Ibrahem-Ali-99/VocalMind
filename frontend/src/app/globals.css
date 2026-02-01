@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  /* VocalMind Brand Colors */
+  --color-navy: #0B0B28;
+  --color-navy-light: #1a1a3e;
+  --color-navy-dark: #050514;
+  --color-cyan: #55DDFF;
+  --color-cyan-light: #88eeff;
+  --color-cyan-dark: #0891b2;
+  --color-purple: #8800AA;
+  --color-purple-light: #aa22cc;
+  --color-purple-dark: #660088;
+
+  /* Shadows */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full hover:bg-gray-400;
+}
+
+/* Smooth transitions using transform/opacity for performance */
+.transition-smooth {
+  @apply transition-all duration-300 ease-out;
+}
+
+/* Button & Card Hover Effects */
+.btn-hover {
+  @apply transition-all duration-200 ease-out active:scale-95 hover:shadow-lg hover:-translate-y-0.5;
+}
+
+.card-hover {
+  @apply transition-all duration-300 ease-out hover:-translate-y-1;
+}

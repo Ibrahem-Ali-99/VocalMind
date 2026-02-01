@@ -65,9 +65,9 @@ jobs:
           fi
 
   frontend:
-    name: 🎨 Frontend Install & Lint
+    name: 🎨 Next.js Install & Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run: { working-directory: frontend }
     steps:
@@ -81,8 +81,17 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      - name: Security Audit
-        run: npm audit --audit-level=high
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
 
-      - name: Lint (ESLint)
-        run: npx eslint src/ --max-warnings=0
+      - name: Security Audit
+        run: npm audit --audit-level=critical
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run Playwright tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

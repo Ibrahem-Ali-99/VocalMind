@@ -72,3 +72,10 @@ best_model_3class.pt
 *.bin
 *.onnx
 *.safetensors
+
+# Testing reports
+playwright-report/
+test-results/
+accessibility-report.json
+lint-results*.json
+

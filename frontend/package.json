@@ -1,14 +1,30 @@
 {
-  "name": "vocalmind-frontend",
+  "name": "next-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "echo 'Development server not configured yet'",
-    "build": "echo 'Build not configured yet'",
-    "lint": "eslint src/ --max-warnings=0"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
   },
-  "dependencies": {},
+  "dependencies": {
+    "lottie-react": "^2.4.1",
+    "next": "16.1.6",
+    "next-auth": "^5.0.0-beta.30",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "recharts": "^3.7.0",
+    "wavesurfer.js": "^7.12.1"
+  },
   "devDependencies": {
-    "eslint": "^8.56.0"
+    "@playwright/test": "^1.58.1",
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4"
   }
 }
