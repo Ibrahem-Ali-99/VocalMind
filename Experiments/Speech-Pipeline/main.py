@@ -50,6 +50,32 @@ except Exception as e:
     print(f"⚠ Could not apply torch.load patch: {e}\n")
     pass
 
+# PATCH: Fix torchaudio 2.11+ missing attributes (required by pyannote.audio)
+try:
+    import torchaudio
+    # Patch AudioMetaData
+    if not hasattr(torchaudio, "AudioMetaData"):
+        class AudioMetaData:
+            def __init__(self, sample_rate, num_frames, num_channels, bits_per_sample, encoding):
+                self.sample_rate = sample_rate
+                self.num_frames = num_frames
+                self.num_channels = num_channels
+                self.bits_per_sample = bits_per_sample
+                self.encoding = encoding
+        torchaudio.AudioMetaData = AudioMetaData
+    
+    # Patch list_audio_backends
+    if not hasattr(torchaudio, "list_audio_backends"):
+        torchaudio.list_audio_backends = lambda: ["soundfile"]
+        
+    # Patch get_audio_backend
+    if not hasattr(torchaudio, "get_audio_backend"):
+        torchaudio.get_audio_backend = lambda: "soundfile"
+
+    print("✓ Applied torchaudio compatibility patches (AudioMetaData, backends)\n")
+except ImportError:
+    pass
+
 # ======================================================
 # ENVIRONMENT SETUP
 # ======================================================

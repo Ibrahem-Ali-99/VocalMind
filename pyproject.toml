@@ -1,24 +1,63 @@
 [project]
-name = "grad-project"
-version = "0.1.0"
-requires-python = ">=3.11,<3.12"
-description = "WhisperX with speaker diarization and emotion detection"
-dependencies = [
-    "torch==2.4.0",
-    "torchaudio==2.4.0",
-    "torchvision==0.19.0",
-    "whisperx>=3.0",
-    "python-dotenv",
-    "requests",
-    "librosa>=0.10.0",
-    "transformers>=4.30.0",
-    "soundfile>=0.12.0",
+name = "vocalmind"
+version = "0.3.0"
+requires-python = ">=3.10"
+description = "VocalMind: Multimodal Speech Pipeline with ASR, Diarization, and Emotion Recognition"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "VocalMind Team"}
 ]
+keywords = ["speech", "emotion", "diarization", "whisper", "nlp", "audio"]
+
+dependencies = [
+    # Core PyTorch (CUDA 12.8)
+    "torch>=2.4.0",
+    "torchaudio>=2.4.0",
+    
+    # ASR & Diarization
+    "whisperx>=3.7.0",
+    "pyannote.audio>=3.4.0",
+    "pytorch-lightning>=2.0.0",
+    
+    # NLP & Transformers
+    "transformers>=4.40.0",
+    "accelerate>=0.26.0",
+    "sentencepiece>=0.1.99",
+    "safetensors>=0.4.0",
+    
+    # Audio Processing
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "audioread>=3.0.0",
+    
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "tqdm>=4.65.0",
+    
+    # HuggingFace Hub
+    "huggingface-hub>=0.20.0",
+    "datasets>=2.14.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+vocalmind = "Experiments.Speech-Pipeline.main_v2:main"
 
 [tool.uv]
 index-strategy = "unsafe-best-match"
 
 [[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 priority = "primary"

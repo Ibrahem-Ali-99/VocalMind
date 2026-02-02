@@ -227,7 +227,7 @@ class VocalMindPipelineV2:
         # Load diarization pipeline
         self.diarization_pipeline = PyannotePipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            token=hf_token
+            use_auth_token=hf_token
         )
         
         if torch.cuda.is_available():
@@ -263,7 +263,7 @@ class VocalMindPipelineV2:
         audio_input = {"waveform": waveform_tensor, "sample_rate": sr}
         diarization_result = self.diarization_pipeline(audio_input)
         
-        diarization = diarization_result.speaker_diarization
+        diarization = diarization_result
         speaker_segments = []
         for turn, _, speaker in diarization.itertracks(yield_label=True):
             speaker_segments.append({
