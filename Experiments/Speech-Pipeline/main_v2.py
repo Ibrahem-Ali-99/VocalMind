@@ -1,16 +1,3 @@
-"""
-VocalMind Speech Pipeline V2 (Combined)
-=======================================
-Combines:
-1. WhisperX (GPU-accelerated ASR + Alignment + Diarization)
-2. Advanced Multimodal Emotion Fusion (Text + Audio)
-3. Speaker Role Classification (Agent vs Customer) 
-4. Memory Optimization (Sequential Model Loading)
-
-Usage:
-    python main_v2.py --audio path/to/audio.mp3
-"""
-
 import os
 import sys
 import gc
@@ -24,7 +11,8 @@ import torch
 import librosa
 import transformers
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Tuple
+from collections import defaultdict
 
 # ==============================================================================
 # 0. COMPATIBILITY PATCHES
@@ -33,16 +21,16 @@ print("Applying compatibility patches...")
 
 # PATCH 1: torch.load weights_only fix
 try:
-    original_load = torch.load
-    def custom_load(*args, **kwargs):
+    _original_torch_load = torch.load
+    def _patched_torch_load(*args, **kwargs):
         kwargs['weights_only'] = False
-        return original_load(*args, **kwargs)
-    torch.load = custom_load
+        return _original_torch_load(*args, **kwargs)
+    torch.load = _patched_torch_load
     print("[OK] torch.load patch applied")
 except Exception:
     pass
 
-# PATCH 2: torchaudio 2.11+ missing attributes (AudioMetaData, backends)
+# PATCH 2: torchaudio 2.11+ missing attributes
 try:
     import torchaudio
     if not hasattr(torchaudio, "AudioMetaData"):
@@ -62,15 +50,15 @@ try:
 except ImportError:
     pass
 
-# PATCH 3: huggingface_hub use_auth_token deprecation (for Pyannote)
+# PATCH 3: huggingface_hub use_auth_token deprecation
 try:
     import huggingface_hub
-    original_hf_hub_download = huggingface_hub.hf_hub_download
-    def patched_hf_hub_download(*args, **kwargs):
+    _original_hf_hub_download = huggingface_hub.hf_hub_download
+    def _patched_hf_hub_download(*args, **kwargs):
         if 'use_auth_token' in kwargs:
             kwargs['token'] = kwargs.pop('use_auth_token')
-        return original_hf_hub_download(*args, **kwargs)
-    huggingface_hub.hf_hub_download = patched_hf_hub_download
+        return _original_hf_hub_download(*args, **kwargs)
+    huggingface_hub.hf_hub_download = _patched_hf_hub_download
     print("[OK] huggingface_hub patch applied")
 except ImportError:
     pass
@@ -79,12 +67,8 @@ except ImportError:
 # 1. SETUP & CONFIGURATION
 # ==============================================================================
 
-# ==================== EASY AUDIO FILE CONFIGURATION ====================
-# Change this path to test different audio files without command-line args
-DEFAULT_AUDIO_FILE = "../Voice-Generation/generated_audio/medium_overlap.mp3"
-# ========================================================================
+DEFAULT_AUDIO_FILE = "Experiments/Voice-Generation/generated_audio/medium_overlap.mp3"
 
-# Environment loading
 from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(env_path)
@@ -93,221 +77,178 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
     print("⚠ WARNING: HF_TOKEN not found in .env")
 
-# Device config
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
 print(f"Device: {DEVICE} ({COMPUTE_TYPE})")
 
-# Suppress warnings
 warnings.filterwarnings("ignore")
 if 'transformers' in sys.modules:
-    import transformers
     transformers.logging.set_verbosity_error()
 
 # ==============================================================================
-# 2. EMOTION MODELS & LOGIC (From run_demo.py)
+# 2. EMOTION MODELS
 # ==============================================================================
 
-# Emotion Constants
-TEXT_EMOTION_MODEL = "SamLowe/roberta-base-go_emotions"
-AUDIO_EMOTION_MODEL = "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"  # VAD-based audio emotion
+TEXT_EMOTION_MODEL  = "SamLowe/roberta-base-go_emotions"
+AUDIO_EMOTION_MODEL = "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"
 
-# GoEmotions 28-class to 3-class sentiment mapping
-EMOTION_TO_SENTIMENT = {
-    # Negative emotions
-    "anger": "Negative", "annoyance": "Negative", "disappointment": "Negative",
-    "disapproval": "Negative", "disgust": "Negative", "embarrassment": "Negative",
-    "fear": "Negative", "grief": "Negative", "nervousness": "Negative",
-    "remorse": "Negative", "sadness": "Negative",
-    
-    # Positive emotions
-    "admiration": "Positive", "amusement": "Positive", "approval": "Positive",
-    "caring": "Positive", "desire": "Positive", "excitement": "Positive",
-    "gratitude": "Positive", "joy": "Positive", "love": "Positive",
-    "optimism": "Positive", "pride": "Positive", "relief": "Positive",
-    
-    # Neutral emotions
-    "confusion": "Neutral", "curiosity": "Neutral", "neutral": "Neutral",
-    "realization": "Neutral", "surprise": "Neutral"
-}
-
-# Audio emotion mapping (emotion2vec uses different labels)
-AUDIO_TO_SENTIMENT = {
-    "angry": "Negative", "disgusted": "Negative", "fearful": "Negative", "sad": "Negative",
-    "happy": "Positive", "surprised": "Neutral", "neutral": "Neutral", "other": "Neutral"
-}
+# ---------------------------------------------------------------------------
+# Empathy / positive phrase sets (used in fusion correction)
+# ---------------------------------------------------------------------------
+EMPATHY_PHRASE_PATTERNS = [
+    "understand your", "sorry to hear", "apologize for", "must be frustrating",
+    "see why", "help you with", "figure this out", "resolve this", "i understand",
+    "i can see how", "that must be", "i'm sorry about", "completely understand",
+    "appreciate your patience", "take full responsibility"
+]
 
 POSITIVE_PHRASE_PATTERNS = [
     "thank you", "thanks", "appreciate", "grateful", "have a nice day", "great day",
     "take care", "good bye", "welcome", "my pleasure", "happy to help", "sounds good",
-    "perfect", "great", "wonderful", "excellent"
-]
-
-NEGATIVE_PHRASE_PATTERNS = [
-    "upset", "frustrated", "angry", "annoyed", "disappointed", "unhappy",
-    "terrible", "worst", "horrible", "ridiculous", "unacceptable"
-]
-
-EMPATHY_PHRASE_PATTERNS = [
-    "understand your", "sorry to hear", "apologize for", "must be frustrating",
-    "see why", "help you with", "figure this out", "resolve this"
+    "perfect", "great", "wonderful", "excellent", "awesome", "fantastic"
 ]
 
 # ==============================================================================
-# FUSION CONFIGURATION (Tune these for your domain)
+# FUSION CONFIGURATION
 # ==============================================================================
 FUSION_CONFIG = {
-    # Confidence thresholds
-    'text_confident_threshold': 0.75,
+    'text_confident_threshold':  0.70,
     'audio_confident_threshold': 0.75,
-    'audio_override_threshold': 0.80,  # For AGENT: only trust audio if >= 80%
-    
-    # Base weights for weighted voting
-    'text_weight': 0.6,
-    'audio_weight': 0.4,
-    
-    # Short segment handling (<threshold seconds)
-    'short_segment_threshold': 0.7,  # Reduced from 0.8 for stricter handling
-    'short_segment_text_weight': 0.80,
-    'short_segment_audio_weight': 0.20,
-    
-    # Agent role audio penalty (agents sound "concerned" which is misread as negative)
-    'agent_audio_weight_multiplier': 0.5,  # Reduce audio weight by 50% for agents
-    
-    # SURPRISE emotion mapping (context-aware)
-    'surprise_default_sentiment': 'Neutral',
+    'audio_override_threshold':  0.85,
+
+    'text_weight':  0.65,
+    'audio_weight': 0.35,
+
+    'short_segment_threshold':   0.8,   # seconds
+    'short_segment_text_weight': 0.85,
+    'short_segment_audio_weight':0.15,
+
+    # Agent audio is typically less emotionally expressive (especially TTS-
+    # generated agent lines), so we down-weight audio for agent segments to
+    # avoid spurious emotion labels from flat prosody.
+    'agent_audio_penalty': 0.4,
 }
 
-# Explicit emotion-to-polarity mapping (simplified and fixed)
-EMOTION_POLARITY = {
-    # Positive emotions
-    'joy': 'Positive', 'caring': 'Positive', 'gratitude': 'Positive', 
-    'approval': 'Positive', 'happy': 'Positive', 'admiration': 'Positive',
-    'amusement': 'Positive', 'excitement': 'Positive', 'love': 'Positive',
-    'optimism': 'Positive', 'pride': 'Positive', 'relief': 'Positive',
-    'desire': 'Positive',
-    
-    # Neutral emotions
-    'neutral': 'Neutral', 'curiosity': 'Neutral', 'surprise': 'Neutral',
-    'surprised': 'Neutral', 'realization': 'Neutral', 'confusion': 'Neutral',
-    'other': 'Neutral',
-    
-    # Negative emotions
-    'anger': 'Negative', 'angry': 'Negative', 'annoyance': 'Negative',
-    'disgust': 'Negative', 'disgusted': 'Negative', 'fear': 'Negative',
-    'fearful': 'Negative', 'sadness': 'Negative', 'sad': 'Negative',
-    'disapproval': 'Negative', 'disappointment': 'Negative',
-    'embarrassment': 'Negative', 'grief': 'Negative', 'nervousness': 'Negative',
-    'remorse': 'Negative'
-}
 
-def get_polarity(emotion: str) -> str:
-    """Get polarity from emotion using explicit mapping."""
-    return EMOTION_POLARITY.get(emotion.lower(), 'Neutral')
-
-
+# ==============================================================================
+# AUDIO EMOTION — wav2vec2 regression head + VAD → label mapping
+# ==============================================================================
 
 class RegressionHead(torch.nn.Module):
-# ... (existing classes) ...
-
-
-    """Head for audeering audio emotion model"""
     def __init__(self, config):
         super().__init__()
-        self.dense = torch.nn.Linear(config.hidden_size, config.hidden_size)
-        self.dropout = torch.nn.Dropout(config.final_dropout)
+        self.dense    = torch.nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout  = torch.nn.Dropout(config.final_dropout)
         self.out_proj = torch.nn.Linear(config.hidden_size, config.num_labels)
+
     def forward(self, features, **kwargs):
-        x = features
+        x = self.dropout(features)
+        x = torch.tanh(self.dense(x))
         x = self.dropout(x)
-        x = self.dense(x)
-        x = torch.tanh(x)
-        x = self.dropout(x)
-        x = self.out_proj(x)
-        return x
+        return self.out_proj(x)
+
 
 class EmotionModel(transformers.Wav2Vec2PreTrainedModel):
-    """Audio emotion model wrapper"""
     def __init__(self, config):
         super().__init__(config)
-        self.config = config
-        self.wav2vec2 = transformers.Wav2Vec2Model(config)
+        self.config     = config
+        self.wav2vec2   = transformers.Wav2Vec2Model(config)
         self.classifier = RegressionHead(config)
         self.init_weights()
+
+    @property
+    def all_tied_weights_keys(self):
+        return {}
+
     def forward(self, input_values):
-        outputs = self.wav2vec2(input_values)
-        hidden_states = outputs[0]
-        hidden_states = torch.mean(hidden_states, dim=1)
-        logits = self.classifier(hidden_states)
-        return hidden_states, logits
+        hidden = self.wav2vec2(input_values)[0]
+        pooled = torch.mean(hidden, dim=1)
+        return pooled, self.classifier(pooled)
+
 
 class AudioEmotionClassifier:
-    """Wav2Vec2-based audio emotion classifier with VAD dimensional output."""
-    
+    """Wav2Vec2-based audio emotion classifier outputting VAD dimensions."""
+
     def __init__(self):
         print(f"Loading Audio Emotion Model: {AUDIO_EMOTION_MODEL}...")
         self.processor = transformers.Wav2Vec2Processor.from_pretrained(AUDIO_EMOTION_MODEL)
-        self.model = EmotionModel.from_pretrained(AUDIO_EMOTION_MODEL)
+        self.model     = EmotionModel.from_pretrained(AUDIO_EMOTION_MODEL)
         if DEVICE == "cuda":
             self.model = self.model.cuda()
         self.model.eval()
         print("[OK] Audio Emotion Model Loaded")
 
-    def _dimensions_to_emotion(self, arousal, valence, dominance):
-        """Map VAD dimensions to emotion label."""
-        v_low, v_high, a_low, a_high = 0.4, 0.6, 0.4, 0.6
+    # ------------------------------------------------------------------
+    # VAD → discrete emotion label
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _dimensions_to_emotion(arousal: float, valence: float, dominance: float) -> Tuple[str, float]:
+        """
+        Map continuous Arousal / Valence / Dominance into a discrete emotion
+        label plus a scalar confidence.  Fixed: every branch now returns an
+        explicit (label, confidence) tuple — the previous version had an
+        ambiguous ternary that produced an unintended tuple due to operator
+        precedence.
+        """
         if arousal > 0.7:
-            if valence > 0.5: return "happy", valence * 0.9 + arousal * 0.1
-            else: return ("angry" if dominance > 0.5 else "fearful"), (1 - valence) * 0.8 + arousal * 0.2
-        if valence > v_high: return ("happy" if arousal > 0.5 else "neutral"), valence
-        if valence < v_low:
-            if arousal > a_high: return ("angry" if dominance > 0.5 else "fearful"), 1 - valence
-            elif arousal < a_low: return "sad", 1 - valence
-            else: return "disgusted", 1 - valence
-        return "neutral", 0.5 + abs(valence - 0.5)
+            if valence > 0.5:
+                return ("happy",   valence * 0.9 + arousal * 0.1)
+            else:
+                if dominance > 0.5:
+                    return ("angry",   (1 - valence) * 0.8 + arousal * 0.2)
+                else:
+                    return ("fearful", (1 - valence) * 0.7 + arousal * 0.3)
 
-    def _calculate_emotion_scores(self, arousal: float, valence: float, dominance: float) -> Dict:
-        """Calculate approximate scores for all emotions based on dimensional values."""
-        def gaussian_score(v, a, v_center, a_center, sigma=0.3):
-            dist = ((v - v_center)**2 + (a - a_center)**2) ** 0.5
-            return max(0, 1 - dist / sigma)
-        
-        scores = {
-            'angry': gaussian_score(valence, arousal, 0.2, 0.8) * (0.5 + dominance * 0.5),
-            'disgusted': gaussian_score(valence, arousal, 0.3, 0.5),
-            'fearful': gaussian_score(valence, arousal, 0.3, 0.8) * (1.5 - dominance),
-            'happy': gaussian_score(valence, arousal, 0.8, 0.7),
-            'neutral': gaussian_score(valence, arousal, 0.5, 0.5),
-            'sad': gaussian_score(valence, arousal, 0.2, 0.2),
-            'surprised': gaussian_score(valence, arousal, 0.6, 0.9)
-        }
-        total = sum(scores.values()) + 1e-6
-        return {k: v / total for k, v in scores.items()}
+        if valence > 0.6:
+            # Fixed: was `return "happy" if … else "neutral", valence`
+            # which parsed as  ("happy", valence)  OR  ("neutral", valence)
+            # depending on arousal — the ternary only guarded the first element.
+            # Use >= 0.5 for arousal: VAD convention treats 0.5 as the active
+            # boundary, so high valence + mid arousal maps to happy.
+            if arousal >= 0.5:
+                return ("happy",   valence)
+            else:
+                return ("neutral", valence)
 
-    def predict(self, audio_array, sr=16000):
-        """Predict emotion from audio segment."""
-        if len(audio_array) < sr * 1.0:
-            audio_array = np.pad(audio_array, (0, int(sr * 1.0) - len(audio_array)), mode='constant')
-        
-        # Process
-        inputs = self.processor(audio_array, sampling_rate=sr)
+        if valence < 0.4:
+            if arousal > 0.6:
+                if dominance > 0.5:
+                    return ("angry",    1 - valence)
+                else:
+                    return ("fearful",  1 - valence)
+            elif arousal < 0.4:
+                return ("sad",      1 - valence)
+            else:
+                return ("disgusted", 1 - valence)
+
+        return ("neutral", 0.5 + abs(valence - 0.5))
+
+    # ------------------------------------------------------------------
+    def predict(self, audio_array: np.ndarray, sr: int = 16000) -> Dict:
+        min_samples = sr  # 1 second minimum
+        if len(audio_array) < min_samples:
+            audio_array = np.pad(audio_array, (0, min_samples - len(audio_array)))
+
+        inputs       = self.processor(audio_array, sampling_rate=sr)
         input_values = torch.tensor(inputs['input_values'][0]).unsqueeze(0).to(DEVICE)
-        
+
         with torch.no_grad():
             _, logits = self.model(input_values)
-            dims = logits[0].cpu().numpy()
-            
+            dims      = logits[0].cpu().numpy()
+
         arousal, dominance, valence = float(dims[0]), float(dims[1]), float(dims[2])
         emotion, conf = self._dimensions_to_emotion(arousal, valence, dominance)
-        all_scores = self._calculate_emotion_scores(arousal, valence, dominance)
-        
+
         return {
-            'emotion': emotion,
+            'emotion':    emotion,
             'confidence': conf,
-            'sentiment': AUDIO_TO_SENTIMENT.get(emotion, 'Neutral'),
-            'dimensions': {'arousal': arousal, 'dominance': dominance, 'valence': valence},
-            'all_scores': all_scores
+            'dimensions': {'arousal': arousal, 'dominance': dominance, 'valence': valence}
         }
+
+
+# ==============================================================================
+# TEXT EMOTION — RoBERTa go_emotions  (supports BATCH inference)
+# ==============================================================================
 
 class TextEmotionClassifier:
     def __init__(self):
@@ -321,753 +262,868 @@ class TextEmotionClassifier:
         )
         print("[OK] Text Emotion Model Loaded")
 
-    def predict(self, text):
-        if not text.strip(): 
-            return {'emotion': 'neutral', 'confidence': 0.0, 'sentiment': 'Neutral', 'all_scores': {}, 'corrected': False}
-        
-        # Normalize
+    @staticmethod
+    def _clean(text: str) -> str:
         text = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', text)
-        text = re.sub(r'\$\s*(\d)', r'$\1', text)
-        text = " ".join(text.split())
+        text = re.sub(r'\$\s*(\d)',         r'$\1',   text)
+        return " ".join(text.split())
 
-        result = self.classifier(text)
-        top = max(result[0], key=lambda x: x['score'])
-        all_scores = {r['label']: r['score'] for r in result[0]}
-        
-        return {
-            'emotion': top['label'],
-            'confidence': top['score'],
-            'sentiment': EMOTION_TO_SENTIMENT.get(top['label'], 'Neutral'),
-            'all_scores': all_scores,
-            'corrected': False,
-            'original_emotion': None
-        }
+    def predict(self, text: str) -> Dict:
+        """Single-text prediction (kept for backward compat)."""
+        return self.predict_batch([text])[0]
 
-def apply_fusion_logic(text_res, audio_res, text_content, segment_duration=None, speaker_role=None):
-    """Combine text and audio predictions with business logic corrections.
-    
-    Refined fusion rules for customer support:
-    1. AGENT segments: reduce audio influence by 50%, prefer text unless audio >= 80%
-    2. Short utterances (<0.7s): text_weight=0.8, audio_weight=0.2
-    3. Explicit polarity mapping for all emotions
-    4. SURPRISE: default Neutral, only Positive if audio=happy or text in [joy, gratitude]
-    5. Disgust suppression for AGENT when text is neutral/curiosity
-    
-    Log sources: TEXT >=75%, AUDIO >=75%, TEXT weighted, BOTH AGREE
+    def predict_batch(self, texts: List[str]) -> List[Dict]:
+        """
+        Batch prediction — single forward pass through the pipeline.
+        ~3-4× faster than calling predict() in a loop when len(texts) > 4.
+        """
+        cleaned = [self._clean(t) if t.strip() else "" for t in texts]
+        # pipeline accepts a list and returns a list-of-lists
+        results = self.classifier(cleaned)          # List[List[{label, score}]]
+
+        out = []
+        for i, res in enumerate(results):
+            if not cleaned[i]:
+                out.append({'emotion': 'neutral', 'confidence': 0.0, 'all_scores': {}})
+                continue
+            top        = max(res, key=lambda x: x['score'])
+            all_scores = {r['label']: r['score'] for r in res}
+            out.append({
+                'emotion':    top['label'],
+                'confidence': top['score'],
+                'all_scores': all_scores
+            })
+        return out
+
+
+# ==============================================================================
+# EMOTION FUSION
+# ==============================================================================
+
+def apply_fusion_logic(text_res: Dict, audio_res: Dict, text_content: str,
+                       segment_duration: float = 1.0,
+                       speaker_role: str = 'UNKNOWN') -> Dict:
+    """
+    Combine text and audio emotion predictions.
+    Returns actual emotion labels (not coarse sentiment).
     """
     cfg = FUSION_CONFIG
-    
-    # Extract values
     text_lower = text_content.lower()
+
     t_emotion, t_conf = text_res['emotion'], text_res['confidence']
     a_emotion, a_conf = audio_res['emotion'], audio_res['confidence']
-    segment_duration = segment_duration if segment_duration else 1.0
-    speaker_role = speaker_role if speaker_role else 'UNKNOWN'
-    
+
     original_emotion = t_emotion
-    was_corrected = False
-    
-    # =========================================================================
-    # STEP 1: Rule-based text corrections (empathy phrases, etc.)
-    # =========================================================================
-    
-    # EMPATHY CHECK: Agent saying "understand your frustration" is NOT anger
-    if t_emotion in ['anger', 'sadness', 'disgust', 'fear', 'annoyance', 'disapproval']:
+    was_corrected    = False
+
+    # ------------------------------------------------------------------
+    # Rule-based text corrections (empathy / politeness misclassified)
+    # ------------------------------------------------------------------
+    if t_emotion in {'anger', 'sadness', 'disgust', 'fear', 'annoyance', 'disapproval'}:
         for phrase in EMPATHY_PHRASE_PATTERNS:
             if phrase in text_lower:
-                t_emotion = 'neutral'
-                t_conf = max(t_conf, 0.85)
+                t_emotion     = 'neutral'
+                t_conf        = max(t_conf, 0.85)
                 was_corrected = True
                 break
 
-    # Correct positive phrases misclassified as negative
-    if t_emotion in ['fear', 'anger', 'disgust', 'sadness', 'annoyance']:
+    if t_emotion in {'fear', 'anger', 'disgust', 'sadness', 'annoyance'}:
         for phrase in POSITIVE_PHRASE_PATTERNS:
             if phrase in text_lower:
-                t_emotion = 'neutral'
-                t_conf = max(t_conf, 0.7)
+                t_emotion     = 'gratitude' if 'thank' in phrase else 'neutral'
+                t_conf        = max(t_conf, 0.75)
                 was_corrected = True
                 break
-    
-    # =========================================================================
-    # STEP 2: Get polarities using explicit mapping
-    # =========================================================================
-    t_polarity = get_polarity(t_emotion)
-    a_polarity = get_polarity(a_emotion)
-    
-    # =========================================================================
-    # STEP 3: SURPRISE handling (special rule)
-    # Default: Neutral. Only Positive if audio=happy or text in [joy, gratitude]
-    # =========================================================================
-    if t_emotion == 'surprise' or t_emotion == 'surprised':
-        if a_emotion == 'happy' or t_emotion in ['joy', 'gratitude']:
-            t_polarity = 'Positive'
-        else:
-            t_polarity = 'Neutral'
-    
-    # =========================================================================
-    # STEP 4: Calculate effective weights based on role and duration
-    # =========================================================================
-    text_weight = cfg['text_weight']
+
+    # ------------------------------------------------------------------
+    # Weight calculation
+    # ------------------------------------------------------------------
+    text_weight  = cfg['text_weight']
     audio_weight = cfg['audio_weight']
-    is_short_segment = segment_duration < cfg['short_segment_threshold']
-    is_agent = speaker_role == 'AGENT'
-    
-    # Short utterances (<0.7s): text_weight=0.8, audio_weight=0.2
-    if is_short_segment:
-        text_weight = cfg['short_segment_text_weight']
+    is_short     = segment_duration < cfg['short_segment_threshold']
+    is_agent     = speaker_role == 'AGENT'
+
+    if is_short:
+        text_weight  = cfg['short_segment_text_weight']
         audio_weight = cfg['short_segment_audio_weight']
-    
-    # AGENT segments: reduce audio weight by 50%
+
     if is_agent:
-        audio_weight = audio_weight * cfg['agent_audio_weight_multiplier']
-    
-    # Effective audio confidence (for threshold checks)
-    a_conf_effective = a_conf
-    if is_short_segment:
-        a_conf_effective *= 0.5  # Penalize short segment audio
-    
-    # =========================================================================
-    # STEP 5: Disgust false-positive suppression for AGENT
-    # If AGENT + audio=disgusted + text is neutral/curiosity -> override to neutral
-    # =========================================================================
-    disgust_suppressed = False
-    if is_agent and a_emotion == 'disgusted' and t_polarity == 'Neutral':
-        disgust_suppressed = True
-    
-    # =========================================================================
-    # STEP 6: Deterministic Fusion Logic
-    # =========================================================================
-    
-    # Rule 1: Text is confident (>=75%) -> trust text
+        # Agent audio is often flat / TTS-generated → down-weight
+        audio_weight *= cfg['agent_audio_penalty']
+
+    a_conf_eff = a_conf * 0.6 if is_short else a_conf
+
+    # ------------------------------------------------------------------
+    # Fusion decision
+    # ------------------------------------------------------------------
     if t_conf >= cfg['text_confident_threshold']:
+        fused_emotion, fused_conf, source = t_emotion, t_conf, "TEXT >=70%"
+
+    elif (not is_agent and a_conf_eff >= cfg['audio_confident_threshold']) or \
+         (is_agent      and a_conf     >= cfg['audio_override_threshold']):
+        fused_emotion, fused_conf, source = a_emotion, a_conf, "AUDIO >=75%"
+
+    elif t_emotion == a_emotion:
         fused_emotion = t_emotion
-        fused_polarity = t_polarity
-        fused_conf = t_conf
-        source = "TEXT >=75%"
-    
-    # Rule 2: Audio is confident (>=75% effective, or >=80% for AGENT override)
-    elif (not is_agent and a_conf_effective >= cfg['audio_confident_threshold']) or \
-         (is_agent and a_conf >= cfg['audio_override_threshold']):
-        # Apply disgust suppression for AGENT
-        if disgust_suppressed:
-            fused_emotion = 'neutral'
-            fused_polarity = 'Neutral'
-            fused_conf = t_conf
-            source = "TEXT >=75%"  # Override to text due to disgust suppression
-        else:
-            fused_emotion = a_emotion
-            fused_polarity = a_polarity
-            fused_conf = a_conf
-            source = "AUDIO >=75%"
-    
-    # Rule 3: Both agree on polarity -> boost confidence, use text label
-    elif t_polarity == a_polarity:
-        fused_emotion = t_emotion
-        fused_polarity = t_polarity
-        fused_conf = min(1.0, (t_conf + a_conf) / 1.5)
-        source = "BOTH AGREE"
-    
-    # Rule 4: Disagreement -> weighted vote
+        fused_conf    = min(1.0, (t_conf + a_conf) / 1.5)
+        source        = "BOTH AGREE"
+
     else:
-        weighted_text = t_conf * text_weight
-        weighted_audio = a_conf_effective * audio_weight
-        
-        if weighted_text >= weighted_audio:
-            fused_emotion = t_emotion
-            fused_polarity = t_polarity
-            fused_conf = t_conf
-            source = "TEXT weighted"
+        w_text  = t_conf * text_weight
+        w_audio = a_conf_eff * audio_weight
+
+        if w_text >= w_audio:
+            fused_emotion, fused_conf, source = t_emotion, t_conf, "TEXT weighted"
         else:
-            # Apply disgust suppression for AGENT even in weighted case
-            if disgust_suppressed:
-                fused_emotion = 'neutral'
-                fused_polarity = 'Neutral'
-                fused_conf = t_conf
-                source = "TEXT weighted"  # Suppressed disgust
-            else:
-                fused_emotion = a_emotion
-                fused_polarity = a_polarity
-                fused_conf = a_conf
-                source = "AUDIO weighted"
-        
-        # Fallback: if both very low (<50%), default to neutral
-        if t_conf < 0.50 and a_conf_effective < 0.50:
+            fused_emotion, fused_conf, source = a_emotion, a_conf, "AUDIO weighted"
+
+        # Both models uncertain → default neutral, cap confidence honestly
+        if t_conf < 0.50 and a_conf_eff < 0.50:
             fused_emotion = 'neutral'
-            fused_polarity = 'Neutral'
-            fused_conf = max(t_conf, a_conf_effective)
-            source = "TEXT weighted"  # Low confidence fallback
+            fused_conf    = 0.40          # was max(t_conf, a_eff) — could be 0.49, misleading
+            source        = "LOW CONF"
 
     return {
-        'emotion': fused_emotion,
-        'sentiment': fused_polarity,
-        'confidence': fused_conf,
-        'source': source,
-        'corrected': was_corrected,
+        'emotion':          fused_emotion,
+        'confidence':       fused_conf,
+        'source':           source,
+        'corrected':        was_corrected,
         'original_emotion': original_emotion if was_corrected else None,
         'text_details': {
-            'emotion': t_emotion, 
+            'emotion':    t_emotion,
             'confidence': t_conf,
             'all_scores': text_res.get('all_scores', {})
         },
         'audio_details': {
-            'emotion': a_emotion,
+            'emotion':    a_emotion,
             'confidence': a_conf,
-            'dimensions': audio_res.get('dimensions', {}),
-            'all_scores': audio_res.get('all_scores', {})
+            'dimensions': audio_res.get('dimensions', {})
         }
     }
 
+
 # ==============================================================================
-# 2b. SPEAKER ROLE CLASSIFIER (From main.py)
+# PRODUCTION-GRADE SPEAKER ROLE CLASSIFIER  (4-component ensemble)
 # ==============================================================================
-class SpeakerRoleClassifier:
+# Removed in this version (vs. previous):
+#   • sentiment_analyzer  (cardiffnlp RoBERTa) — 0.05 weight, ~200 MB
+#   • question_classifier (shahrukhx01)        — 0.05 weight, ~70  MB
+# Their combined weight (0.10) is redistributed:
+#   zero_shot  0.30 → 0.35   (+0.05)
+#   linguistic 0.20 → 0.23   (+0.03)
+#   turn_taking 0.15 → 0.17  (+0.02)
+# This also removes ~1-1.5 s of model-load time and per-call inference.
+# ==============================================================================
+
+class ProductionSpeakerRoleClassifier:
     """
-    State-of-the-art speaker role identification using:
-    1. LLM-based zero-shot classification (BART)
-    2. Linguistic pattern analysis
-    3. Sentiment profiling
-    4. Question type detection
-    5. Conversational dynamics
+    4-component ensemble for speaker-role classification:
+        1. Zero-shot LLM  (BART-large-MNLI)   — primary semantic signal
+        2. Conversation-structure analysis     — position / greeting / closing
+        3. Linguistic-pattern matching         — industry-grade indicator sets
+        4. Relative turn-taking dynamics       — word-count ratio + solution detection
+
+    Ensemble uses confidence-weighted voting.
     """
-    
-    def __init__(self, device="cuda"):
+
+    def __init__(self, device: str = "cuda"):
         self.device = device
-        print("   Initializing speaker role classifier...")
-        
-        from transformers import pipeline
-        
-        # Zero-shot classifier
-        print("   [1/3] Loading zero-shot LLM...")
-        try:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            
-            zero_shot_model_name = "facebook/bart-large-mnli"
-            zero_shot_tokenizer = AutoTokenizer.from_pretrained(zero_shot_model_name)
-            zero_shot_model = AutoModelForSequenceClassification.from_pretrained(
-                zero_shot_model_name,
-                use_safetensors=True
-            )
-            
-            self.zero_shot_classifier = pipeline(
-                "zero-shot-classification",
-                model=zero_shot_model,
-                tokenizer=zero_shot_tokenizer,
-                device=0 if device == "cuda" else -1
-            )
-        except Exception as e:
-            print(f"      ⚠ Zero-shot model unavailable, using heuristics")
-            self.zero_shot_classifier = None
-        
-        # Sentiment analyzer
-        print("   [2/3] Loading sentiment analyzer...")
-        try:
-            # Try with safe loading (safetensors)
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            
-            sentiment_model_name = "cardiffnlp/twitter-roberta-base-sentiment-latest"
-            sentiment_tokenizer = AutoTokenizer.from_pretrained(sentiment_model_name)
-            sentiment_model = AutoModelForSequenceClassification.from_pretrained(
-                sentiment_model_name,
-                use_safetensors=True  # Force safe format
-            )
-            
-            self.sentiment_analyzer = pipeline(
-                "sentiment-analysis",
-                model=sentiment_model,
-                tokenizer=sentiment_tokenizer,
-                device=0 if device == "cuda" else -1
-            )
-        except Exception as e:
-            print(f"      ⚠ Sentiment analyzer unavailable, using fallback")
-            self.sentiment_analyzer = None
-        
-        # Question classifier
-        print("   [3/3] Loading question classifier...")
-        try:
-            self.question_classifier = pipeline(
-                "text-classification",
-                model="shahrukhx01/question-vs-statement-classifier",
-                device=0 if device == "cuda" else -1
-            )
-        except:
-            print("      ⚠ Question classifier unavailable, using fallback")
-            self.question_classifier = None
-        
-        # Linguistic patterns
+        print("   Initializing Production Speaker Role Classifier...")
+
+        from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+
+        # ----------------------------------------------------------------
+        # 1. Zero-shot classifier  (PRIMARY)
+        # ----------------------------------------------------------------
+        print("   [1/4] Loading zero-shot LLM (BART-large-MNLI)...")
+        zs_name      = "facebook/bart-large-mnli"
+        zs_tokenizer = AutoTokenizer.from_pretrained(zs_name)
+        zs_model     = AutoModelForSequenceClassification.from_pretrained(zs_name, use_safetensors=True)
+        self.zero_shot_classifier = pipeline(
+            "zero-shot-classification",
+            model=zs_model,
+            tokenizer=zs_tokenizer,
+            device=0 if device == "cuda" else -1
+        )
+
+        # ----------------------------------------------------------------
+        # 2. Conversation-structure patterns (no model — pure heuristic)
+        # ----------------------------------------------------------------
+        print("   [2/4] Initializing conversation-structure analyzer...")
+
+        # Greeting patterns — covers real-world openings broadly
+        self.greeting_patterns = [
+            r"^(hello|hi|hey|good\s+(morning|afternoon|evening))",
+            r"(thank you for (calling|contacting|reaching out))",
+            r"(you('ve)?\s+reached|this is\s+\w+\s+support)",
+            r"(how\s+(can|may)\s+(i|we)\s+(help|assist))",
+            r"(welcome to)",
+            r"(thank you for (calling|contacting)\s+)",
+            r"(this is\s+\w+\s+from)",
+            r"(i'll be (helping|assisting) you)",
+        ]
+
+        # Closing patterns — agents typically close the interaction
+        self.closing_patterns = [
+            "anything else", "is there anything", "have a great day",
+            "have a wonderful day", "thank you for calling",
+            "thank you for contacting", "take care", "goodbye",
+            "i hope that helps", "is there anything else i can do",
+            "glad i could help", "hope we got that sorted",
+        ]
+
+        # ----------------------------------------------------------------
+        # 3. Industry-grade indicator sets  (AGENT / CUSTOMER)
+        # ----------------------------------------------------------------
+        print("   [3/4] Initializing industry-grade linguistic patterns...")
+
+        #
+        # AGENT indicators — drawn from real contact-centre transcripts
+        # Strong  : almost exclusively used by agents
+        # Moderate: common in agent speech, occasional in customer speech
+        #
         self.agent_indicators = {
-            'formal_language': [
-                'understand', 'assist', 'help', 'support', 'service',
-                'appreciate', 'thank you for', 'apologize', 'certainly',
-                'i can', 'let me', 'i will', 'happy to', 'glad to'
+            'strong': [
+                # Account / system access
+                "i can see your account",  "looking at your account",
+                "pulling up your account", "i'm seeing here",
+                "on my end",               "system shows",
+                "i have your account",     "account is showing",
+                # Procedural / scripted
+                "how can i help",          "how may i help",
+                "thank you for calling",   "thank you for contacting",
+                "you've reached",          "this is tech support",
+                "my name is",              "i'll be assisting",
+                # Escalation / resolution vocabulary
+                "let me transfer",         "i'll escalate",
+                "ticket number",           "case number",
+                "reference number",        "i'll create a ticket",
+                # Verification / security
+                "can i verify",            "for security purposes",
+                "can you confirm your",    "verify your identity",
+                "date of birth please",    "account holder",
+                # Solution delivery
+                "here's what we can do",   "the steps are",
+                "you should see",          "that should fix",
+                "let me walk you through", "i'd like to help you",
+                # Status reporting
+                "there is currently",      "we are aware",
+                "known issue",             "our team is working",
+                "estimated time",          "scheduled maintenance",
             ],
-            'procedural': [
-                'need to', 'going to', 'will need', 'can i get',
-                'let me check', 'looking at', 'according to', 'shows that'
+            'moderate': [
+                "let me check",            "i understand your",
+                "i apologize for",         "let me help you",
+                "i'll assist you",         "happy to help",
+                "according to",            "shows that",
+                "i can see",               "on our side",
+                "let me look into",        "i'll look into that",
+                "bear with me",            "one moment please",
+                "i appreciate your",       "bear with me while",
+                "just a moment",           "please hold",
+                "i'll get that sorted",    "let me arrange",
             ],
-            'empathy': [
-                'understand your', 'i see', 'that must be', 'frustrating',
-                'concerning', 'definitely'
-            ]
         }
-        
+
+        #
+        # CUSTOMER indicators
+        # Strong  : almost exclusively used by customers
+        # Moderate: common in customer speech
+        #
         self.customer_indicators = {
-            'problem_framing': [
-                'my', 'i have', 'i need', 'issue', 'problem', 'wrong',
-                'not working', 'help me', 'can you', 'why is'
+            'strong': [
+                # Ownership / possession (personal problem)
+                "my phone",               "my account",
+                "my bill",                "my order",
+                "my internet",            "my service",
+                "my subscription",        "my card",
+                # Problem statements
+                "i have a problem",       "i need help",
+                "keeps crashing",         "not working",
+                "i'm having trouble",     "it stopped working",
+                "it's not working",       "it won't",
+                "doesn't work",           "broke down",
+                # Frustration / escalation demands
+                "this is ridiculous",     "this is unacceptable",
+                "i've been waiting",      "i want to speak to",
+                "i want to cancel",       "cancel my",
+                "i want a refund",        "give me a refund",
+                "i was charged",          "charged me",
+                "i didn't receive",       "never received",
+                # Warranty / entitlement
+                "under warranty",         "still under warranty",
+                "i paid for",             "i'm paying for",
             ],
-            'frustration': [
-                'upset', 'angry', 'frustrated', 'ridiculous', 'terrible',
-                'disappointed', 'unacceptable'
-            ]
+            'moderate': [
+                "can you help",           "why is",
+                "how do i",               "i've tried",
+                "i'm frustrated",         "i'm upset",
+                "nobody helps",           "this keeps happening",
+                "again?",                 "i already told",
+                "i called before",        "last time",
+                "still not fixed",        "same problem",
+                "what's going on",        "what happened to",
+            ],
         }
-        
-        print("   [OK] Speaker role classifier ready\n")
-    
-    def extract_linguistic_features(self, text: str, speaker_id: str, 
-                                   all_segments: List[Dict]) -> Dict[str, float]:
-        """Extract linguistic and conversational features"""
-        
-        text_lower = text.lower()
-        features = {}
-        
-        # Helper for saturation scoring
-        def score_indicators(indicators, text):
-            count = sum(1 for phrase in indicators if phrase in text)
-            # Presence of 2+ indicators = 100% confidence, 1 = 60%
-            return min(1.0, count * 0.6)
-        
-        # Formal language
-        features['formal_language_score'] = score_indicators(
-            self.agent_indicators['formal_language'], text_lower
-        )
-        
-        # Procedural language
-        features['procedural_score'] = score_indicators(
-            self.agent_indicators['procedural'], text_lower
-        )
-        
-        # Empathy markers
-        features['empathy_score'] = score_indicators(
-            self.agent_indicators['empathy'], text_lower
-        )
-        
-        # Problem framing (customer)
-        features['problem_framing_score'] = score_indicators(
-            self.customer_indicators['problem_framing'], text_lower
-        )
-        
-        # Frustration markers (customer)
-        features['frustration_score'] = score_indicators(
-            self.customer_indicators['frustration'], text_lower
-        )
-        
-        # Question density (Keep as density but scale it)
-        question_marks = text.count('?')
-        features['question_density'] = min(1.0, (question_marks / max(len(text.split()), 1)) * 10)
-        
-        # Average utterance length (Normalize: 20 words = 1.0)
-        speaker_segments = [s for s in all_segments if s.get('speaker') == speaker_id]
-        if speaker_segments:
-            avg_len = np.mean([len(s.get('text', '').split()) for s in speaker_segments])
-            features['avg_utterance_length'] = min(1.0, avg_len / 20.0)
-        else:
-            features['avg_utterance_length'] = 0.0
-        
-        # First speaker (Stronger signal for Agent in call center)
-        speaker_turns = [s.get('speaker') for s in all_segments]
-        first_speaker = speaker_turns[0] if speaker_turns else None
-        features['is_first_speaker'] = 1.0 if speaker_id == first_speaker else 0.0
-        
-        return features
-    
+
+        # ----------------------------------------------------------------
+        # 4. Turn-taking — no model, computed at classify time
+        # ----------------------------------------------------------------
+        print("   [4/4] Configuring ensemble weights...")
+
+        # Solution-delivery phrases (agents provide these; customers don't)
+        self.solution_phrases = [
+            "try restarting",       "clear the cache",
+            "go to settings",       "click on",
+            "you need to",          "you should",
+            "the steps are",       "first,",
+            "next,",               "then,",
+            "make sure",           "uninstall",
+            "reinstall",           "update",
+            "download",            "enable",
+            "disable",             "change your",
+            "reset your",          "restart your",
+            "check your",          "navigate to",
+            "select",              "tap on",
+            "press",               "enter your",
+        ]
+
+        # Ensemble weights (redistributed after removing sentiment + question models)
+        self.ensemble_weights = {
+            'zero_shot':             0.35,
+            'conversation_structure':0.25,
+            'linguistic_patterns':   0.23,
+            'turn_taking':           0.17,
+        }
+
+        print("   [OK] Production classifier ready\n")
+
+    # ==================================================================
+    # COMPONENT 1 — Zero-shot (BART-large-MNLI)
+    # ==================================================================
     def classify_with_zero_shot(self, text: str) -> Dict[str, float]:
-        """LLM-based zero-shot classification"""
-        
-        if self.zero_shot_classifier is None:
-            # Fallback: rule-based heuristics
-            text_lower = text.lower()
-            agent_score = 0.5
-            
-            # Agent indicators
-            if any(phrase in text_lower for phrase in ['thank you for calling', 'how can i help', 
-                                                        'let me check', 'i understand', 'my name is']):
-                agent_score += 0.3
-            if any(phrase in text_lower for phrase in ['looking at your', 'according to', 
-                                                        'i can see', 'shows that']):
-                agent_score += 0.2
-            
-            # Customer indicators
-            if any(phrase in text_lower for phrase in ['my bill', 'i have a problem', 
-                                                        'i need help', "i'm upset"]):
-                agent_score -= 0.3
-            
-            agent_score = max(0.1, min(0.9, agent_score))
-            return {'agent_prob': agent_score, 'customer_prob': 1 - agent_score}
-        
-        candidate_labels = ["customer service representative", "customer with a problem"]
-        
+        """
+        Shorter, more discriminative labels perform better with BART NLI.
+        """
+        labels = [
+            "a customer support representative",
+            "a customer seeking help"
+        ]
         try:
-            result = self.zero_shot_classifier(
-                text[:1000], candidate_labels, multi_label=False
-            )
-            agent_prob = result['scores'][0] if result['labels'][0] == candidate_labels[0] else result['scores'][1]
-            return {'agent_prob': agent_prob, 'customer_prob': 1 - agent_prob}
-        except:
-            return {'agent_prob': 0.5, 'customer_prob': 0.5}
-    
-    def analyze_sentiment_pattern(self, text: str) -> Dict[str, float]:
-        """Sentiment analysis helper"""
-        if self.sentiment_analyzer is None:
-            return {'sentiment_agent_score': 0.5, 'sentiment_confidence': 0.0}
-        
-        try:
-            result = self.sentiment_analyzer(text[:512])[0]
-            label = result['label'].lower()
-            score = result['score']
-            
-            if label == 'neutral': agent_indicator = 0.7
-            elif label == 'positive': agent_indicator = 0.6
-            else: agent_indicator = 0.2
-            
-            return {'sentiment_agent_score': agent_indicator, 'sentiment_confidence': score}
-        except:
-            return {'sentiment_agent_score': 0.5, 'sentiment_confidence': 0.0}
-    
-    def detect_question_pattern(self, text: str) -> Dict[str, float]:
-        """Question type detection"""
-        if self.question_classifier is None:
-            has_question = '?' in text
-            return {'question_agent_score': 0.6 if has_question else 0.5, 'question_confidence': 0.5}
-        
-        try:
-            result = self.question_classifier(text[:512])[0]
-            is_question = result['label'] == 'LABEL_1'
-            confidence = result['score']
-            
-            if is_question:
-                text_lower = text.lower()
-                clarifying = any(p in text_lower for p in ['can i get', 'may i have', 'could you confirm'])
-                help_seeking = any(p in text_lower for p in ['why is', 'how do i', 'can you help'])
-                
-                if clarifying: return {'question_agent_score': 0.8, 'question_confidence': confidence}
-                elif help_seeking: return {'question_agent_score': 0.2, 'question_confidence': confidence}
-            
-            return {'question_agent_score': 0.5, 'question_confidence': confidence}
-        except:
-            return {'question_agent_score': 0.5, 'question_confidence': 0.0}
-    
-    def ensemble_classification(self, features: Dict[str, float], 
-                               zero_shot: Dict[str, float],
-                               sentiment: Dict[str, float],
-                               question: Dict[str, float]) -> Tuple[str, float]:
-        """Ensemble fusion"""
-        ling_agent_prob = (
-            features['formal_language_score'] * 0.25 +
-            features['procedural_score'] * 0.25 +
-            features['empathy_score'] * 0.15 +
-            (1 - features['problem_framing_score']) * 0.15 +
-            (1 - features['frustration_score']) * 0.10 +
-            features['is_first_speaker'] * 0.10
-        )
-        agent_probability = (
-            zero_shot['agent_prob'] * 0.35 +
-            ling_agent_prob * 0.30 +
-            sentiment['sentiment_agent_score'] * 0.20 +
-            question['question_agent_score'] * 0.15
-        )
-        
-        if agent_probability > 0.55: return "AGENT", agent_probability
-        elif agent_probability < 0.45: return "CUSTOMER", 1 - agent_probability
-        else:
-            if features['is_first_speaker'] > 0.5 and features['formal_language_score'] > 0.05:
-                return "AGENT", 0.7
+            result = self.zero_shot_classifier(text[:1000], labels, multi_label=False)
+            agent_prob = result['scores'][0] if result['labels'][0] == labels[0] else result['scores'][1]
+            return {'agent_score': agent_prob, 'confidence': max(result['scores'])}
+        except Exception as e:
+            print(f"      ⚠ Zero-shot failed: {e}")
+            return {'agent_score': 0.5, 'confidence': 0.0}
+
+    # ==================================================================
+    # COMPONENT 2 — Conversation structure
+    # ==================================================================
+    def analyze_conversation_structure(self, speaker_id: str, segments: List[Dict]) -> Dict[str, float]:
+        """
+        Position-based + pattern-based structural signals.
+        Real-world nuance:
+          • First speaker in a support call is usually the AGENT (greeting).
+          • But if first utterance is a complaint → that speaker is the CUSTOMER
+            (e.g. live-chat where customer initiates).
+          • Closing patterns (is there anything else?) strongly signal AGENT.
+        """
+        all_speakers     = [s.get('speaker') for s in segments if s.get('speaker')]
+        speaker_segs     = [s for s in segments if s.get('speaker') == speaker_id]
+
+        if not speaker_segs:
+            return {'agent_score': 0.5, 'confidence': 0.0}
+
+        agent_score = 0.5
+        confidence  = 0.0
+
+        # ── Feature A: first-speaker position ──────────────────────────
+        if all_speakers and speaker_id == all_speakers[0]:
+            first_text = speaker_segs[0].get('text', '').lower()
+
+            has_greeting  = any(re.search(p, first_text) for p in self.greeting_patterns)
+            # If first utterance looks like a complaint, NOT an agent opening
+            complaint_start = any(kw in first_text for kw in [
+                "my phone", "my account", "not working", "i need help",
+                "i have a problem", "keeps crashing", "i'm having trouble",
+                "i want to", "this is ridiculous", "i called"
+            ])
+
+            if has_greeting and not complaint_start:
+                agent_score += 0.40
+                confidence   = 0.95
+            elif complaint_start:
+                agent_score -= 0.30          # this speaker is likely the customer
+                confidence   = 0.85
             else:
-                return "CUSTOMER", 0.7
-    
-    def classify_speaker_role(self, speaker_id: str, segments: List[Dict]) -> Tuple[str, float, Dict]:
-        speaker_segments = [s for s in segments if s.get('speaker') == speaker_id]
-        if not speaker_segments: return "UNKNOWN", 0.0, {}
-        
-        full_text = " ".join([s.get('text', '') for s in speaker_segments])
-        linguistic = self.extract_linguistic_features(full_text, speaker_id, segments)
-        zero_shot = self.classify_with_zero_shot(full_text)
-        sentiment = self.analyze_sentiment_pattern(full_text)
-        question = self.detect_question_pattern(full_text)
-        
-        role, conf = self.ensemble_classification(linguistic, zero_shot, sentiment, question)
-        
-        return role, conf, {
-            'ling': linguistic, 'zero': zero_shot, 'sent': sentiment, 'quest': question
+                agent_score += 0.20          # mild first-speaker bonus
+                confidence   = 0.65
+
+        # ── Feature B: greeting in first 3 utterances ──────────────────
+        first_three = " ".join(s.get('text', '') for s in speaker_segs[:3]).lower()
+        if any(re.search(p, first_three) for p in self.greeting_patterns):
+            agent_score += 0.15
+            confidence   = max(confidence, 0.80)
+
+        # ── Feature C: closing patterns (strong agent signal) ──────────
+        if len(speaker_segs) > 1:
+            last_two = " ".join(s.get('text', '') for s in speaker_segs[-2:]).lower()
+            if any(cp in last_two for cp in self.closing_patterns):
+                agent_score += 0.15
+                confidence   = max(confidence, 0.85)
+
+        agent_score = max(0.0, min(1.0, agent_score))
+        return {'agent_score': agent_score, 'confidence': confidence}
+
+    # ==================================================================
+    # COMPONENT 3 — Linguistic pattern matching (industry-grade)
+    # ==================================================================
+    def analyze_linguistic_patterns(self, text: str) -> Dict[str, float]:
+        """
+        Weighted scoring across strong / moderate tiers.
+        Weak-tier removed — they added noise with minimal signal.
+        """
+        text_lower = text.lower()
+
+        # --- AGENT ---
+        strong_a   = sum(1 for p in self.agent_indicators['strong']   if p in text_lower)
+        moderate_a = sum(1 for p in self.agent_indicators['moderate'] if p in text_lower)
+        agent_raw  = strong_a * 0.40 + moderate_a * 0.18
+
+        # --- CUSTOMER ---
+        strong_c   = sum(1 for p in self.customer_indicators['strong']   if p in text_lower)
+        moderate_c = sum(1 for p in self.customer_indicators['moderate'] if p in text_lower)
+        cust_raw   = strong_c * 0.40 + moderate_c * 0.18
+
+        # Net score: 0.5 = neutral
+        agent_score = max(0.0, min(1.0, 0.5 + agent_raw - cust_raw))
+
+        # Confidence calibration based on tier hit
+        if strong_a > 0 or strong_c > 0:
+            conf = 0.92
+        elif moderate_a > 0 or moderate_c > 0:
+            conf = 0.72
+        else:
+            conf = 0.30          # no hits → low confidence
+
+        return {'agent_score': agent_score, 'confidence': conf}
+
+    # ==================================================================
+    # COMPONENT 4 — Relative turn-taking + solution detection
+    # ==================================================================
+    def analyze_turn_taking(self, speaker_id: str, segments: List[Dict]) -> Dict[str, float]:
+        """
+        Compares THIS speaker's stats against the OTHER speaker(s) rather than
+        using absolute thresholds.  Also counts solution-delivery phrases —
+        only agents deliver step-by-step solutions.
+
+        Signals:
+          • Relative avg-words-per-turn  (agents tend to be longer)
+          • Relative question density    (agents ask diagnostic questions)
+          • Solution-phrase count        (agents deliver fixes)
+        """
+        all_speakers   = list({s.get('speaker') for s in segments if s.get('speaker')})
+        speaker_segs   = [s for s in segments if s.get('speaker') == speaker_id]
+        other_segs     = [s for s in segments if s.get('speaker') != speaker_id and s.get('speaker')]
+
+        if not speaker_segs:
+            return {'agent_score': 0.5, 'confidence': 0.0}
+
+        # ── avg words per turn (relative) ──────────────────────────────
+        my_words   = np.mean([len(s.get('text', '').split()) for s in speaker_segs])
+        other_words = np.mean([len(s.get('text', '').split()) for s in other_segs]) if other_segs else my_words
+
+        if other_words > 0:
+            ratio = my_words / other_words       # >1 → this speaker talks more per turn
+        else:
+            ratio = 1.0
+
+        if ratio > 1.3:
+            word_score, word_conf = 0.70, 0.65
+        elif ratio < 0.75:
+            word_score, word_conf = 0.30, 0.65
+        else:
+            word_score, word_conf = 0.50, 0.35
+
+        # ── question density (relative) ────────────────────────────────
+        my_text   = " ".join(s.get('text', '') for s in speaker_segs)
+        other_text= " ".join(s.get('text', '') for s in other_segs) if other_segs else ""
+
+        my_q   = my_text.count('?')   / max(len(speaker_segs), 1)
+        other_q= other_text.count('?')/ max(len(other_segs), 1) if other_segs else 0.0
+
+        if my_q > other_q + 0.15:        # I ask notably more questions
+            q_score, q_conf = 0.65, 0.60
+        elif my_q < other_q - 0.15:
+            q_score, q_conf = 0.35, 0.60
+        else:
+            q_score, q_conf = 0.50, 0.30
+
+        # ── solution-phrase count ──────────────────────────────────────
+        my_solutions = sum(1 for p in self.solution_phrases if p in my_text.lower())
+        if my_solutions >= 2:
+            sol_score, sol_conf = 0.85, 0.80
+        elif my_solutions == 1:
+            sol_score, sol_conf = 0.70, 0.55
+        else:
+            sol_score, sol_conf = 0.50, 0.25
+
+        # ── weighted sub-combination ───────────────────────────────────
+        # Solution detection is the strongest single signal here
+        agent_score = (word_score * 0.30 + q_score * 0.25 + sol_score * 0.45)
+        confidence  = (word_conf  * 0.30 + q_conf  * 0.25 + sol_conf  * 0.45)
+
+        agent_score = max(0.0, min(1.0, agent_score))
+        return {'agent_score': agent_score, 'confidence': confidence}
+
+    # ==================================================================
+    # ENSEMBLE FUSION
+    # ==================================================================
+    def ensemble_classification(self,
+                                zero_shot:  Dict,
+                                structure:  Dict,
+                                linguistic: Dict,
+                                turn_taking:Dict) -> Tuple[str, float, Dict]:
+        """
+        Confidence-weighted voting across 4 components.
+        """
+        components = {
+            'zero_shot':              zero_shot,
+            'conversation_structure': structure,
+            'linguistic_patterns':    linguistic,
+            'turn_taking':            turn_taking,
         }
+
+        weighted_sum  = 0.0
+        total_weight  = 0.0
+        debug_info    = {}
+
+        for name, comp in components.items():
+            base_w = self.ensemble_weights[name]
+            score  = comp['agent_score']
+            conf   = comp['confidence']
+
+            # effective weight ramps from base_w*0.5 (conf=0) to base_w*1.0 (conf=1)
+            eff_w = base_w * (0.5 + conf * 0.5)
+
+            weighted_sum += score * eff_w
+            total_weight += eff_w
+
+            debug_info[name] = {
+                'score':            score,
+                'confidence':       conf,
+                'effective_weight': eff_w
+            }
+
+        agent_prob = weighted_sum / total_weight if total_weight > 0 else 0.5
+
+        # ── decision with hysteresis band ──────────────────────────────
+        if agent_prob > 0.55:
+            role, final_conf = "AGENT", agent_prob
+        elif agent_prob < 0.45:
+            role, final_conf = "CUSTOMER", 1 - agent_prob
+        else:
+            # Tie-break: lean on conversation structure (most reliable positional signal)
+            if structure['agent_score'] > 0.55:
+                role, final_conf = "AGENT",    0.68
+            else:
+                role, final_conf = "CUSTOMER", 0.68
+
+        debug_info['final'] = {
+            'agent_probability': agent_prob,
+            'role':              role,
+            'final_confidence':  final_conf,
+        }
+        return role, final_conf, debug_info
+
+    # ==================================================================
+    # PUBLIC API
+    # ==================================================================
+    def classify_speaker_role(self, speaker_id: str, segments: List[Dict]) -> Tuple[str, float, Dict]:
+        speaker_segs = [s for s in segments if s.get('speaker') == speaker_id]
+        if not speaker_segs:
+            return "UNKNOWN", 0.0, {}
+
+        full_text = " ".join(s.get('text', '') for s in speaker_segs)
+
+        zs  = self.classify_with_zero_shot(full_text)
+        st  = self.analyze_conversation_structure(speaker_id, segments)
+        ling= self.analyze_linguistic_patterns(full_text)
+        tt  = self.analyze_turn_taking(speaker_id, segments)
+
+        return self.ensemble_classification(zs, st, ling, tt)
 
     def classify_all_speakers(self, segments: List[Dict]) -> Dict[str, str]:
-        speakers = list(set(s.get('speaker') for s in segments if s.get('speaker')))
-        results = {}
-        print("   Classifying speaker roles...")
-        for speaker in speakers:
-            role, conf, details = self.classify_speaker_role(speaker, segments)
-            results[speaker] = role
-            print(f"   {speaker}: {role} (confidence: {conf:.2f})")
-                  
+        speakers = list({s.get('speaker') for s in segments if s.get('speaker')})
+        results  = {}
+
+        print("   Classifying speaker roles (Production Ensemble)...")
+        print("   " + "=" * 60)
+
+        for spk in speakers:
+            role, conf, debug = self.classify_speaker_role(spk, segments)
+            results[spk] = role
+
+            print(f"\n   {spk}: {role} (confidence: {conf:.2f})")
+            print(f"   Component breakdown:")
+            for comp_name, info in debug.items():
+                if comp_name != 'final':
+                    print(f"      • {comp_name:25s}: score={info['score']:.2f}, "
+                          f"conf={info['confidence']:.2f}, weight={info['effective_weight']:.3f}")
+
+        print("   " + "=" * 60)
+
+        # ── post-processing: ensure role diversity ────────────────────
+        if len(results) == 2:
+            speakers_list = list(results.keys())
+            roles         = [results[s] for s in speakers_list]
+
+            if roles[0] == roles[1]:
+                # Both same role → use first-speaker heuristic as fallback
+                all_spk      = [s.get('speaker') for s in segments if s.get('speaker')]
+                first_speaker= all_spk[0] if all_spk else speakers_list[0]
+
+                print(f"\n   >> Both classified as {roles[0]}. "
+                      f"Applying first-speaker heuristic: {first_speaker} → AGENT")
+
+                results[first_speaker] = 'AGENT'
+                other = [s for s in speakers_list if s != first_speaker][0]
+                results[other]         = 'CUSTOMER'
+
         return results
 
-def detect_overlaps(segments, threshold=0.1):
-    """
-    Detect overlapping segments in a sorted list of segments.
-    Mark segments with 'overlap': True if they intersect with others.
-    """
-    # Sort just in case
-    segments = sorted(segments, key=lambda x: x['start'])
-    
-    for i in range(len(segments)):
-        if 'overlap' not in segments[i]:
-            segments[i]['overlap'] = False
-            
-    for i in range(len(segments)):
-        curr = segments[i]
-        
-        # Check subsequent segments
-        for j in range(i + 1, len(segments)):
-            next_seg = segments[j]
-            
-            # If next segment starts after current ends, no more overlap possible (sorted)
-            if next_seg['start'] >= curr['end']:
-                break
-                
-            # Overlap found
-            curr['overlap'] = True
-            next_seg['overlap'] = True
-            
-    return segments
 
 # ==============================================================================
-# 3. MAIN PIPELINE (Memory Optimized)
+# OVERLAP DETECTION
 # ==============================================================================
+
+def detect_overlaps(segments: List[Dict], threshold: float = 0.1) -> List[Dict]:
+    segments = sorted(segments, key=lambda x: x['start'])
+    for seg in segments:
+        seg.setdefault('overlap', False)
+
+    for i, curr in enumerate(segments):
+        for j in range(i + 1, len(segments)):
+            nxt = segments[j]
+            if nxt['start'] >= curr['end']:
+                break
+            curr['overlap'] = True
+            nxt ['overlap'] = True
+    return segments
+
+
+# ==============================================================================
+# MAIN PIPELINE
+# ==============================================================================
+
 class CombinedPipeline:
-    def __init__(self, whisper_model_size="large-v2"):
+    def __init__(self, whisper_model_size: str = "large-v2"):
         self.whisper_model_size = whisper_model_size
-        print("\n=== Initializing Combined Pipeline (Sequential Loading) ===")
-        # Models will be loaded on demand to save VRAM
-        
+        print("\n=== Initializing Production Pipeline ===")
+
+    # ------------------------------------------------------------------
+    # Phase 1 helpers
+    # ------------------------------------------------------------------
     def _load_whisper_and_diarize(self):
         print(">> Loading ASR & Diarization Models...")
         import whisperx
         from whisperx.diarize import DiarizationPipeline
-        
-        # 1. ASR
-        asr_model = whisperx.load_model(self.whisper_model_size, DEVICE, compute_type=COMPUTE_TYPE)
+
+        asr_model     = whisperx.load_model(self.whisper_model_size, DEVICE, compute_type=COMPUTE_TYPE)
         print("     [OK] WhisperX Loaded")
-        
-        # 2. Diarization
         diarize_model = DiarizationPipeline(use_auth_token=HF_TOKEN, device=DEVICE)
         print("     [OK] Diarization Loaded")
-        
         return whisperx, asr_model, diarize_model
 
+    # ------------------------------------------------------------------
+    # Phase 2 helpers
+    # ------------------------------------------------------------------
     def _load_analysis_models(self):
         print(">> Loading Analysis Models (Emotion & Role)...")
         return {
-            'text': TextEmotionClassifier(),
+            'text':  TextEmotionClassifier(),
             'audio': AudioEmotionClassifier(),
-            'role': SpeakerRoleClassifier(device=DEVICE)
+            'role':  ProductionSpeakerRoleClassifier(device=DEVICE),
         }
 
-    def process(self, audio_path, language=None):
+    # ------------------------------------------------------------------
+    # Main entry
+    # ------------------------------------------------------------------
+    def process(self, audio_path: str, language: str = None) -> List[Dict]:
         if not os.path.exists(audio_path):
             print(f"❌ File not found: {audio_path}")
-            return
-            
+            return []
+
         print(f"Processing: {audio_path}")
-        
-        # PHASE 1: ASR & DIARIZATION
+        start_time = time.time()
+
+        # ============================================================
+        # PHASE 1 — ASR + DIARIZATION
+        # ============================================================
         whisperx, asr_model, diarize_model = self._load_whisper_and_diarize()
-        
-        # 1. Transcribe
+
         print(">> Step 1: Transcribing...")
-        # Load audio using WhisperX
-        audio = whisperx.load_audio(audio_path)
-        batch_size = 16
-        result = asr_model.transcribe(audio, batch_size=batch_size, language=language)
+        audio  = whisperx.load_audio(audio_path)
+        result = asr_model.transcribe(audio, batch_size=16, language=language)
         language = result["language"]
         print(f"   Language: {language}")
-        
-        # 2. Align
+
         print(">> Step 2: Aligning...")
         model_a, metadata = whisperx.load_align_model(language_code=language, device=DEVICE)
-        result = whisperx.align(result["segments"], model_a, metadata, audio, DEVICE, return_char_alignments=False)
-        
-        # 3. Diarize
+        result = whisperx.align(result["segments"], model_a, metadata, audio, DEVICE,
+                                return_char_alignments=False)
+
         print(">> Step 3: Diarizing...")
         diarize_segments = diarize_model(audio)
         result = whisperx.assign_word_speakers(diarize_segments, result)
-        
-        # 4. Overlap Detection
-        print(">> Step 3b: Detecting Overlaps...")
+
+        print(">> Step 4: Detecting Overlaps...")
         result["segments"] = detect_overlaps(result["segments"])
-        
-        # CLEANUP PHASE 1
-        print(">> Cleaning up ASR models to free VRAM...")
-        del asr_model
-        del diarize_model
-        del model_a
+
+        # Cleanup Phase 1 models immediately
+        print(">> Cleaning up ASR models...")
+        del asr_model, diarize_model, model_a
         gc.collect()
         if DEVICE == "cuda":
             torch.cuda.empty_cache()
         print("     [OK] Memory Freed")
-            
-        # PHASE 2: ANALYSIS
-        print(">> Step 4a: Identifying Speaker Roles...")
-        # Load analysis models now that VRAM is free
-        analysis_models = self._load_analysis_models()
-        role_classifier = analysis_models['role']
-        text_classifier = analysis_models['text']
-        audio_classifier = analysis_models['audio']
 
-        # Flatten segments for classification context
-        all_segments_flat = []
-        for segment in result["segments"]:
-            all_segments_flat.append({
-                "text": segment["text"].strip(),
-                "speaker": segment.get("speaker", "UNKNOWN")
-            })
-        speaker_roles = role_classifier.classify_all_speakers(all_segments_flat)
-        
-        # 5. Emotion Analysis
-        print(">> Step 5: Analyzing Emotions (Multimodal Fusion)...")
+        # ============================================================
+        # PHASE 2 — ROLE + EMOTION ANALYSIS
+        # ============================================================
+        print(">> Step 5: Speaker Role Classification...")
+        models         = self._load_analysis_models()
+        role_clf       = models['role']
+        text_clf       = models['text']
+        audio_clf      = models['audio']
+
+        # Build flat segment list for role classifier
+        flat_segments = [
+            {"text": seg["text"].strip(), "speaker": seg.get("speaker", "UNKNOWN")}
+            for seg in result["segments"]
+        ]
+        speaker_roles = role_clf.classify_all_speakers(flat_segments)
+
+        # ── free role classifier (BART-large) before emotion inference ──
+        del role_clf, models['role']
+        gc.collect()
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
+        print("     [OK] Role classifier freed")
+
+        # ============================================================
+        # PHASE 3 — EMOTION (batched text + sequential audio)
+        # ============================================================
+        print("\n>> Step 6: Analyzing Emotions...")
+
+        # --- Batch all text-emotion predictions in one forward pass ---
+        all_texts       = [seg["text"].strip() for seg in result["segments"]]
+        text_predictions= text_clf.predict_batch(all_texts)
+
+        # --- Load audio once, slice per segment ---
+        full_audio, _sr = librosa.load(audio_path, sr=16000)
+
         final_segments = []
-        
-        # Load audio for feature extraction
-        full_audio_librosa, sr = librosa.load(audio_path, sr=16000)
-        
-        for segment in result["segments"]:
-            start = segment["start"]
-            end = segment["end"]
-            text = segment["text"].strip()
-            speaker = segment.get("speaker", "UNKNOWN")
-            role = speaker_roles.get(speaker, "UNKNOWN")
-            
-            # Extract Audio Config
-            start_sample = int(start * 16000)
-            end_sample = int(end * 16000)
-            audio_segment = full_audio_librosa[start_sample:end_sample]
-            
-            # Predict
-            text_res = text_classifier.predict(text)
-            audio_res = audio_classifier.predict(audio_segment)
-            
-            # Fuse (pass segment duration and speaker role for adjustments)
-            segment_duration = end - start
-            fusion = apply_fusion_logic(text_res, audio_res, text, segment_duration, speaker_role=role)
-            
+        for idx, seg in enumerate(result["segments"]):
+            start   = seg["start"]
+            end     = seg["end"]
+            text    = seg["text"].strip()
+            speaker = seg.get("speaker", "UNKNOWN")
+            role    = speaker_roles.get(speaker, "UNKNOWN")
+
+            # Audio slice
+            audio_seg = full_audio[int(start * 16000):int(end * 16000)]
+            audio_res = audio_clf.predict(audio_seg)
+
+            # Text result already computed in batch
+            text_res  = text_predictions[idx]
+
+            # Fusion
+            fusion = apply_fusion_logic(text_res, audio_res, text,
+                                        segment_duration=end - start,
+                                        speaker_role=role)
+
             final_segments.append({
-                "start": start,
-                "end": end,
-                "speaker": speaker,
-                "role": role,
-                "text": text,
-                "emotion_analysis": fusion
+                "start":            start,
+                "end":              end,
+                "speaker":          speaker,
+                "role":             role,
+                "text":             text,
+                "emotion_analysis": fusion,
             })
-            
-            self._print_utterance(
-                speaker, role, text, start, end,
-                text_res, audio_res, fusion,
-                is_overlap=segment.get('overlap', False)
-            )
-            
+
+            self._print_utterance(speaker, role, text, start, end,
+                                  text_res, audio_res, fusion,
+                                  is_overlap=seg.get('overlap', False))
+
+        elapsed = time.time() - start_time
+        print(f"\n>> Total processing time: {elapsed:.1f}s")
         return final_segments
 
-    def _print_utterance(self, speaker, role, text, start, end, text_res, audio_res, fusion, is_overlap=False):
-        """Print detailed utterance with both text and audio emotions."""
+    # ------------------------------------------------------------------
+    # Pretty-print
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _print_utterance(speaker, role, text, start, end, text_res, audio_res, fusion, is_overlap=False):
         overlap_tag = " [OVERLAP]" if is_overlap else ""
-        
-        # Text emotion details
-        t_emo = text_res['emotion']
-        t_conf = text_res['confidence']
-        t_sent = text_res['sentiment']
-        
-        # Audio emotion details
-        a_emo = audio_res['emotion']
-        a_conf = audio_res['confidence']
-        a_sent = audio_res['sentiment']
-        dims = audio_res.get('dimensions', {})
-        dims_str = ""
-        if dims:
-            dims_str = f" [V:{dims.get('valence', 0):.2f} A:{dims.get('arousal', 0):.2f} D:{dims.get('dominance', 0):.2f}]"
-        
-        # Fused result
-        f_emo = fusion['emotion']
-        f_conf = fusion['confidence']
-        f_sent = fusion['sentiment']
-        f_src = fusion['source']
-        
-        # Correction info
-        corrected_str = ""
-        if fusion.get('corrected') and fusion.get('original_emotion'):
-            corrected_str = f" (was: {fusion['original_emotion']} -> corrected)"
-        
-        # Print
+
+        t_emo, t_conf = text_res['emotion'],  text_res['confidence']
+        a_emo, a_conf = audio_res['emotion'], audio_res['confidence']
+        dims          = audio_res.get('dimensions', {})
+        dims_str      = (f" [V:{dims.get('valence',0):.2f} "
+                         f"A:{dims.get('arousal',0):.2f} "
+                         f"D:{dims.get('dominance',0):.2f}]") if dims else ""
+
+        f_emo, f_conf, f_src = fusion['emotion'], fusion['confidence'], fusion['source']
+        corrected_str = (f" (was: {fusion['original_emotion']})"
+                         if fusion.get('corrected') and fusion.get('original_emotion') else "")
+
         print(f"\n[{start:.1f}s-{end:.1f}s] {role}{overlap_tag}")
         print(f"   Text: \"{text[:70]}{'...' if len(text) > 70 else ''}\"")
-        print(f"   Text Emotion:  {t_emo:12s} ({t_conf:5.1%}) -> {t_sent}{corrected_str}")
-        print(f"   Audio Emotion: {a_emo:12s} ({a_conf:5.1%}) -> {a_sent}{dims_str}")
-        
-        # Show fusion decision with new deterministic labels
-        source_labels = {
-            'text-confident': 'TEXT >=75%',
-            'audio-confident': 'AUDIO >=75%',
-            'both-agree': 'BOTH AGREE',
-            'text-weighted': 'TEXT weighted',
-            'audio-weighted': 'AUDIO weighted',
-            'low-conf-neutral': 'LOW CONF->NEUTRAL'
-        }
-        label = source_labels.get(f_src, f_src.upper())
-        print(f"   >> Fused:      {f_emo:12s} ({f_conf:5.1%}) -> {f_sent} [{label}]")
+        print(f"   Text Emotion:  {t_emo:12s} ({t_conf:5.1%}){corrected_str}")
+        print(f"   Audio Emotion: {a_emo:12s} ({a_conf:5.1%}){dims_str}")
+        print(f"   >> Fused:      {f_emo:12s} ({f_conf:5.1%}) [{f_src}]")
 
 
 # ==============================================================================
-# MAIN EXECUTION
+# JSON SERIALIZATION HELPER
 # ==============================================================================
+
 def save_results_json(results: List[Dict], output_path: str):
-    """Save results to JSON with full emotion scores for analysis."""
-    def convert_numpy(obj):
-        if isinstance(obj, (np.floating, np.float32, np.float64)):
-            return float(obj)
-        if isinstance(obj, (np.integer, np.int32, np.int64)):
-            return int(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
+    def _convert(obj):
+        if isinstance(obj, dict):  return {k: _convert(v) for k, v in obj.items()}
+        if isinstance(obj, list):  return [_convert(v) for v in obj]
+        if isinstance(obj, (np.floating,)):  return float(obj)
+        if isinstance(obj, (np.integer,)):   return int(obj)
+        if isinstance(obj, np.ndarray):      return obj.tolist()
         return obj
-    
-    def deep_convert(obj):
-        if isinstance(obj, dict):
-            return {k: deep_convert(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [deep_convert(v) for v in obj]
-        return convert_numpy(obj)
-    
+
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(deep_convert(results), f, indent=2, ensure_ascii=False)
+        json.dump(_convert(results), f, indent=2, ensure_ascii=False)
     print(f"\n[OK] Results saved to: {output_path}")
 
 
+# ==============================================================================
+# CLI
+# ==============================================================================
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="VocalMind Combined Pipeline")
-    parser.add_argument("--audio", type=str, default=DEFAULT_AUDIO_FILE, help=f"Input audio file (default: {DEFAULT_AUDIO_FILE})")
-    parser.add_argument("--language", type=str, default="en", help="Language code (e.g. en, ar) to skip detection")
-    parser.add_argument("--output", type=str, help="Save results to JSON file (includes raw emotion scores)")
+    parser = argparse.ArgumentParser(description="VocalMind Production Pipeline v2 (Optimized)")
+    parser.add_argument("--audio",    type=str, default=DEFAULT_AUDIO_FILE, help="Input audio file")
+    parser.add_argument("--language", type=str, default="en",               help="Language code")
+    parser.add_argument("--output",   type=str,                             help="Save results to JSON")
     args = parser.parse_args()
-    
-    # Support running without args (uses DEFAULT_AUDIO_FILE)
+
     if not os.path.exists(args.audio):
         print(f"❌ Audio file not found: {args.audio}")
         sys.exit(1)
-    
+
     pipeline = CombinedPipeline()
-    results = pipeline.process(args.audio, language=args.language)
-    
+    results  = pipeline.process(args.audio, language=args.language)
+
     if args.output and results:
         save_results_json(results, args.output)
-    
-    print("\n" + "="*50)
+
+    print("\n" + "=" * 50)
     print("DONE.")
