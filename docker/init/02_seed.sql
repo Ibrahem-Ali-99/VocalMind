@@ -12,11 +12,11 @@ INSERT INTO organizations (id, name, status) VALUES
 
 -- Users (5)
 INSERT INTO users (id, organization_id, email, password_hash, name, role, is_active) VALUES
-  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'galal@niletech.com', '$2b$12$seedhashplaceholder001', 'Galal', 'admin', true),
-  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'ibrahem@cairoconnect.com', '$2b$12$seedhashplaceholder002', 'Ibrahem', 'manager', true),
-  ('b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000003', 'mohamed@pyramidsupport.com', '$2b$12$seedhashplaceholder003', 'Mohamed', 'admin', true),
-  ('b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000004', 'hassan@deltaservices.com', '$2b$12$seedhashplaceholder004', 'Hassan', 'manager', true),
-  ('b0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000005', 'ahmed@sphinxtelecom.com', '$2b$12$seedhashplaceholder005', 'Ahmed', 'manager', true);
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'galal@niletech.com', '$2b$12$AFRCHautK6RH8B71i8S7re7yYl9GwktqlBbu6aSUpgO9peeVPGsiq', 'Galal', 'admin', true),
+  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'ibrahem@cairoconnect.com', '$2b$12$AFRCHautK6RH8B71i8S7re7yYl9GwktqlBbu6aSUpgO9peeVPGsiq', 'Ibrahem', 'manager', true),
+  ('b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000003', 'mohamed@pyramidsupport.com', '$2b$12$AFRCHautK6RH8B71i8S7re7yYl9GwktqlBbu6aSUpgO9peeVPGsiq', 'Mohamed', 'admin', true),
+  ('b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000004', 'hassan@deltaservices.com', '$2b$12$AFRCHautK6RH8B71i8S7re7yYl9GwktqlBbu6aSUpgO9peeVPGsiq', 'Hassan', 'manager', true),
+  ('b0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000005', 'ahmed@sphinxtelecom.com', '$2b$12$AFRCHautK6RH8B71i8S7re7yYl9GwktqlBbu6aSUpgO9peeVPGsiq', 'Ahmed', 'manager', true);
 
 -- Agents (5)
 INSERT INTO agents (id, organization_id, agent_code, agent_type, department, is_active) VALUES
