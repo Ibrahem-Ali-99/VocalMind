@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:17
+    container_name: vocalmind-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: vocalmind
+      POSTGRES_USER: vocalmind
+      POSTGRES_PASSWORD: vocalmind_dev
+    volumes:
+      - vocalmind_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vocalmind"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  vocalmind_data:
