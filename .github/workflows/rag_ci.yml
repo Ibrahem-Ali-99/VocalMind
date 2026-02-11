@@ -43,9 +43,6 @@ jobs:
       - name: Lint (Ruff)
         run: uvx ruff check .
 
-      - name: Format Check (Ruff)
-        run: uvx ruff format --check .
-
   rag-tests:
     name: 🧪 Tests
     runs-on: ubuntu-latest

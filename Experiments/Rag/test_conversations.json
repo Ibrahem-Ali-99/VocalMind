@@ -1,0 +1,33 @@
+[
+  [
+    {"speaker": "agent", "emotion": "professional", "text": "Tech Support, this is Sarah. How can I help?"},
+    {"speaker": "client", "emotion": "frustrated", "text": "My internet is down again. It's been out for 2 hours."},
+    {"speaker": "agent", "emotion": "calm", "text": "I'm sorry to hear that. let me check your line... Ah, I see a signal issue. I'll reset your connection from here."},
+    {"speaker": "client", "emotion": "hopeful", "text": "Okay, waiting."},
+    {"speaker": "agent", "emotion": "informative", "text": "Reset complete. Please restart your router."},
+    {"speaker": "client", "emotion": "happy", "text": "It's working now! Thanks Sarah."},
+    {"speaker": "agent", "emotion": "professional", "text": "You're welcome. Have a great day!"}
+  ],
+  [
+    {"speaker": "agent", "emotion": "professional", "text": "Billing department, Alex speaking."},
+    {"speaker": "client", "emotion": "angry", "text": "You charged me double this month! I want a refund immediately."},
+    {"speaker": "agent", "emotion": "defensive", "text": "Sir, looking at the logs, you made international calls. Those are not covered."},
+    {"speaker": "client", "emotion": "furious", "text": "I never made those calls! This is fraud. I'm cancelling my service."},
+    {"speaker": "agent", "emotion": "dismissive", "text": "That is your choice. The charges stand."},
+    {"speaker": "client", "emotion": "angry", "text": "I'm reporting this to the consumer forum. Goodbye."}
+  ],
+  [
+    {"speaker": "agent", "emotion": "professional", "text": "Hello, Amazon support."},
+    {"speaker": "client", "emotion": "worried", "text": "My package was marked delivered but I didn't receive it."},
+    {"speaker": "agent", "emotion": "helpful", "text": "Let me track that for you... It says left at front porch."},
+    {"speaker": "client", "emotion": "confused", "text": "I checked everywhere, it's not there."},
+    {"speaker": "agent", "emotion": "empathetic", "text": "I understand. Since you can't find it, I will issue a full replacement shipment right away. It should arrive tomorrow."},
+    {"speaker": "client", "emotion": "relieved", "text": "Oh thank goodness. That's a relief. Thank you."}
+  ],
+  [
+    {"speaker": "agent", "emotion": "professional", "text": "Support, how can I help?"},
+    {"speaker": "client", "emotion": "neutral", "text": "I need to change my password."},
+    {"speaker": "agent", "emotion": "informative", "text": "You can do that by going to Settings > Security > Change Password."},
+    {"speaker": "client", "emotion": "neutral", "text": "Okay, I see the menu options."}
+  ]
+]
