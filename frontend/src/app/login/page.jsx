@@ -55,7 +55,7 @@ export default function LoginPage() {
                 {/* Logo */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center gap-3 mb-4">
-                        <Image src="/images/logo-icon.svg" alt="" width={48} height={48} style={{ width: 'auto', height: 'auto' }} />
+                        <Image src="/images/logo-icon.svg" alt="" width={48} height={48} className="w-12 h-12" />
                         <h1 className="text-3xl font-bold text-white">VocalMind</h1>
                     </div>
                     <p className="text-gray-400">Sign in to your account</p>

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useAuth } from '@/components/providers/AuthProvider'
 
 const SearchIcon = () => (
     <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -61,6 +62,7 @@ const getMockUser = (pathname) => {
 export default function Header({ onMenuClick }) {
     const pathname = usePathname()
     const router = useRouter()
+    const { logout } = useAuth()
     const [profileOpen, setProfileOpen] = useState(false)
     const dropdownRef = useRef(null)
 
@@ -190,9 +192,9 @@ export default function Header({ onMenuClick }) {
                             </div>
 
                             <div className="border-t border-gray-100 mt-1 pt-1">
-                                <Link
-                                    href="/login"
-                                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left"
+                                <button
+                                    onClick={() => { setProfileOpen(false); logout(); }}
+                                    className="flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left cursor-pointer"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path
@@ -203,7 +205,7 @@ export default function Header({ onMenuClick }) {
                                         />
                                     </svg>
                                     Sign Out
-                                </Link>
+                                </button>
                             </div>
                         </div>
                     )}

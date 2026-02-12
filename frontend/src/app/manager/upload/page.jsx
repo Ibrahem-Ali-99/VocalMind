@@ -51,10 +51,10 @@ export default function UploadPage() {
         <div className="max-w-3xl mx-auto">
             <h1 className="text-2xl font-semibold text-gray-900 mb-6">Upload Calls</h1>
 
-            <div className="bg-white rounded-xl shadow-card p-6">
+            <div className="bg-white rounded-xl shadow-card p-4 sm:p-6">
                 {/* Drop Zone */}
                 <div
-                    className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${dragActive
+                    className={`border-2 border-dashed rounded-xl p-8 sm:p-12 text-center transition-all ${dragActive
                         ? 'border-cyan bg-cyan/5'
                         : 'border-gray-200 hover:border-gray-300'
                         }`}
@@ -72,14 +72,6 @@ export default function UploadPage() {
                     <p className="text-sm text-gray-400">
                         Supports MP3, WAV, M4A up to 100MB each
                     </p>
-                    <input
-                        type="file"
-                        multiple
-                        accept="audio/*,.wav,.mp3,.m4a"
-                        onChange={handleFileInput}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        style={{ position: 'relative' }}
-                    />
                     <label className="mt-4 inline-block">
                         <input
                             type="file"

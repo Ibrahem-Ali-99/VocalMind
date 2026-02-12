@@ -136,7 +136,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, onToggle, onClose, na
                     className="flex items-center gap-3 hover:opacity-80 transition-opacity flex-1"
                 >
                     <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center w-full' : ''}`}>
-                        <Image src="/images/logo-icon.svg" alt="" width={32} height={32} className="flex-shrink-0" style={{ width: 'auto', height: 'auto' }} />
+                        <Image src="/images/logo-icon.svg" alt="" width={32} height={32} className="flex-shrink-0 w-8 h-8" />
                         {!isCollapsed && (
                             <span className="font-bold text-xl tracking-tight text-white whitespace-nowrap">
                                 VocalMind

@@ -48,7 +48,7 @@ export default function AgentCallsPage() {
 
     return (
         <div className="max-w-5xl mx-auto">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
                 <div>
                     <h1 className="text-2xl font-semibold text-gray-900">My Call History</h1>
                     <p className="text-gray-500 mt-1">{calls.length} calls</p>
@@ -62,7 +62,35 @@ export default function AgentCallsPage() {
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-card overflow-hidden">
+            {/* Mobile: Card Layout */}
+            <div className="space-y-3 md:hidden">
+                {calls.map((call) => (
+                    <div key={call.id} className="bg-white rounded-xl shadow-card p-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-900">{call.customer}</span>
+                            <StatusBadge status={call.status} />
+                        </div>
+                        <div className="flex items-center justify-between text-sm text-gray-500 mb-3">
+                            <span>{call.date}</span>
+                            <span>{call.duration}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span className={`text-sm font-medium ${call.score >= 4.0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                Score: {call.score}
+                            </span>
+                            <button
+                                onClick={() => router.push(`/session/${call.id}`)}
+                                className="text-cyan hover:text-cyan-dark text-sm font-medium"
+                            >
+                                Review
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Desktop: Table Layout */}
+            <div className="hidden md:block bg-white rounded-xl shadow-card overflow-hidden">
                 <table className="w-full">
                     <thead>
                         <tr className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
