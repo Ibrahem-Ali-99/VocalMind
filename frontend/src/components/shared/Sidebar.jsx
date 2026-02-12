@@ -109,7 +109,7 @@ const NavIcon = ({ name }) => {
     }
 }
 
-export default function Sidebar({ isCollapsed, mobileOpen, onToggle, navItems }) {
+export default function Sidebar({ isCollapsed, mobileOpen, onToggle, onClose, navItems }) {
     const pathname = usePathname()
 
     const items = navItems || [
@@ -130,19 +130,33 @@ export default function Sidebar({ isCollapsed, mobileOpen, onToggle, navItems })
         w-64 flex flex-col overflow-x-hidden`}
         >
             {/* Logo Area */}
-            <Link
-                href={items[0]?.path || '/'}
-                className="h-16 flex items-center px-6 border-b border-navy-light hover:bg-navy-light/10 transition-colors"
-            >
-                <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center w-full' : ''}`}>
-                    <Image src="/images/logo-icon.svg" alt="" width={32} height={32} className="flex-shrink-0" />
-                    {!isCollapsed && (
-                        <span className="font-bold text-xl tracking-tight text-white whitespace-nowrap">
-                            VocalMind
-                        </span>
-                    )}
-                </div>
-            </Link>
+            <div className="h-16 flex items-center px-6 border-b border-navy-light relative">
+                <Link
+                    href={items[0]?.path || '/'}
+                    className="flex items-center gap-3 hover:opacity-80 transition-opacity flex-1"
+                >
+                    <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center w-full' : ''}`}>
+                        <Image src="/images/logo-icon.svg" alt="" width={32} height={32} className="flex-shrink-0" style={{ width: 'auto', height: 'auto' }} />
+                        {!isCollapsed && (
+                            <span className="font-bold text-xl tracking-tight text-white whitespace-nowrap">
+                                VocalMind
+                            </span>
+                        )}
+                    </div>
+                </Link>
+                {/* Mobile close button */}
+                {onClose && (
+                    <button
+                        onClick={onClose}
+                        className="md:hidden absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-navy-light transition-colors"
+                        aria-label="Close sidebar"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                )}
+            </div>
 
             {/* Navigation */}
             <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto overflow-x-hidden">

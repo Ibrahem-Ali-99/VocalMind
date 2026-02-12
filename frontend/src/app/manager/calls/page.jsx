@@ -101,7 +101,45 @@ export default function CallsPage() {
 
             {/* Table */}
             {paginatedCalls.length > 0 ? (
-                <div className="bg-white rounded-xl shadow-card overflow-hidden overflow-x-auto">
+                <>
+                    {/* Mobile Card Layout */}
+                    <div className="md:hidden space-y-3">
+                        {paginatedCalls.map((call) => (
+                            <div
+                                key={call.id}
+                                className="bg-white rounded-xl shadow-card p-4 border border-gray-100 active:bg-cyan/5 transition-colors cursor-pointer"
+                                onClick={() => router.push(`/session/${call.id}`)}
+                            >
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan to-purple flex items-center justify-center text-white text-sm font-medium">
+                                            {call.agent
+                                                ?.split(' ')
+                                                .map((n) => n[0])
+                                                .join('') || '?'}
+                                        </div>
+                                        <div>
+                                            <p className="font-medium text-gray-900 text-sm">{call.agent}</p>
+                                            <p className="text-xs text-gray-500">{call.customer}</p>
+                                        </div>
+                                    </div>
+                                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full border ${getEmotionStyle(call.emotion)}`}>
+                                        {call.emotion}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-gray-500">
+                                    <span>{call.dateTime}</span>
+                                    <span className="font-medium text-gray-700">{call.duration}</span>
+                                </div>
+                                {call.summary && (
+                                    <p className="text-xs text-gray-500 mt-2 line-clamp-2">{call.summary}</p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Desktop Table */}
+                    <div className="hidden md:block bg-white rounded-xl shadow-card overflow-hidden overflow-x-auto">
                     <table className="w-full min-w-[1000px]">
                         <thead>
                             <tr className="text-left text-sm text-gray-500 border-b border-gray-100 bg-gray-50">
@@ -200,6 +238,7 @@ export default function CallsPage() {
                         </div>
                     )}
                 </div>
+                </>
             ) : (
                 <div className="bg-white rounded-xl shadow-card">
                     <EmptyState

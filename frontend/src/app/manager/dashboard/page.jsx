@@ -233,59 +233,99 @@ export default function DashboardPage() {
                         </div>
 
                         {filteredCalls.length > 0 ? (
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
-                                            <th className="px-6 py-3 font-medium">PRIORITY</th>
-                                            <th className="px-6 py-3 font-medium">CALL ID</th>
-                                            <th className="px-6 py-3 font-medium">AGENT</th>
-                                            <th className="px-6 py-3 font-medium">CUSTOMER</th>
-                                            <th className="px-6 py-3 font-medium">ISSUE TYPE</th>
-                                            <th className="px-6 py-3 font-medium">TIMESTAMP</th>
-                                            <th className="px-6 py-3 font-medium">ACTIONS</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredCalls.map((call) => (
-                                            <tr key={call.id} className="border-b border-gray-50 hover:bg-cyan/5 transition-colors group cursor-pointer" onClick={() => router.push(`/session/${call.id}`)}>
-                                                <td className="px-6 py-4">
-                                                    <PriorityBadge priority={call.priority} />
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <button
-                                                        onClick={() => router.push(`/session/${call.id}`)}
-                                                        className="font-medium text-cyan hover:text-cyan-dark cursor-pointer"
-                                                    >
-                                                        #{call.id}
-                                                    </button>
-                                                </td>
-                                                <td className="px-6 py-4 text-gray-600">{call.agent}</td>
-                                                <td className="px-6 py-4 text-gray-600">{call.customer}</td>
-                                                <td className="px-6 py-4">
-                                                    <span className="px-2 py-0.5 text-xs font-medium bg-purple/10 text-purple rounded">
-                                                        {call.issueType}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-gray-500 text-sm">{call.timestamp}</td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                router.push(`/session/${call.id}`);
-                                                            }}
-                                                            className="px-3 py-1 text-xs font-medium text-cyan border border-cyan rounded hover:bg-cyan hover:text-navy transition-all cursor-pointer"
-                                                        >
-                                                            Review
-                                                        </button>
-                                                    </div>
-                                                </td>
+                            <>
+                                {/* Mobile Card Layout */}
+                                <div className="block md:hidden divide-y divide-gray-100">
+                                    {filteredCalls.map((call) => (
+                                        <div
+                                            key={call.id}
+                                            className="p-4 hover:bg-cyan/5 transition-colors cursor-pointer"
+                                            onClick={() => router.push(`/session/${call.id}`)}
+                                        >
+                                            <div className="flex items-center justify-between mb-2">
+                                                <PriorityBadge priority={call.priority} />
+                                                <span className="text-xs text-gray-400">{call.timestamp}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-medium text-cyan">#{call.id}</span>
+                                                <span className="px-2 py-0.5 text-xs font-medium bg-purple/10 text-purple rounded">
+                                                    {call.issueType}
+                                                </span>
+                                            </div>
+                                            <div className="text-sm text-gray-600 space-y-0.5">
+                                                <p><span className="text-gray-400">Agent:</span> {call.agent}</p>
+                                                <p><span className="text-gray-400">Customer:</span> {call.customer}</p>
+                                            </div>
+                                            <div className="mt-2">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/session/${call.id}`);
+                                                    }}
+                                                    className="px-3 py-1 text-xs font-medium text-cyan border border-cyan rounded hover:bg-cyan hover:text-navy transition-all cursor-pointer"
+                                                >
+                                                    Review
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Desktop Table Layout */}
+                                <div className="hidden md:block overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
+                                                <th className="px-6 py-3 font-medium">PRIORITY</th>
+                                                <th className="px-6 py-3 font-medium">CALL ID</th>
+                                                <th className="px-6 py-3 font-medium">AGENT</th>
+                                                <th className="px-6 py-3 font-medium">CUSTOMER</th>
+                                                <th className="px-6 py-3 font-medium">ISSUE TYPE</th>
+                                                <th className="px-6 py-3 font-medium">TIMESTAMP</th>
+                                                <th className="px-6 py-3 font-medium">ACTIONS</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                        </thead>
+                                        <tbody>
+                                            {filteredCalls.map((call) => (
+                                                <tr key={call.id} className="border-b border-gray-50 hover:bg-cyan/5 transition-colors group cursor-pointer" onClick={() => router.push(`/session/${call.id}`)}>
+                                                    <td className="px-6 py-4">
+                                                        <PriorityBadge priority={call.priority} />
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <button
+                                                            onClick={() => router.push(`/session/${call.id}`)}
+                                                            className="font-medium text-cyan hover:text-cyan-dark cursor-pointer"
+                                                        >
+                                                            #{call.id}
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-gray-600">{call.agent}</td>
+                                                    <td className="px-6 py-4 text-gray-600">{call.customer}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="px-2 py-0.5 text-xs font-medium bg-purple/10 text-purple rounded">
+                                                            {call.issueType}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-gray-500 text-sm">{call.timestamp}</td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    router.push(`/session/${call.id}`);
+                                                                }}
+                                                                className="px-3 py-1 text-xs font-medium text-cyan border border-cyan rounded hover:bg-cyan hover:text-navy transition-all cursor-pointer"
+                                                            >
+                                                                Review
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
                         ) : (
                             <EmptyState
                                 title="No flagged calls"

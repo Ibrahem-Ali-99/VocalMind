@@ -44,7 +44,7 @@ export default function LoginPage() {
                 {/* Logo */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center gap-3 mb-4">
-                        <Image src="/images/logo-icon.svg" alt="" width={48} height={48} />
+                        <Image src="/images/logo-icon.svg" alt="" width={48} height={48} style={{ width: 'auto', height: 'auto' }} />
                         <h1 className="text-3xl font-bold text-white">VocalMind</h1>
                     </div>
                     <p className="text-gray-400">Sign in to your account</p>
@@ -60,10 +60,13 @@ export default function LoginPage() {
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                                 Email
                             </label>
                             <input
+                                id="email"
+                                name="email"
+                                autoComplete="email"
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
@@ -73,10 +76,13 @@ export default function LoginPage() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
                                 Password
                             </label>
                             <input
+                                id="password"
+                                name="password"
+                                autoComplete="current-password"
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
@@ -86,16 +92,18 @@ export default function LoginPage() {
                         </div>
 
                         <div className="flex items-center justify-between">
-                            <label className="flex items-center gap-2 cursor-pointer">
+                            <label className="flex items-center gap-3 cursor-pointer min-h-[44px] py-1 pr-2">
                                 <input
+                                    id="remember-me"
+                                    name="remember-me"
                                     type="checkbox"
                                     checked={rememberMe}
                                     onChange={(e) => setRememberMe(e.target.checked)}
-                                    className="rounded border-gray-300 text-cyan focus:ring-cyan"
+                                    className="w-5 h-5 rounded border-gray-300 text-cyan focus:ring-cyan"
                                 />
                                 <span className="text-sm text-gray-600">Remember me</span>
                             </label>
-                            <a href="#" className="text-sm text-cyan hover:text-cyan-dark">
+                            <a href="#" className="text-sm text-cyan hover:text-cyan-dark min-h-[44px] flex items-center">
                                 Forgot password?
                             </a>
                         </div>

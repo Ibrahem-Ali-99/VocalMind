@@ -13,6 +13,10 @@ on:
       - ".github/workflows/rag_ci.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -20,10 +24,10 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  rag-lint:
-    name: 🔍 Lint & Format
+  rag-ci:
+    name: 🔍 Lint & 🧪 Test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: Experiments/Rag
@@ -36,33 +40,15 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "Experiments/Rag/uv.lock"
 
       - name: Install dependencies
         run: uv sync
 
       - name: Lint (Ruff)
-        run: uvx ruff check .
-
-  rag-tests:
-    name: 🧪 Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: rag-lint
-    defaults:
-      run:
-        working-directory: Experiments/Rag
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "${{ env.PYTHON_VERSION }}"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies
-        run: uv sync
+        run: uvx ruff check . --output-format=github
 
       - name: Run Tests
         run: uv run pytest tests/ -v --tb=short

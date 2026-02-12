@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Header from '@/components/shared/Header'
 import Sidebar from '@/components/shared/Sidebar'
@@ -12,6 +12,11 @@ export default function Shell({ children }) {
     const pathname = usePathname()
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
+
+    // Auto-close mobile sidebar on route change
+    useEffect(() => {
+        setMobileOpen(false)
+    }, [pathname])
 
     // Agent Navigation Items
     const agentNavItems = [
@@ -43,6 +48,7 @@ export default function Shell({ children }) {
                 isCollapsed={sidebarCollapsed}
                 mobileOpen={mobileOpen}
                 onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                onClose={() => setMobileOpen(false)}
                 navItems={navItems}
             />
 

@@ -277,12 +277,13 @@ export default function TeamPage() {
                             {
                                 header: 'EMAIL',
                                 accessor: 'email',
-                                className: 'text-gray-600',
+                                className: 'text-gray-600 hidden md:table-cell',
+                                headerClassName: 'hidden md:table-cell',
                             },
                             {
                                 header: 'ACTIVE CALLS',
-                                headerClassName: 'text-center',
-                                className: 'text-center',
+                                headerClassName: 'text-center hidden md:table-cell',
+                                className: 'text-center hidden md:table-cell',
                                 cell: (member) => (
                                     <span
                                         className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${member.activeCalls > 0
@@ -296,6 +297,8 @@ export default function TeamPage() {
                             },
                             {
                                 header: 'PERFORMANCE',
+                                headerClassName: 'hidden md:table-cell',
+                                className: 'hidden md:table-cell',
                                 cell: (member) => <StarRating score={member.avgScore} />,
                             },
                             {
@@ -304,6 +307,8 @@ export default function TeamPage() {
                             },
                             {
                                 header: 'ACTIONS',
+                                headerClassName: 'hidden md:table-cell',
+                                className: 'hidden md:table-cell',
                                 cell: (member) => (
                                     <div className="flex items-center gap-2">
                                         <button
