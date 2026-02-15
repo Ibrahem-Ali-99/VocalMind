@@ -4,19 +4,27 @@
 
 -- 1. ENUM TYPES
 CREATE TYPE org_status_enum AS ENUM ('active', 'inactive', 'suspended');
+
 CREATE TYPE user_role_enum AS ENUM ('admin', 'manager');
+
 CREATE TYPE agent_type_enum AS ENUM ('human', 'bot');
+
 CREATE TYPE processing_status_enum AS ENUM ('pending', 'processing', 'completed', 'failed');
+
 CREATE TYPE speaker_role_enum AS ENUM ('agent', 'customer');
+
 CREATE TYPE event_type_enum AS ENUM ('emotion_shift', 'sentiment_drop', 'escalation', 'de_escalation');
+
 CREATE TYPE violation_severity_enum AS ENUM ('minor', 'critical');
+
 CREATE TYPE feedback_type_enum AS ENUM ('emotion_label', 'score', 'transcription', 'compliance', 'other');
+
 CREATE TYPE query_mode_enum AS ENUM ('voice', 'chat');
 
 -- 2. TABLES
 
 CREATE TABLE organizations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
     name VARCHAR NOT NULL,
     status org_status_enum NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -24,8 +32,8 @@ CREATE TABLE organizations (
 );
 
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    organization_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     email VARCHAR NOT NULL UNIQUE,
     password_hash VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -35,8 +43,8 @@ CREATE TABLE users (
 );
 
 CREATE TABLE agents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    organization_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     agent_code VARCHAR NOT NULL,
     agent_type agent_type_enum NOT NULL DEFAULT 'human',
     department VARCHAR,
@@ -44,9 +52,9 @@ CREATE TABLE agents (
 );
 
 CREATE TABLE interactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    organization_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    agent_id UUID NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
     audio_file_path VARCHAR,
     file_size_bytes INTEGER,
     duration_seconds INTEGER,
@@ -58,26 +66,27 @@ CREATE TABLE interactions (
 );
 
 CREATE TABLE transcripts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    interaction_id UUID NOT NULL UNIQUE REFERENCES interactions(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    interaction_id UUID NOT NULL UNIQUE REFERENCES interactions (id) ON DELETE CASCADE,
     full_text TEXT NOT NULL,
     confidence_score FLOAT
 );
 
 CREATE TABLE utterances (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    interaction_id UUID NOT NULL REFERENCES interactions(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    interaction_id UUID NOT NULL REFERENCES interactions (id) ON DELETE CASCADE,
     speaker_role speaker_role_enum NOT NULL,
     start_time_seconds FLOAT NOT NULL,
     end_time_seconds FLOAT NOT NULL,
     emotion_label VARCHAR,
-    emotion_confidence FLOAT
+    emotion_confidence FLOAT,
+    text TEXT
 );
 
 CREATE TABLE emotion_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    interaction_id UUID NOT NULL REFERENCES interactions(id) ON DELETE CASCADE,
-    utterance_id UUID REFERENCES utterances(id) ON DELETE SET NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    interaction_id UUID NOT NULL REFERENCES interactions (id) ON DELETE CASCADE,
+    utterance_id UUID REFERENCES utterances (id) ON DELETE SET NULL,
     event_type event_type_enum NOT NULL,
     previous_emotion VARCHAR,
     new_emotion VARCHAR,
@@ -85,11 +94,11 @@ CREATE TABLE emotion_events (
     trigger_category VARCHAR,
     timestamp_seconds FLOAT,
     speaker_role VARCHAR,
-    verified_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL
+    verified_by_user_id UUID REFERENCES users (id) ON DELETE SET NULL
 );
 
 CREATE TABLE interaction_scores (
-    interaction_id UUID PRIMARY KEY REFERENCES interactions(id) ON DELETE CASCADE,
+    interaction_id UUID PRIMARY KEY REFERENCES interactions (id) ON DELETE CASCADE,
     overall_score FLOAT,
     policy_score FLOAT,
     total_silence_duration_seconds FLOAT,
@@ -98,8 +107,8 @@ CREATE TABLE interaction_scores (
 );
 
 CREATE TABLE company_policies (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    organization_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     policy_code VARCHAR NOT NULL,
     category VARCHAR,
     policy_text TEXT NOT NULL,
@@ -107,9 +116,9 @@ CREATE TABLE company_policies (
 );
 
 CREATE TABLE policy_compliance (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    interaction_id UUID NOT NULL REFERENCES interactions(id) ON DELETE CASCADE,
-    policy_id UUID NOT NULL REFERENCES company_policies(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    interaction_id UUID NOT NULL REFERENCES interactions (id) ON DELETE CASCADE,
+    policy_id UUID NOT NULL REFERENCES company_policies (id) ON DELETE CASCADE,
     is_compliant BOOLEAN,
     compliance_score FLOAT,
     violation_severity violation_severity_enum,
@@ -123,9 +132,9 @@ CREATE TABLE policy_compliance (
 );
 
 CREATE TABLE human_feedback (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    interaction_id UUID NOT NULL REFERENCES interactions(id) ON DELETE CASCADE,
-    provided_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    interaction_id UUID NOT NULL REFERENCES interactions (id) ON DELETE CASCADE,
+    provided_by_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     feedback_type feedback_type_enum NOT NULL,
     ai_output JSONB,
     corrected_output JSONB,
@@ -133,24 +142,29 @@ CREATE TABLE human_feedback (
 );
 
 CREATE TABLE manager_queries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     query_text TEXT NOT NULL,
     query_mode query_mode_enum NOT NULL DEFAULT 'chat',
     ai_query_understanding VARCHAR,
     sql_code TEXT,
     response_text TEXT,
-    retrieved_policy_id UUID REFERENCES company_policies(id) ON DELETE SET NULL
+    retrieved_policy_id UUID REFERENCES company_policies (id) ON DELETE SET NULL
 );
 
 -- 3. INDEXES
-CREATE INDEX idx_interactions_organization_id ON interactions(organization_id);
-CREATE INDEX idx_interactions_agent_id ON interactions(agent_id);
-CREATE INDEX idx_interactions_date ON interactions(interaction_date);
-CREATE INDEX idx_utterances_interaction_id ON utterances(interaction_id);
-CREATE INDEX idx_emotion_events_interaction_id ON emotion_events(interaction_id);
-CREATE INDEX idx_policy_compliance_interaction_id ON policy_compliance(interaction_id);
+CREATE INDEX idx_interactions_organization_id ON interactions (organization_id);
+
+CREATE INDEX idx_interactions_agent_id ON interactions (agent_id);
+
+CREATE INDEX idx_interactions_date ON interactions (interaction_date);
+
+CREATE INDEX idx_utterances_interaction_id ON utterances (interaction_id);
+
+CREATE INDEX idx_emotion_events_interaction_id ON emotion_events (interaction_id);
+
+CREATE INDEX idx_policy_compliance_interaction_id ON policy_compliance (interaction_id);
 
 -- 4. AUTO-UPDATE TRIGGER
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -165,3 +179,18 @@ CREATE TRIGGER trg_organizations_updated_at
     BEFORE UPDATE ON organizations
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- 5. VIEWS
+CREATE OR REPLACE VIEW emotion_timeline_view AS
+SELECT
+    u.interaction_id,
+    i.duration_seconds,
+    u.speaker_role,
+    u.emotion_label AS emotion,
+    u.emotion_confidence,
+    u.start_time_seconds AS start_time,
+    u.end_time_seconds AS end_time,
+    u.text
+FROM utterances u
+    JOIN interactions i ON i.id = u.interaction_id
+ORDER BY u.interaction_id, u.start_time_seconds;

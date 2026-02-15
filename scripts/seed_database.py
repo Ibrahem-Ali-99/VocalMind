@@ -217,23 +217,23 @@ TRANSCRIPTS = [
 ]
 
 UTTERANCES = [
-    {"id": UTTERANCE_IDS[i], "interaction_id": INTERACTION_IDS[i], "speaker_role": role, "start_time_seconds": st, "end_time_seconds": et, "emotion_label": emo, "emotion_confidence": conf}
-    for i, (role, st, et, emo, conf) in enumerate([
-        ("customer", 5.0, 12.3, "neutral", 0.88),
-        ("customer", 3.2, 15.7, "angry", 0.92),
-        ("customer", 8.0, 18.5, "frustrated", 0.85),
-        ("customer", 4.1, 10.0, "worried", 0.78),
-        ("customer", 2.5, 8.9, "neutral", 0.91),
-        ("customer", 3.0, 14.2, "angry", 0.95),
-        ("customer", 6.0, 11.4, "neutral", 0.82),
-        ("agent", 10.5, 22.0, "neutral", 0.90),
-        ("customer", 4.0, 9.8, "neutral", 0.87),
-        ("customer", 5.5, 16.0, "worried", 0.80),
-        ("customer", 7.0, 20.3, "angry", 0.94),
-        ("customer", 3.8, 10.5, "neutral", 0.89),
-        ("customer", 4.5, 12.0, "disappointed", 0.76),
-        ("customer", 6.2, 15.8, "frustrated", 0.83),
-        ("customer", 2.0, 8.0, "happy", 0.86),
+    {"id": UTTERANCE_IDS[i], "interaction_id": INTERACTION_IDS[i], "speaker_role": role, "start_time_seconds": st, "end_time_seconds": et, "emotion_label": emo, "emotion_confidence": conf, "text": txt}
+    for i, (role, st, et, emo, conf, txt) in enumerate([
+        ("customer", 5.0, 12.3, "neutral", 0.88, "Hi Mohsen, I am interested in upgrading my current plan."),
+        ("customer", 3.2, 15.7, "angry", 0.92, "Yes, I have been waiting for 20 minutes already! I want to cancel my subscription."),
+        ("customer", 8.0, 18.5, "frustrated", 0.85, "My internet keeps dropping every hour. I have already called three times about this!"),
+        ("customer", 4.1, 10.0, "worried", 0.78, "I received a notification about a rate increase. Can you explain what is changing?"),
+        ("customer", 2.5, 8.9, "neutral", 0.91, "I just want to check the status of my recent order."),
+        ("customer", 3.0, 14.2, "angry", 0.95, "I have been overcharged for the third month in a row. This is completely unacceptable!"),
+        ("customer", 6.0, 11.4, "neutral", 0.82, "Hi, I am calling to inquire about your business plans."),
+        ("agent", 10.5, 22.0, "neutral", 0.90, "Thank you for calling. I can help you with your account settings today."),
+        ("customer", 4.0, 9.8, "neutral", 0.87, "I need to update my billing address and payment method."),
+        ("customer", 5.5, 16.0, "worried", 0.80, "I noticed some unauthorized charges on my account. I am concerned about security."),
+        ("customer", 7.0, 20.3, "angry", 0.94, "Your service has been down all day! I am losing business because of this!"),
+        ("customer", 3.8, 10.5, "neutral", 0.89, "Can you walk me through setting up the VPN on my device?"),
+        ("customer", 4.5, 12.0, "disappointed", 0.76, "I was promised a callback within 24 hours, but nobody called me back."),
+        ("customer", 6.2, 15.8, "frustrated", 0.83, "The new interface is confusing. I cannot find any of the features I used to use."),
+        ("customer", 2.0, 8.0, "happy", 0.86, "Everything was resolved quickly. Thank you so much for your help!"),
     ])
 ]
 

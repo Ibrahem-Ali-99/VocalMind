@@ -1,22 +1,14 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
-import Transcript from '@/components/shared/Transcript'
-import LoadingSpinner from '@/components/shared/LoadingSpinner'
-// Dynamic imports for heavy components
-const WaveformPlayer = dynamic(() => import('@/components/shared/WaveformPlayer'), { ssr: false })
-
+import EmotionTimeline from '@/components/shared/EmotionTimeline'
 import {
     AISummaryCard,
     KeyTakeaways,
-    SentimentDrivers,
-    ComplianceScore,
-    CoachingTips,
 } from '@/components/shared/AnalysisComponents'
 
-// Mock session data with comprehensive details
+// ─── Mock session data ───────────────────────────────
 const mockSession = {
     id: 'CALL-2847',
     date: 'Jan 31, 2026',
@@ -43,73 +35,82 @@ const mockSession = {
             speaker: 'agent',
             text: 'Thank you for calling VocalMind support. My name is Ahmed, how may I assist you today?',
             time: 0,
+            endTime: 12,
             emotion: 'neutral',
+            confidence: 0.92,
         },
         {
             speaker: 'customer',
             text: "Hi Ahmed. I've been having issues with my account for the past week. Every time I try to access my dashboard, I get an error.",
             time: 15,
+            endTime: 32,
             emotion: 'frustrated',
+            confidence: 0.88,
         },
         {
             speaker: 'agent',
             text: "I'm sorry to hear you've been experiencing difficulties. Let me look into this right away. Can you provide me with your account ID?",
             time: 35,
+            endTime: 48,
             emotion: 'empathetic',
+            confidence: 0.85,
         },
         {
             speaker: 'customer',
             text: "It's CUST-8294. I really need this resolved today because I have a presentation tomorrow.",
             time: 52,
+            endTime: 65,
             emotion: 'anxious',
+            confidence: 0.91,
         },
         {
             speaker: 'agent',
             text: 'I completely understand the urgency. I can see your account here, and I notice there was a configuration update last week that may have affected your access.',
             time: 70,
+            endTime: 90,
             emotion: 'confident',
+            confidence: 0.87,
         },
         {
             speaker: 'customer',
             text: 'That makes sense. The timing matches up. Can you fix it?',
             time: 95,
+            endTime: 104,
             emotion: 'hopeful',
+            confidence: 0.79,
         },
         {
             speaker: 'agent',
             text: "Absolutely. I'm resetting your access permissions now. This will take just a moment.",
             time: 108,
+            endTime: 125,
             emotion: 'helpful',
+            confidence: 0.90,
         },
         {
             speaker: 'customer',
             text: "Thank you so much! You've been really helpful.",
             time: 130,
+            endTime: 140,
             emotion: 'grateful',
+            confidence: 0.94,
         },
         {
             speaker: 'agent',
             text: "You're welcome! Your access should be restored now. Is there anything else I can help you with today?",
             time: 145,
+            endTime: 160,
             emotion: 'satisfied',
+            confidence: 0.88,
         },
         {
             speaker: 'customer',
             text: "No, that's all. Thank you again Ahmed!",
             time: 165,
+            endTime: 175,
             emotion: 'happy',
+            confidence: 0.96,
         },
-    ],
-    emotionTimeline: [
-        { time: 0, customerEmotion: 'neutral', agentEmotion: 'neutral', intensity: 0.5 },
-        { time: 15, customerEmotion: 'frustrated', agentEmotion: 'neutral', intensity: 0.7 },
-        { time: 35, customerEmotion: 'frustrated', agentEmotion: 'empathetic', intensity: 0.6 },
-        { time: 52, customerEmotion: 'anxious', agentEmotion: 'empathetic', intensity: 0.8 },
-        { time: 70, customerEmotion: 'anxious', agentEmotion: 'confident', intensity: 0.6 },
-        { time: 95, customerEmotion: 'hopeful', agentEmotion: 'confident', intensity: 0.4 },
-        { time: 108, customerEmotion: 'hopeful', agentEmotion: 'helpful', intensity: 0.3 },
-        { time: 130, customerEmotion: 'grateful', agentEmotion: 'satisfied', intensity: 0.2 },
-        { time: 165, customerEmotion: 'happy', agentEmotion: 'satisfied', intensity: 0.1 },
     ],
     aiSummary:
         "Customer reported dashboard access issues following a recent system update. Agent identified the root cause as a permissions configuration change and successfully restored access. Customer's issue was fully resolved within the call duration.",
@@ -120,42 +121,9 @@ const mockSession = {
         'Customer confirmed access was restored successfully',
         'Enterprise customer retained with positive experience',
     ],
-    sentimentDrivers: [
-        { trigger: 'Week-long access issues', impact: 'negative', time: 15 },
-        { trigger: 'Agent acknowledgment of urgency', impact: 'positive', time: 35 },
-        { trigger: 'Presentation deadline pressure', impact: 'negative', time: 52 },
-        { trigger: 'Agent identified root cause quickly', impact: 'positive', time: 70 },
-        { trigger: 'Immediate resolution action', impact: 'positive', time: 108 },
-    ],
-    complianceScore: 92,
-    complianceItems: [
-        { item: 'Proper greeting and name introduction', passed: true },
-        { item: 'Account verification before changes', passed: true },
-        { item: 'Explained issue cause to customer', passed: true },
-        { item: 'Offered additional assistance', passed: true },
-        { item: 'Case documentation completed', passed: false },
-    ],
-    coachingTips: [
-        {
-            category: 'Strength',
-            tip: 'Excellent active listening and empathy shown throughout the call',
-        },
-        {
-            category: 'Strength',
-            tip: 'Quick problem identification demonstrated strong product knowledge',
-        },
-        {
-            category: 'Improvement',
-            tip: 'Consider documenting case notes during the call rather than after',
-        },
-        {
-            category: 'Improvement',
-            tip: 'Could offer proactive tips to prevent similar issues in future',
-        },
-    ],
 }
 
-// Score Badge Component
+// ─── Score Badge ──────────────────────────────────────
 const ScoreBadge = ({ score }) => {
     const getColor = () => {
         if (score >= 4.5) return 'bg-emerald-100 text-emerald-800'
@@ -170,7 +138,7 @@ const ScoreBadge = ({ score }) => {
     )
 }
 
-// Manager Feedback Form
+// ─── Manager Feedback ────────────────────────────────
 const ManagerFeedback = () => {
     const [feedback, setFeedback] = useState('')
     const [rating, setRating] = useState(0)
@@ -209,21 +177,37 @@ const ManagerFeedback = () => {
     )
 }
 
+// ─── Main Component ──────────────────────────────────
 export default function SessionInspectorClient({ sessionId }) {
     const router = useRouter()
-    const [currentTime, setCurrentTime] = useState(0)
-    const [isPlaying, setIsPlaying] = useState(false)
-    const [playbackSpeed, setPlaybackSpeed] = useState(1)
-
     const session = mockSession
 
-    const handleSeek = useCallback((time) => {
-        setCurrentTime(time)
-    }, [])
+    // Transform mock data → EmotionTimeline segments format
+    const timelineData = useMemo(() => {
+        const segments = session.transcript.map((msg) => ({
+            speaker: msg.speaker,
+            emotion: msg.emotion,
+            confidence: msg.confidence ?? 0.8,
+            start: msg.time,
+            end: msg.endTime ?? msg.time + 15,
+            text: msg.text,
+        }))
+
+        return {
+            meta: {
+                call_id: session.id,
+                date: session.date,
+                duration: session.durationSeconds,
+                agent_name: session.agent.name,
+                client_name: session.customer.name,
+            },
+            segments,
+        }
+    }, [session])
 
     return (
         <div className="h-full flex flex-col -m-6">
-            {/* Header */}
+            {/* ─── Header ─── */}
             <div className="px-6 py-4 bg-white border-b border-gray-200">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -263,8 +247,8 @@ export default function SessionInspectorClient({ sessionId }) {
                     </div>
                 </div>
 
-                {/* Call Info Header */}
-                <div className="mt-3 flex items-center gap-4">
+                {/* Call Info */}
+                <div className="mt-3 flex items-center gap-4 flex-wrap">
                     <h1 className="text-xl font-semibold text-gray-900">Call #{session.id}</h1>
                     <ScoreBadge score={session.overallScore} />
                     <span className="px-2.5 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
@@ -274,7 +258,7 @@ export default function SessionInspectorClient({ sessionId }) {
                         {session.status}
                     </span>
                 </div>
-                <div className="mt-2 flex items-center gap-4 text-sm text-gray-600">
+                <div className="mt-2 flex items-center gap-4 text-sm text-gray-600 flex-wrap">
                     <span>
                         {session.date} • {session.time}
                     </span>
@@ -297,161 +281,16 @@ export default function SessionInspectorClient({ sessionId }) {
                 </div>
             </div>
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden overflow-y-auto lg:overflow-y-hidden">
-                {/* Left - Transcript */}
-                <div className="w-full lg:w-[360px] h-[500px] lg:h-auto border-b lg:border-b-0 lg:border-r border-gray-200 bg-white flex flex-col">
-                    <Transcript
-                        messages={session.transcript}
-                        currentTime={currentTime}
-                        onMessageClick={handleSeek}
-                    />
-                </div>
-
-                {/* Center - Waveform & Metrics */}
+            {/* ─── Content: 2-column layout ─── */}
+            <div className="flex-1 flex flex-col lg:flex-row lg:overflow-hidden overflow-y-auto">
+                {/* Left — Emotion Timeline */}
                 <div
-                    className="flex-1 bg-gray-50 p-4 lg:p-6 overflow-y-auto"
+                    className="flex-1 bg-white p-4 lg:p-6 overflow-y-auto"
                     tabIndex={0}
                     role="region"
-                    aria-label="Audio Player and Metrics"
+                    aria-label="Emotion Timeline and Conversation"
                 >
-                    <Suspense
-                        fallback={
-                            <div className="h-64 bg-white rounded-xl shadow-card flex items-center justify-center">
-                                <LoadingSpinner size="lg" />
-                            </div>
-                        }
-                    >
-                        <WaveformPlayer
-                            duration={session.durationSeconds}
-                            currentTime={currentTime}
-                            emotionTimeline={session.emotionTimeline}
-                            onSeek={handleSeek}
-                            isPlaying={isPlaying}
-                            onPlayPause={() => setIsPlaying(!isPlaying)}
-                            playbackSpeed={playbackSpeed}
-                            onSpeedChange={setPlaybackSpeed}
-                        />
-                    </Suspense>
-
-                    {/* Call Metrics Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                        <div className="bg-white rounded-xl p-4 shadow-card">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-8 h-8 rounded-lg bg-purple/10 flex items-center justify-center">
-                                    <svg
-                                        className="w-4 h-4 text-purple"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a2 2 0 01-2-2v-6a2 2 0 012-2h8z"
-                                        />
-                                    </svg>
-                                </div>
-                                <span className="text-xs text-gray-600">Talk Ratio</span>
-                            </div>
-                            <div className="flex items-end gap-2">
-                                <span className="text-2xl font-bold text-gray-900">62%</span>
-                                <span className="text-xs text-gray-600 mb-1">Agent</span>
-                            </div>
-                            <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden flex">
-                                <div className="h-full bg-purple" style={{ width: '62%' }} />
-                                <div className="h-full bg-cyan" style={{ width: '38%' }} />
-                            </div>
-                            <div className="flex justify-between mt-1 text-xs text-gray-600">
-                                <span>Agent 62%</span>
-                                <span>Customer 38%</span>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-xl p-4 shadow-card">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                                    <svg
-                                        className="w-4 h-4 text-amber-600"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                                        />
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
-                                        />
-                                    </svg>
-                                </div>
-                                <span className="text-xs text-gray-600">Silence</span>
-                            </div>
-                            <div className="flex items-end gap-2">
-                                <span className="text-2xl font-bold text-gray-900">8%</span>
-                                <span className="text-xs text-gray-600 mb-1">of call</span>
-                            </div>
-                            <p className="text-xs text-gray-600 mt-2">~42 seconds total</p>
-                        </div>
-
-                        <div className="bg-white rounded-xl p-4 shadow-card">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
-                                    <svg
-                                        className="w-4 h-4 text-red-500"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                        />
-                                    </svg>
-                                </div>
-                                <span className="text-xs text-gray-600">Interruptions</span>
-                            </div>
-                            <div className="flex items-end gap-2">
-                                <span className="text-2xl font-bold text-gray-900">2</span>
-                                <span className="text-xs text-gray-600 mb-1">times</span>
-                            </div>
-                            <p className="text-xs text-emerald-500 mt-2">✓ Below average</p>
-                        </div>
-
-                        <div className="bg-white rounded-xl p-4 shadow-card">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-8 h-8 rounded-lg bg-cyan/10 flex items-center justify-center">
-                                    <svg
-                                        className="w-4 h-4 text-cyan-700"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                        />
-                                    </svg>
-                                </div>
-                                <span className="text-xs text-gray-600">Avg Response</span>
-                            </div>
-                            <div className="flex items-end gap-2">
-                                <span className="text-2xl font-bold text-gray-900">2.4s</span>
-                            </div>
-                            <p className="text-xs text-emerald-500 mt-2">✓ Fast response</p>
-                        </div>
-                    </div>
+                    <EmotionTimeline data={timelineData} />
 
                     {/* Quick Actions */}
                     <div className="flex flex-wrap items-center gap-3 mt-6 p-4 bg-white rounded-xl shadow-card">
@@ -503,7 +342,7 @@ export default function SessionInspectorClient({ sessionId }) {
                     </div>
                 </div>
 
-                {/* Right - Analysis Panel */}
+                {/* Right — Analysis Panel */}
                 <div
                     className="w-full lg:w-[380px] border-t lg:border-t-0 lg:border-l border-gray-200 bg-white overflow-y-auto p-5"
                     tabIndex={0}
@@ -512,9 +351,6 @@ export default function SessionInspectorClient({ sessionId }) {
                 >
                     <AISummaryCard summary={session.aiSummary} status={session.status} />
                     <KeyTakeaways takeaways={session.keyTakeaways} />
-                    <SentimentDrivers drivers={session.sentimentDrivers} />
-                    <ComplianceScore score={session.complianceScore} items={session.complianceItems} />
-                    <CoachingTips tips={session.coachingTips} />
                     <ManagerFeedback />
                 </div>
             </div>
