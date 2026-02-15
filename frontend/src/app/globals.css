@@ -47,3 +47,48 @@
 .card-hover {
   @apply transition-all duration-300 ease-out hover:-translate-y-1;
 }
+
+/* Global cursor pointer for interactive elements */
+button,
+a,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+select,
+label[for],
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* Login card animated gradient glow */
+@keyframes borderGlow {
+  0%, 100% {
+    opacity: 0.5;
+    filter: blur(20px);
+  }
+  50% {
+    opacity: 0.8;
+    filter: blur(30px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.login-card-glow {
+  animation: borderGlow 4s ease-in-out infinite;
+}
+
+.login-shimmer {
+  background-size: 200% 200%;
+  animation: shimmer 6s ease-in-out infinite;
+}

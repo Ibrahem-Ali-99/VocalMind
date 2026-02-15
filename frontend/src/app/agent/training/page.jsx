@@ -18,10 +18,10 @@ export default function AgentTrainingPage() {
 
             <div className="space-y-4">
                 {resources.map((resource) => (
-                    <div key={resource.id} className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-all">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${resource.completed ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'
+                    <div key={resource.id} className="bg-white rounded-xl shadow-card p-4 sm:p-5 hover:shadow-card-hover transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                                <div className={`w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center ${resource.completed ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'
                                     }`}>
                                     {resource.completed ? (
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

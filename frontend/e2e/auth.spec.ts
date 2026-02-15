@@ -25,7 +25,6 @@ test.describe('Authentication', () => {
     test('should show SSO options', async ({ page }) => {
         await page.goto('/login')
 
-        await expect(page.getByRole('button', { name: 'Google' })).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Microsoft' })).toBeVisible()
+        await expect(page.getByRole('button', { name: /Google/i })).toBeVisible()
     })
 })

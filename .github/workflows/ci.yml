@@ -46,9 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history on push for complete Gitleaks scan;
-          # shallow clone on PRs — gitleaks-action fetches the base ref itself
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          fetch-depth: 0
 
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2.3.7
