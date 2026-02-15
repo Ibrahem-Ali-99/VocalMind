@@ -7,9 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "playwright test",
-    "test:ui": "playwright test --ui",
-    "test:headed": "playwright test --headed"
+    "test": "cypress run",
+    "test:ui": "cypress open"
   },
   "dependencies": {
     "lottie-react": "^2.4.1",
@@ -21,10 +20,11 @@
     "wavesurfer.js": "^7.12.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.1",
     "@tailwindcss/postcss": "^4",
+    "cypress": "^15.10.0",
     "eslint": "^9",
     "eslint-config-next": "15.1.6",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "typescript": "^5.9.3"
   }
 }
