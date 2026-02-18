@@ -64,6 +64,7 @@ reports/
 Experiments/Rag/data/
 Experiments/Rag/logs/
 Experiments/Rag/reports/
+parsed_docs/
 
 # Model files
 best_model_3class.pt
