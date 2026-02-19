@@ -35,17 +35,31 @@ from langchain_text_splitters import (
 # Configuration
 # ---------------------------------------------------------------------------
 
-CHILD_CHUNK_SIZE        = 600  # characters — large enough to keep rules intact
-CHILD_CHUNK_OVERLAP     = 120  # characters
+CHILD_CHUNK_SIZE        = 400  # characters — reduced because parent chunks are now
+                                # larger (subsections grouped), so children need to be
+                                # tighter for precise fact retrieval
+CHILD_CHUNK_OVERLAP     = 80   # characters
 MIN_CHUNK_LENGTH        = 30   # characters — anything shorter is flagged as junk
 EMPTY_SECTION_MIN_WORDS = 4    # word tokens — sections with fewer real words are empty
-                                # (e.g. "2.3 Technical Triggers" with no body = 0 words)
 
-# Headers that drive the parent-chunk boundaries
+# Headers that drive the parent-chunk boundaries.
+#
+# KEY DESIGN DECISION — only split on # and ## (NOT ###):
+#
+# Splitting on all three levels (# / ## / ###) was creating one parent chunk
+# per subsection (e.g. 2.1, 2.2, 2.3 each became their own tiny chunk of
+# 1-3 sentences). This is too granular for compliance evaluation — when the
+# LLM asks "did the agent handle the refund correctly?", it needs the full
+# Refund Eligibility section (2.1 through 2.5) in ONE retrieval, not 5
+# separate fragments that may not all score high enough in similarity search.
+#
+# Splitting only on # and ## groups all ### subsections together inside their
+# parent ## section, producing semantically complete policy chunks. The child
+# splitter then handles precision splitting within those larger blocks,
+# creating a meaningful and visible difference between parent and child counts.
 HEADERS_TO_SPLIT_ON = [
-    ("#",   "Header 1"),
-    ("##",  "Header 2"),
-    ("###", "Header 3"),
+    ("#",  "Header 1"),
+    ("##", "Header 2"),
 ]
 
 # ---------------------------------------------------------------------------
