@@ -33,6 +33,21 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["rag_app"]
 
+[project.optional-dependencies]
+ingestion = [
+    # AI-powered PDF -> Markdown (IBM Docling: DocLayNet + TableFormer)
+    "docling>=2.15.0",
+    # LangChain text splitting (Markdown header + recursive character)
+    "langchain>=0.2.0",
+    "langchain-text-splitters>=0.2.0",
+    # Qdrant vector database client
+    "qdrant-client>=1.9.0",
+    # HTTP client for Ollama embedding API
+    "httpx>=0.27.0",
+    # Encoding artifact repair
+    "ftfy>=6.1.0",
+]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
