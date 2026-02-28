@@ -1,24 +1,27 @@
+# Google OAuth token verification service.
+# Logic: Authentication business logic lives next to the auth router, not in a generic services/ folder.
+
+import logging
 from google.oauth2 import id_token
 from google.auth.transport import requests
 from app.core.config import settings
-from app.schemas.user import GoogleUser
-import logging
+from app.api.routes.auth.schemas import GoogleUser
 
 logger = logging.getLogger(__name__)
+
 
 def verify_google_token(token: str) -> GoogleUser | None:
     try:
         id_info = id_token.verify_oauth2_token(
-            token, 
-            requests.Request(), 
+            token,
+            requests.Request(),
             settings.GOOGLE_CLIENT_ID,
             clock_skew_in_seconds=10,
         )
-
         return GoogleUser(
-            email=id_info['email'],
-            name=id_info.get('name', ''),
-            picture=id_info.get('picture')
+            email=id_info["email"],
+            name=id_info.get("name", ""),
+            picture=id_info.get("picture"),
         )
     except ValueError as e:
         logger.error(f"Invalid Google token: {e}")

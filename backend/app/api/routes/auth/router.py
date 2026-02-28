@@ -1,3 +1,6 @@
+# Auth router: password login + Google OAuth (direct and redirect flows).
+# Logic: All auth HTTP handlers in one file, right next to the service and schemas they use.
+
 import secrets
 from datetime import timedelta
 from typing import Any
@@ -14,8 +17,8 @@ from app.core import security
 from app.core.config import settings
 from app.models.organization import Organization
 from app.models.user import User as UserModel
-from app.schemas.token import Token
-from app.services.google_auth import verify_google_token
+from app.api.routes.auth.schemas import Token
+from app.api.routes.auth.service import verify_google_token
 
 router = APIRouter()
 
@@ -23,11 +26,7 @@ router = APIRouter()
 _oauth_states: set[str] = set()
 
 
-async def _get_or_create_user(
-    session: SessionDep,
-    email: str,
-    name: str,
-) -> UserModel:
+async def _get_or_create_user(session: SessionDep, email: str, name: str) -> UserModel:
     """Find existing user by email, or create a new OAuth user."""
     statement = select(UserModel).where(UserModel.email == email)
     result = await session.exec(statement)
@@ -36,7 +35,6 @@ async def _get_or_create_user(
     if user:
         return user
 
-    # Need an organization — grab the first one or create a default
     org_result = await session.exec(select(Organization))
     org = org_result.first()
     if not org:
@@ -49,7 +47,7 @@ async def _get_or_create_user(
         organization_id=org.id,
         email=email,
         name=name,
-        password_hash=None,  # OAuth users have no password
+        password_hash=None,
         is_active=True,
     )
     session.add(user)
@@ -59,7 +57,6 @@ async def _get_or_create_user(
 
 
 def _create_token(user_id: Any) -> dict:
-    """Build the standard token response payload."""
     expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return {
         "access_token": security.create_access_token(user_id, expires_delta=expires),
@@ -74,9 +71,7 @@ async def login_access_token(
     session: SessionDep,
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Any:
-    """
-    OAuth2 compatible token login, get an access token for future requests.
-    """
+    """OAuth2 compatible token login."""
     statement = select(UserModel).where(UserModel.email == form_data.username)
     result = await session.exec(statement)
     user = result.first()
@@ -98,18 +93,12 @@ async def login_access_token(
 
 @router.post("/google", response_model=Token)
 async def google_auth(token: str, session: SessionDep) -> Any:
-    """
-    Google Login: Verify Google ID token and return access token.
-    """
+    """Google Login: Verify Google ID token and return access token."""
     google_user = verify_google_token(token)
     if not google_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Google token",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Google token")
 
     user = await _get_or_create_user(session, google_user.email, google_user.name)
-
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
@@ -120,34 +109,27 @@ async def google_auth(token: str, session: SessionDep) -> Any:
 
 @router.get("/google/login")
 async def login_google():
-    """Redirect to Google's consent screen with a CSRF state token."""
+    """Redirect to Google's consent screen."""
     state = secrets.token_urlsafe(32)
     _oauth_states.add(state)
-
-    params = urlencode(
-        {
-            "response_type": "code",
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "redirect_uri": settings.GOOGLE_REDIRECT_URI,
-            "scope": "openid email profile",
-            "access_type": "offline",
-            "state": state,
-        }
-    )
-    return RedirectResponse(
-        url=f"https://accounts.google.com/o/oauth2/v2/auth?{params}",
-    )
+    params = urlencode({
+        "response_type": "code",
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "state": state,
+    })
+    return RedirectResponse(url=f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
 
 
 @router.get("/google/callback")
 async def google_callback(code: str, state: str, session: SessionDep):
-    """Exchange the authorization code for tokens and log the user in."""
-    # Validate CSRF state
+    """Exchange authorization code for tokens and log the user in."""
     if state not in _oauth_states:
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
     _oauth_states.discard(state)
 
-    # Exchange code for token
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -162,25 +144,17 @@ async def google_callback(code: str, state: str, session: SessionDep):
         token_data = response.json()
 
     if "error" in token_data:
-        raise HTTPException(
-            status_code=400, detail=token_data.get("error_description", "Token exchange failed")
-        )
+        raise HTTPException(status_code=400, detail=token_data.get("error_description", "Token exchange failed"))
 
-    id_token_value = token_data.get("id_token")
-
-    google_user = verify_google_token(id_token_value)
+    google_user = verify_google_token(token_data.get("id_token"))
     if not google_user:
         raise HTTPException(status_code=400, detail="Invalid Google token")
 
     user = await _get_or_create_user(session, google_user.email, google_user.name)
-
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
     token = security.create_access_token(
         user.id, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-
-    # Redirect to frontend with token
     return RedirectResponse(url=f"{settings.FRONTEND_URL}/login/success?token={token}")
-
