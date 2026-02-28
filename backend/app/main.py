@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import auth
+from app.api.v1.endpoints import auth, emotion
 from app.core.database import create_db_and_tables
 
 @asynccontextmanager
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
+app.include_router(emotion.router, prefix=f"{settings.API_V1_STR}/emotion", tags=["emotion"])
 
 @app.get("/")
 def root():

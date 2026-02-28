@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Database (Docker Postgres)
     DATABASE_URL: str = "postgresql+asyncpg://vocalmind:vocalmind_dev@localhost:5432/vocalmind"
 
+    # Emotion API (Docker Container)
+    EMOTION_API_URL: str = "http://localhost:8000"
+
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
 
