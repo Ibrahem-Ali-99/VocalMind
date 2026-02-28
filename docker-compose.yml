@@ -1,4 +1,6 @@
 services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
   db:
     image: postgres:17
     container_name: vocalmind-db
@@ -13,10 +15,69 @@ services:
       - vocalmind_data:/var/lib/postgresql/data
       - ./docker/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vocalmind"]
+      test: [ "CMD-SHELL", "pg_isready -U vocalmind" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # ── Ollama ──────────────────────────────────────────────────────────────────
+  # Local LLM runtime — serves the nomic-embed-text embedding model.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vocalmind_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Qdrant ──────────────────────────────────────────────────────────────────
+  # Vector database — stores parent + child chunks with embeddings.
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: vocalmind_qdrant
+    ports:
+      - "6333:6333" # REST API + Web UI (http://localhost:6333/dashboard)
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── Ingestion Pipeline ─────────────────────────────────────────────────────
+  # One-shot: PDF → Docling → chunks → Ollama embeddings → Qdrant.
+  # Usage: docker compose up ingestion
+  ingestion:
+    build:
+      context: ./Experiments/Rag
+      dockerfile: ingestion-pipeline/Dockerfile
+    container_name: vocalmind_ingestion
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    volumes:
+      - ./Experiments/Rag/ingestion-pipeline/NA_docs:/app/NA_docs
+      - ./Experiments/Rag/ingestion-pipeline/parsed_docs:/app/parsed_docs
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - QDRANT_URL=http://qdrant:6333
+      - EMBEDDING_MODEL=nomic-embed-text
+    restart: "no" # one-shot: exits after processing all PDFs
+
 volumes:
-  vocalmind_data:
+  vocalmind_data: # PostgreSQL data
+  ollama_data: # Ollama model cache
+  qdrant_data: # Qdrant vector storage
