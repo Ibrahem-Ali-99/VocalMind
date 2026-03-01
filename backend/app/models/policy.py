@@ -1,32 +1,42 @@
 from sqlmodel import SQLModel, Field
 from typing import Optional
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from sqlalchemy import Enum as SAEnum
-from app.models.enums import ViolationSeverity
+
 
 class CompanyPolicy(SQLModel, table=True):
+    """Global policy definitions. Text is chunked and embedded into Pinecone."""
     __tablename__ = "company_policies"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    organization_id: UUID = Field(foreign_key="organizations.id")
-    policy_code: str
-    category: Optional[str] = None
+    policy_category: str = Field(max_length=100)
+    policy_title: str = Field(max_length=255)
     policy_text: str
-    pinecone_id: Optional[str] = None
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class OrganizationPolicy(SQLModel, table=True):
+    """Junction table: which policies each organization has activated."""
+    __tablename__ = "organization_policies"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    organization_id: UUID = Field(foreign_key="organizations.id")
+    policy_id: UUID = Field(foreign_key="company_policies.id")
+    assigned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    assigned_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+
 
 class PolicyCompliance(SQLModel, table=True):
+    """AI compliance verdict for a policy against an interaction."""
     __tablename__ = "policy_compliance"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     interaction_id: UUID = Field(foreign_key="interactions.id")
     policy_id: UUID = Field(foreign_key="company_policies.id")
-    is_compliant: Optional[bool] = None
-    compliance_score: Optional[float] = None
-    violation_severity: Optional[ViolationSeverity] = Field(default=None, sa_type=SAEnum(ViolationSeverity, name="violation_severity_enum", create_constraint=False, native_enum=True))
-    confidence_score: Optional[float] = None
-    analyzed_by_model: Optional[str] = None
-    trigger_description: Optional[str] = None
-    evidence_text: Optional[str] = None
+    is_compliant: bool
+    compliance_score: float
     llm_reasoning: Optional[str] = None
-    is_human_verified: bool = Field(default=False)
-    human_feedback_text: Optional[str] = None
+    evidence_text: Optional[str] = None
+    retrieved_policy_text: Optional[str] = None

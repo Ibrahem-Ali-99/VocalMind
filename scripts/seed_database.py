@@ -329,7 +329,7 @@ def seed():
     print("Seeding VocalMind database...")
     for table_name, rows in TABLES_IN_ORDER:
         result = supabase.table(table_name).insert(rows).execute()
-        print(f"  ✓ {table_name}: {len(result.data)} rows")
+        print(f"  [OK] {table_name}: {len(result.data)} rows")
     print(f"\nDone! Inserted {sum(len(r) for _, r in TABLES_IN_ORDER)} rows.")
 
 
