@@ -82,15 +82,15 @@ class CustomEvaluator:
         try:
             prompt = ChatPromptTemplate.from_template("""
                 You are an impartial judge evaluating a RAG system.
-                
+
                 Question: {question}
                 Generated Answer: {generated_answer}
                 Ground Truth: {ground_truth}
-                
+
                 Does the generated answer contain the core information present in the Ground Truth?
                 If the Ground Truth is a list of items, the answer should mention the relevant ones.
                 If the Ground Truth is 'Not Found' and the answer says 'I don't know', that is CORRECT.
-                
+
                 Respond with JSON only:
                 {{
                     "is_correct": boolean,

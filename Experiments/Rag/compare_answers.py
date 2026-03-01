@@ -53,25 +53,25 @@ def generate_rag_answer(question: str) -> str:
     try:
         # Lazy import to keep the script lightweight when not using RAG
         import sys
-        
-        # Ensure rag_app is importable. 
+
+        # Ensure rag_app is importable.
         # Assuming script is in Experiments/Rag and rag_app is in Experiments/Rag/rag_app
         script_dir = os.path.dirname(os.path.abspath(__file__))
         if script_dir not in sys.path:
             sys.path.append(script_dir)
-            
+
         from rag_app.pipeline import DocumentIngestionPipeline
         from rag_app.query_engine import RAGQueryEngine
-        
+
         # Initialize pipeline (loads index)
         pipeline = DocumentIngestionPipeline()
         index = pipeline.run(force_reindex=False)
-        
+
         # Query
         engine = RAGQueryEngine(index)
         response = engine.query(question)
         return str(response)
-        
+
     except ImportError as e:
         return f"Error loading RAG system: {e}. Make sure you are in the correct environment."
     except Exception as e:
@@ -81,7 +81,7 @@ def generate_rag_answer(question: str) -> str:
 
 class AnswerComparator:
     """Compares two answers using an LLM as an impartial judge."""
-    
+
     def __init__(self, llm: BaseChatModel):
         self.llm = llm
 
@@ -92,16 +92,16 @@ class AnswerComparator:
         - Focus on meaning, ignoring minor phrasing differences.
         - Output JSON: {{"similarity_score": 1-10, "explanation": "reason"}}
         """
-        
+
         user_prompt = """
         Question: {question}
         Answer A: {answer1}
         Answer B: {answer2}
         """
-        
+
         chain = ChatPromptTemplate.from_messages([("system", system_prompt), ("user", user_prompt)]) | self.llm
         print(f"Comparing inputs (len A={len(answer1)}, len B={len(answer2)})...")
-        
+
         try:
             return parse_json_response(chain.invoke({
                 "question": question or "N/A",
@@ -113,7 +113,7 @@ class AnswerComparator:
 
 class ResolutionEvaluator:
     """Analyzes a conversation transcript for problem resolution."""
-    
+
     def __init__(self, llm: BaseChatModel):
         self.llm = llm
 
@@ -137,12 +137,12 @@ class ResolutionEvaluator:
             "evidence": "string"
         }}
         """
-        
+
         user_prompt = "Analyze this transcript:\n\n{transcript_text}"
-        
+
         chain = ChatPromptTemplate.from_messages([("system", system_prompt), ("user", user_prompt)]) | self.llm
         print(f"Analyzing transcript ({len(conversation)} turns)...")
-        
+
         try:
             return parse_json_response(chain.invoke({"transcript_text": transcript}).content)
         except Exception as e:
@@ -186,14 +186,14 @@ def main():
             if not args.answer1:
                  print("Error: --rag requires an answer1 to compare against the RAG system.")
                  return
-            
+
             # Generate reference answer from RAG
             a1 = read_content(args.answer1)
             q = args.question
             print(f"Querying RAG system with: '{q}'...")
             a2 = generate_rag_answer(q)
             print(f"\nRAG Answer: {a2}\n")
-            
+
         elif args.interactive or not (args.answer1 and args.answer2):
             print("\n=== Interactive Comparator ===")
             q = input("Question (optional): ").strip()
@@ -210,7 +210,7 @@ def main():
         if not os.path.exists(args.file):
             print(f"File not found: {args.file}")
             return
-        
+
         with open(args.file, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
@@ -221,9 +221,9 @@ def main():
             conversations = [data]
 
         evaluator = ResolutionEvaluator(llm)
-        
+
         print(f"\nrunning analysis on {len(conversations)} conversation(s)...\n")
-        
+
         for i, conv in enumerate(conversations):
             print(f"--- Conversation {i+1} ---")
             res = evaluator.evaluate(conv)

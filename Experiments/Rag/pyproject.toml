@@ -60,3 +60,7 @@ env = [
     "GROQ_API_KEY=dummy_groq_key",
     "PINECONE_API_KEY=dummy_pinecone_key",
 ]
+
+[tool.uv.sources]
+markupsafe = { index = "pypi" }
+

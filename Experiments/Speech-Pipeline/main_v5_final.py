@@ -191,7 +191,7 @@ def apply_emotion_corrections(emotion: str, confidence: float, text: str,
     text_lower = text.lower()
     original_emotion = emotion
     original_conf = confidence
-    
+
     # ================================================================
     # LAYER 1: GRATITUDE DETECTION (both agent & customer)
     # ================================================================
@@ -206,7 +206,7 @@ def apply_emotion_corrections(emotion: str, confidence: float, text: str,
         # If model said neutral/sad, remap to happy
         elif emotion in ['neutral', 'sad']:
             return 'happy', 0.85, True, f"gratitude_detect({gratitude_hits})→happy"
-    
+
     # ================================================================
     # LAYER 2: CUSTOMER FRUSTRATION → ANGER
     # ================================================================
@@ -215,14 +215,14 @@ def apply_emotion_corrections(emotion: str, confidence: float, text: str,
     # ================================================================
     if speaker_role == "CUSTOMER" and emotion == "sad":
         frustration_hits = sum(1 for p in FRUSTRATION_INDICATORS if p in text_lower)
-        
+
         if frustration_hits >= 2:
             # Strong frustration → definitely angry
             return "angry", confidence * 0.95, True, f"frustration({frustration_hits} hits)→angry"
         elif frustration_hits == 1 and confidence < 0.75:
             # Mild frustration + low confidence → probably angry
             return "angry", confidence * 0.90, True, "mild_frustration→angry"
-    
+
     # ================================================================
     # LAYER 3: AGENT EMPATHY PHRASES → NEUTRAL
     # ================================================================
@@ -234,7 +234,7 @@ def apply_emotion_corrections(emotion: str, confidence: float, text: str,
         for phrase in AGENT_EMPATHY_INDICATORS:
             if phrase in text_lower:
                 return "neutral", max(confidence, 0.85), True, "agent_empathy_script→neutral"
-    
+
     # ================================================================
     # NO CORRECTION NEEDED
     # ================================================================
@@ -871,20 +871,20 @@ class ProductionPipeline:
 
         elapsed = time.time() - start_time
         print(f"\n>> Total processing time: {elapsed:.1f}s")
-        print(f">> Emotion corrections applied:")
+        print(">> Emotion corrections applied:")
         print(f"     Frustration→anger:  {correction_stats['frustration']}")
         print(f"     Gratitude detected: {correction_stats['gratitude']}")
         print(f"     Agent empathy→neutral: {correction_stats['empathy']}")
-        
+
         return final_segments
 
     @staticmethod
     def _print_utterance(speaker, role, text, start, end, fusion, is_overlap=False):
         overlap_tag = " [OVERLAP]" if is_overlap else ""
-        
+
         text_det = fusion['text_details']
         audio_det = fusion['audio_details']
-        
+
         t_emo = text_det['emotion']
         t_conf = text_det['confidence']
         a_emo = audio_det['emotion']

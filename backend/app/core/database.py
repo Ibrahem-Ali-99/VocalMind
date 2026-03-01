@@ -21,6 +21,6 @@ async def create_db_and_tables():
         Utterance, EmotionEvent, InteractionScore,
         CompanyPolicy, PolicyCompliance, HumanFeedback, ManagerQuery,
     )
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

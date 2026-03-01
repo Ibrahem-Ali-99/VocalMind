@@ -45,23 +45,23 @@ conversation = [
 def generate_call():
     """Generate the full telecom call audio."""
     audio_segments = []
-    
+
     for i, turn in enumerate(conversation):
         speaker = turn["speaker"]
         text = turn["text"]
         emotion = turn["emotion"]
-        
+
         print(f"[{i+1}/{len(conversation)}] Generating {speaker} ({emotion})...")
-        
+
         voice_id = AGENT_VOICE if speaker == "agent" else CLIENT_VOICE
-        
+
         if emotion in ["frustrated", "surprised"]:
             stability, style = 0.65, 0.7
         elif emotion in ["grateful", "happy"]:
             stability, style = 0.7, 0.8
         else:
             stability, style = 0.75, 0.5
-        
+
         audio_generator = client.text_to_speech.convert(
             voice_id=voice_id,
             text=text,
@@ -73,25 +73,25 @@ def generate_call():
                 use_speaker_boost=True,
             ),
         )
-        
+
         audio_bytes = b"".join(audio_generator)
-        
+
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
         audio_segments.append(audio)
-        
+
         pause = AudioSegment.silent(duration=500)
         audio_segments.append(pause)
-        
+
         time.sleep(0.3)
-    
+
     print("\nCombining audio segments...")
     final_audio = audio_segments[0]
     for segment in audio_segments[1:]:
         final_audio += segment
-    
+
     output_file = "telecom_call.mp3"
     final_audio.export(output_file, format="mp3", bitrate="192k")
-    
+
     print(f"\n✓ SUCCESS! Audio saved as: {output_file}")
     print(f"  Duration: {len(final_audio) / 1000:.1f} seconds")
 

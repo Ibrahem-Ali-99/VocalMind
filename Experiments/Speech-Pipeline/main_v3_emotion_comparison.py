@@ -922,7 +922,7 @@ class ProductionSpeakerRoleClassifier:
             role, conf, debug = self.classify_speaker_role(spk, segments)
             results[spk] = role
             print(f"\n   {spk}: {role} (confidence: {conf:.2f})")
-            print(f"   Component breakdown:")
+            print("   Component breakdown:")
             for comp_name, info in debug.items():
                 if comp_name != 'final':
                     print(f"      {comp_name:25s}: score={info['score']:.2f}, "

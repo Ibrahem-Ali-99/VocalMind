@@ -19,4 +19,4 @@ class User(SQLModel, table=True):
 
     # Optional fields from previous version, not in schema but maybe useful for app logic?
     # Keeping them off for now to strictly match schema as requested.
-    # picture: Optional[str] = None 
+    # picture: Optional[str] = None

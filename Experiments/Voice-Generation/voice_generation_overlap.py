@@ -35,56 +35,56 @@ CLIENT_VOICE = os.getenv("ELEVENLABS_CLIENT_VOICE_ID")  # Bella - warm female
 def get_available_voices():
     """Fetch available voices and select appropriate ones for agent and client."""
     global AGENT_VOICE, CLIENT_VOICE
-    
+
     # Check for custom voices in .env first
     custom_agent = os.getenv("ELEVENLABS_AGENT_VOICE_ID")
     custom_client = os.getenv("ELEVENLABS_CLIENT_VOICE_ID")
-    
+
     if custom_agent and custom_client:
         AGENT_VOICE = custom_agent
         CLIENT_VOICE = custom_client
-        print(f"✅ Using custom voices from .env")
+        print("✅ Using custom voices from .env")
         return True
-    
+
     try:
         print("🔍 Fetching available voices from ElevenLabs...")
         response = client.voices.get_all()
         voices = response.voices
-        
+
         if not voices:
             print("❌ No voices available")
             return False
-        
+
         print(f"📋 Found {len(voices)} available voices")
-        
+
         # Look for male and female voices
         male_voices = [v for v in voices if 'male' in v.labels.get('gender', '').lower()]
         female_voices = [v for v in voices if 'female' in v.labels.get('gender', '').lower()]
-        
+
         # Fallback: just pick first two different voices
         if not male_voices:
             male_voices = [v for v in voices if v not in female_voices]
         if not female_voices:
             female_voices = [v for v in voices if v not in male_voices]
-        
+
         if male_voices and female_voices:
             AGENT_VOICE = male_voices[0].voice_id
             CLIENT_VOICE = female_voices[0].voice_id
-            print(f"✅ Selected voices:")
+            print("✅ Selected voices:")
             print(f"   Agent: {male_voices[0].name} (ID: {AGENT_VOICE})")
             print(f"   Client: {female_voices[0].name} (ID: {CLIENT_VOICE})")
             return True
         elif len(voices) >= 2:
             AGENT_VOICE = voices[0].voice_id
             CLIENT_VOICE = voices[1].voice_id
-            print(f"✅ Selected voices:")
+            print("✅ Selected voices:")
             print(f"   Agent: {voices[0].name} (ID: {AGENT_VOICE})")
             print(f"   Client: {voices[1].name} (ID: {CLIENT_VOICE})")
             return True
         else:
             print("❌ Not enough voices available")
             return False
-            
+
     except Exception as e:
         print(f"❌ Error fetching voices: {e}")
         print("\n💡 TIP: You can manually specify voice IDs in .env:")
@@ -110,7 +110,7 @@ SCENARIOS = {
             {"speaker": "client", "emotion": "grateful", "text": "Great, thank you so much!"},
         ]
     },
-    
+
     "medium_no_overlap": {
         "name": "Medium - Standard Support Call",
         "difficulty": "medium",
@@ -130,7 +130,7 @@ SCENARIOS = {
             {"speaker": "client", "emotion": "happy", "text": "No, that's all. Thanks again!"},
         ]
     },
-    
+
     "hard_no_overlap": {
         "name": "Hard - Complex Multi-Issue Call",
         "difficulty": "hard",
@@ -153,7 +153,7 @@ SCENARIOS = {
             {"speaker": "agent", "emotion": "professional", "text": "Thank you for being a valued customer. Have a wonderful day, and don't hesitate to reach out if you need anything in the future!"},
         ]
     },
-    
+
     # OVERLAP SCENARIOS (Easy to Hard)
     "easy_overlap": {
         "name": "Easy Overlap - Single Interruption",
@@ -168,7 +168,7 @@ SCENARIOS = {
             {"speaker": "client", "emotion": "happy", "text": "Keep up the great work!"},
         ]
     },
-    
+
     "medium_overlap": {
         "name": "Medium Overlap - Multiple Interruptions",
         "difficulty": "medium",
@@ -186,7 +186,7 @@ SCENARIOS = {
             {"speaker": "client", "emotion": "grateful", "text": "Okay, doing it now. Thanks for the help!"},
         ]
     },
-    
+
     "hard_overlap": {
         "name": "Hard Overlap - Frequent Interruptions",
         "difficulty": "hard",
@@ -238,7 +238,7 @@ def get_pause_duration(current_emotion: str, next_emotion: str) -> int:
 def generate_audio_segment(text: str, voice_id: str, emotion: str) -> AudioSegment:
     """Generate a single audio segment."""
     settings = get_voice_settings(emotion)
-    
+
     audio_generator = client.text_to_speech.convert(
         voice_id=voice_id,
         text=text,
@@ -250,7 +250,7 @@ def generate_audio_segment(text: str, voice_id: str, emotion: str) -> AudioSegme
             use_speaker_boost=True,
         ),
     )
-    
+
     audio_bytes = b"".join(audio_generator)
     return AudioSegment.from_file(io.BytesIO(audio_bytes), format="mp3")
 
@@ -260,26 +260,26 @@ def generate_call_with_overlap(scenario_key: str, output_file: str):
     scenario = SCENARIOS[scenario_key]
     conversation = scenario["conversation"]
     has_overlap = scenario["has_overlap"]
-    
+
     print("\n" + "="*60)
     print(f"GENERATING: {scenario['name']}")
     print(f"Difficulty: {scenario['difficulty'].upper()} | Overlap: {has_overlap}")
     print("="*60)
-    
+
     # Generate all segments first
     print("\nStep 1: Generating individual audio segments...")
     segments = []
-    
+
     for i, turn in enumerate(conversation):
         speaker = turn["speaker"]
         text = turn["text"]
         emotion = turn["emotion"]
-        
+
         print(f"  [{i+1}/{len(conversation)}] {speaker.title()} ({emotion}): {text[:50]}...")
-        
+
         voice_id = AGENT_VOICE if speaker == "agent" else CLIENT_VOICE
         audio = generate_audio_segment(text, voice_id, emotion)
-        
+
         segments.append({
             "audio": audio,
             "speaker": speaker,
@@ -287,18 +287,18 @@ def generate_call_with_overlap(scenario_key: str, output_file: str):
             "overlap": turn.get("overlap", None) if has_overlap else None,
             "text": text
         })
-        
+
         time.sleep(0.3)  # Rate limiting
-    
+
     # Mix segments with overlaps
     print("\nStep 2: Mixing segments with natural timing...")
     final_audio = AudioSegment.silent(duration=0)
     current_position = 0
-    
+
     for i, segment in enumerate(segments):
         audio = segment["audio"]
         overlap = segment["overlap"]
-        
+
         if i == 0:
             # First segment starts at beginning
             final_audio = audio
@@ -307,40 +307,40 @@ def generate_call_with_overlap(scenario_key: str, output_file: str):
         else:
             prev_emotion = segments[i-1]["emotion"]
             curr_emotion = segment["emotion"]
-            
+
             if overlap:
                 # Overlap: cut into previous speaker
                 overlap_ms = int(overlap * 1000)
                 insert_position = current_position - overlap_ms
-                
+
                 # Create overlap by mixing
                 pre_overlap = final_audio[:insert_position]
                 overlap_section = final_audio[insert_position:current_position]
-                
+
                 # Mix the overlapping part
                 mixed_overlap = overlap_section.overlay(audio[:len(overlap_section)])
                 remaining_audio = audio[len(overlap_section):]
-                
+
                 final_audio = pre_overlap + mixed_overlap + remaining_audio
                 current_position = len(final_audio)
-                
+
                 print(f"  [{i+1}] {segment['speaker'].title()} INTERRUPTS at {insert_position/1000:.1f}s (overlap: {overlap:.1f}s)")
             else:
                 # Normal pause
                 pause_duration = get_pause_duration(prev_emotion, curr_emotion)
                 pause = AudioSegment.silent(duration=pause_duration)
-                
+
                 final_audio = final_audio + pause + audio
                 current_position = len(final_audio)
-                
+
                 print(f"  [{i+1}] {segment['speaker'].title()} at {(current_position - len(audio))/1000:.1f}s (pause: {pause_duration}ms)")
-    
+
     # Export
     print("\nStep 3: Exporting final audio...")
     final_audio.export(output_file, format="mp3", bitrate="192k")
-    
+
     print("\n" + "="*60)
-    print(f"✓ SUCCESS!")
+    print("✓ SUCCESS!")
     print(f"  File: {output_file}")
     print(f"  Duration: {len(final_audio) / 1000:.1f}s")
     print(f"  Segments: {len(segments)}")
@@ -349,25 +349,25 @@ def generate_call_with_overlap(scenario_key: str, output_file: str):
 
 def estimate_characters():
     """Estimate total character count for API usage."""
-    print(f"\n📊 Character Estimate for All Scenarios:")
+    print("\n📊 Character Estimate for All Scenarios:")
     print("="*60)
-    
+
     total_all = 0
     for key, scenario in SCENARIOS.items():
         conv_chars = sum(len(turn["text"]) for turn in scenario["conversation"])
         total_all += conv_chars
         print(f"  {scenario['name']:40s} {conv_chars:>5,} chars")
-    
+
     print("="*60)
     print(f"  TOTAL for all 6 scenarios: {total_all:>5,} characters")
-    print(f"  Free tier limit:           10,000/month")
+    print("  Free tier limit:           10,000/month")
     print(f"  Usage: {total_all/10000*100:.1f}% of free tier")
-    
+
     if total_all <= 10000:
         print(f"  ✅ Remaining: {10000-total_all:,} characters")
     else:
         print(f"  ⚠️  WARNING: Exceeds free tier by {total_all-10000:,} characters")
-        print(f"  Consider: $5/month for 30,000 characters")
+        print("  Consider: $5/month for 30,000 characters")
 
 
 def main():
@@ -380,7 +380,7 @@ Scenarios generated:
   2. medium_no_overlap - Standard support call
   3. hard_no_overlap - Complex multi-issue call
   4. easy_overlap - Single interruption
-  5. medium_overlap - Multiple interruptions  
+  5. medium_overlap - Multiple interruptions
   6. hard_overlap - Frequent interruptions
         """
     )
@@ -388,9 +388,9 @@ Scenarios generated:
                         help="Generate only one specific scenario")
     parser.add_argument("--estimate-only", action="store_true",
                         help="Only estimate character count, don't generate")
-    
+
     args = parser.parse_args()
-    
+
     if not ELEVENLABS_API_KEY:
         print("❌ ERROR: ELEVENLABS_API_KEY not found in .env file")
         print("\nSteps to fix:")
@@ -398,45 +398,45 @@ Scenarios generated:
         print("2. Create .env file in project root")
         print("3. Add: ELEVENLABS_API_KEY=your_key_here")
         return
-    
+
     # Fetch available voices
     if not get_available_voices():
         print("\n❌ Failed to get voices. Cannot generate audio.")
         return
-    
+
     if args.estimate_only:
         estimate_characters()
         return
-    
+
     # Create output folder
     output_dir = Path("generated_audio")
     output_dir.mkdir(exist_ok=True)
     print(f"\n📁 Output folder: {output_dir.absolute()}")
-    
+
     estimate_characters()
     print("\nPress Enter to continue or Ctrl+C to cancel...")
     input()
-    
+
     # Generate scenarios
     if args.scenario:
         scenarios_to_gen = [args.scenario]
     else:
         scenarios_to_gen = list(SCENARIOS.keys())
-    
+
     print(f"\n🎙️  Generating {len(scenarios_to_gen)} scenario(s)...\n")
-    
+
     for i, scenario_key in enumerate(scenarios_to_gen, 1):
         scenario = SCENARIOS[scenario_key]
         output_file = output_dir / f"{scenario_key}.mp3"
-        
+
         print(f"\n[{i}/{len(scenarios_to_gen)}] Starting: {scenario_key}")
         generate_call_with_overlap(scenario_key, str(output_file))
         print(f"✅ Saved: {output_file}\n")
-        
+
         # Pause between generations
         if i < len(scenarios_to_gen):
             time.sleep(2)
-    
+
     print("\n" + "="*60)
     print("🎉 ALL SCENARIOS GENERATED SUCCESSFULLY!")
     print("="*60)

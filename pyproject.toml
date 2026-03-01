@@ -61,4 +61,20 @@ index-strategy = "unsafe-best-match"
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
-priority = "primary"
+priority = "explicit"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+[tool.ruff]
+exclude = [
+    ".git",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "Experiments/**/*.ipynb",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90"]
+ignore = ["E501", "E402", "E701", "E702", "E722", "E712", "F401", "F841", "C901"]
