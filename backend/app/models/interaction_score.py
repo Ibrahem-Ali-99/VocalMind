@@ -14,7 +14,7 @@ class InteractionScore(SQLModel, table=True):
     empathy_score: Optional[float] = None
     policy_score: Optional[float] = None
     resolution_score: Optional[float] = None
-    total_silence_duration_seconds: Optional[float] = None
-    average_response_time_seconds: Optional[float] = None
+    total_silence_seconds: Optional[float] = None
+    avg_response_time_seconds: Optional[float] = None
     was_resolved: Optional[bool] = None
     scored_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -10,6 +10,7 @@ class Organization(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(max_length=255)
+    slug: str = Field(max_length=100, unique=True, index=True)
     status: OrgStatus = Field(
         default=OrgStatus.active,
         sa_type=SAEnum(OrgStatus, name="org_status_enum", create_constraint=False, native_enum=True),

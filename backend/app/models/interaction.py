@@ -11,7 +11,8 @@ class Interaction(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     organization_id: UUID = Field(foreign_key="organizations.id")
-    agent_id: UUID = Field(foreign_key="users.id")  # FK → users (merged)
+    agent_id: UUID = Field(foreign_key="users.id")      # Agent who handled the call
+    uploaded_by: UUID = Field(foreign_key="users.id")   # Manager who uploaded the file
     audio_file_path: str
     file_size_bytes: int = Field(sa_column=Column(BigInteger, nullable=False))
     duration_seconds: int

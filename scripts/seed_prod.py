@@ -1,48 +1,54 @@
 import os
 import sys
-import time
-from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Load credentials from .env
+# Fix path to import seed_database
+sys.path.append(str(Path(__file__).parent.parent))
+import scripts.seed_database as seed_database
+
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-PROD_URL = os.getenv("PROD_URL")
-PROD_KEY = os.getenv("PROD_KEY")
-PROD_HOST = os.getenv("PROD_HOST")
-PROD_REF = os.getenv("PROD_REF")
-PROD_PW = os.getenv("PROD_PW")
-
-def seed_prod():
-    print(f"Seeding Production database: {PROD_URL}")
+def seed():
+    print("Seeding database via direct PostgreSQL connection (psycopg)...")
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        print("ERROR: DATABASE_URL not found in .env")
+        return
     
-    # Wipe data first via psycopg for speed and reliability
-    print("Wiping existing data for clean seed...")
-    conn_str = f"host={PROD_HOST} port=6543 user=postgres.{PROD_REF} password={PROD_PW} dbname=postgres sslmode=require"
+    if "+asyncpg" in db_url:
+        db_url = db_url.replace("+asyncpg", "")
+    
     try:
-        with psycopg.connect(conn_str) as conn:
+        with psycopg.connect(db_url, prepare_threshold=None) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
-                tables = [row[0] for row in cur.fetchall()]
-                if tables:
-                    tables_str = ", ".join([f'"{t}"' for t in tables])
-                    cur.execute(f"TRUNCATE TABLE {tables_str} CASCADE")
-                    conn.commit()
-                    print("  Wipe successful.")
-    except Exception as e:
-        print(f"  Wipe failed (skipping): {e}")
+                print("Wiping existing data...")
+                # Tables in reverse order of creation
+                for table_name, _ in reversed(seed_database.TABLES_IN_ORDER):
+                    cur.execute(f"TRUNCATE TABLE {table_name} CASCADE;")
+                print("  Wipe successful.")
+                
+                print("Inserting mock data...")
+                for table_name, rows in seed_database.TABLES_IN_ORDER:
+                    print(f"  Inserting into {table_name} ({len(rows)} rows)...")
+                    if not rows: continue
+                    
+                    columns = rows[0].keys()
+                    col_names = ", ".join(columns)
+                    placeholders = ", ".join(["%s"] * len(columns))
+                    
+                    sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+                    
+                    data = [tuple(row[c] for c in columns) for row in rows]
+                    cur.executemany(sql, data)
+                
+                conn.commit()
+                print("\n✅  Seeding complete via direct connection!")
 
-    # Set environment variables
-    os.environ["SUPABASE_URL"] = PROD_URL
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"] = PROD_KEY
-    
-    print("Waiting 45 seconds for Supabase schema cache to refresh (Production is slow)...")
-    time.sleep(45)
-    
-    sys.path.append(str(Path(__file__).parent))
-    import seed_database
-    seed_database.seed()
+    except Exception as e:
+        print(f"\n❌  Seeding failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    seed_prod()
+    seed()

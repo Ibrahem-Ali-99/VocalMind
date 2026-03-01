@@ -24,8 +24,8 @@ class OrganizationPolicy(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     organization_id: UUID = Field(foreign_key="organizations.id")
     policy_id: UUID = Field(foreign_key="company_policies.id")
+    is_active: bool = Field(default=True)
     assigned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    assigned_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
 
 
 class PolicyCompliance(SQLModel, table=True):

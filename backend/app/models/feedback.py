@@ -1,6 +1,9 @@
 from sqlmodel import SQLModel, Field
 from typing import Optional
 from uuid import UUID, uuid4
+from datetime import datetime, timezone
+from sqlalchemy import Enum as SAEnum
+from app.models.enums import FeedbackStatus
 
 
 class EmotionFeedback(SQLModel, table=True):
@@ -14,7 +17,12 @@ class EmotionFeedback(SQLModel, table=True):
     corrected_emotion: str = Field(max_length=50)
     corrected_justification: Optional[str] = None
     correction_reason: Optional[str] = None
+    feedback_status: FeedbackStatus = Field(
+        default=FeedbackStatus.pending,
+        sa_type=SAEnum(FeedbackStatus, name="feedback_status_enum", create_constraint=False, native_enum=True),
+    )
     is_used_in_training: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ComplianceFeedback(SQLModel, table=True):
@@ -29,4 +37,9 @@ class ComplianceFeedback(SQLModel, table=True):
     original_score: Optional[float] = None
     corrected_score: Optional[float] = None
     correction_reason: Optional[str] = None
+    feedback_status: FeedbackStatus = Field(
+        default=FeedbackStatus.pending,
+        sa_type=SAEnum(FeedbackStatus, name="feedback_status_enum", create_constraint=False, native_enum=True),
+    )
     is_used_in_training: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
