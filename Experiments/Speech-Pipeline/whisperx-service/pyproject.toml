@@ -1,0 +1,46 @@
+[project]
+name = "whisperx-service"
+version = "1.0.0"
+requires-python = ">=3.10"
+description = "WhisperX transcription service wrapped in FastAPI"
+
+dependencies = [
+    # FastAPI
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
+    "python-dotenv>=1.0.0",
+
+    # Core PyTorch
+    "torch>=2.4.0",
+    "torchaudio>=2.4.0",
+
+    # ASR & Diarization
+    "whisperx>=3.7.0",
+    "pyannote.audio>=3.4.0",
+    "pytorch-lightning>=2.0.0",
+
+    # NLP & Transformers
+    "transformers>=4.40.0",
+    "accelerate>=0.26.0",
+    "sentencepiece>=0.1.99",
+    "safetensors>=0.4.0",
+
+    # Audio Processing
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "audioread>=3.0.0",
+
+    # Utilities
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "huggingface-hub>=0.20.0",
+]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "primary"
