@@ -77,6 +77,22 @@ services:
       - EMBEDDING_MODEL=nomic-embed-text
     restart: "no" # one-shot: exits after processing all PDFs
 
+  # ── VAD Preprocessing ──────────────────────────────────────────────────
+  # Silero VAD: splits audio into speech segments (CPU-only).
+  vad:
+    build:
+      context: ./docker/vad
+    container_name: vocalmind-vad
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
 volumes:
   vocalmind_data: # PostgreSQL data
   ollama_data: # Ollama model cache

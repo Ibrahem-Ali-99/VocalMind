@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     # Emotion API (Docker Container)
     EMOTION_API_URL: str = "http://localhost:8000"
+    VAD_API_URL: str = "http://localhost:8002"
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 

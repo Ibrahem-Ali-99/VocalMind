@@ -49,6 +49,33 @@ class EmotionAPIClient:
             logger.error("Emotion API timed out.")
             raise HTTPException(status_code=504, detail="Emotion service timed out.")
 
+    async def analyze_bytes(self, audio_bytes: bytes, filename: str) -> Dict[str, Any]:
+        """Forward raw audio bytes to the GPU container (used by the VAD pipeline)."""
+        timeout = httpx.Timeout(60.0, connect=10.0)
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    self.predict_url,
+                    files={"file": (filename, audio_bytes, "audio/wav")},
+                )
+
+            if response.status_code == 200:
+                return response.json()
+
+            logger.error(f"Emotion API error {response.status_code}: {response.text}")
+            raise HTTPException(status_code=502, detail=f"Emotion service error: {response.text}")
+
+        except httpx.RequestError as e:
+            logger.error(f"Emotion API unreachable: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail="Emotion service unreachable. Ensure the emotion-api-gpu container is running.",
+            )
+        except httpx.TimeoutException:
+            logger.error("Emotion API timed out.")
+            raise HTTPException(status_code=504, detail="Emotion service timed out.")
+
 
 # Module-level singleton
 emotion_client = EmotionAPIClient()
