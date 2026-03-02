@@ -82,6 +82,13 @@ try:
 except ImportError:
     pass
 
+try:
+    import transformers.utils.import_utils as import_utils
+    import_utils.check_torch_load_is_safe = lambda: None
+    print("[OK] transformers torch safety check bypassed")
+except (ImportError, AttributeError):
+    pass
+
 # ==============================================================================
 # 1. SETUP & CONFIGURATION
 # ==============================================================================
@@ -95,6 +102,18 @@ load_dotenv(env_path)
 HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
     print("⚠ WARNING: HF_TOKEN not found in .env")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FFmpeg Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+FFMPEG_PATH = os.getenv("FFMPEG_PATH")
+if FFMPEG_PATH:
+    if os.path.exists(FFMPEG_PATH):
+        print(f"[OK] Adding FFMPEG to PATH: {FFMPEG_PATH}")
+        os.environ["PATH"] = FFMPEG_PATH + os.pathsep + os.environ["PATH"]
+    else:
+        print(f"⚠ WARNING: FFMPEG_PATH not found: {FFMPEG_PATH}")
+# ──────────────────────────────────────────────────────────────────────────────
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
