@@ -160,7 +160,7 @@ async def dispute_emotion_event(
         agent_flagged_by=UUID(updated["agent_flagged_by"]),
         agent_flagged_at=datetime.fromisoformat(updated["agent_flagged_at"]),
         agent_flag_note=updated.get("agent_flag_note"),
-        message=f"Event disputed successfully. Your manager will be notified in their review queue.",
+        message="Event disputed successfully. Your manager will be notified in their review queue.",
     )
 
 
