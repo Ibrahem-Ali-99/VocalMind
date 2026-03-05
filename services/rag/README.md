@@ -1,113 +1,124 @@
-# Generic RAG System
+docs/
+# VocalMind RAG
 
-A flexible Retrieval-Augmented Generation (RAG) system built with [LlamaIndex](https://www.llamaindex.ai/), [Groq](https://groq.com), and [Pinecone](https://www.pinecone.io). Designed to ingest documents from various sources, index them into a vector store, and provide accurately sourced answers using LLMs.
+**Dual-granularity Policy Compliance & Answer Scoring with Docling, Qdrant, and Groq**
+
+A robust Retrieval-Augmented Generation (RAG) system for policy document analysis, featuring:
+
+- Dual-granularity chunking (full sections & precision snippets)
+- Policy compliance and answer correctness evaluation
+- Fast, local-first architecture (Docling, Ollama, Qdrant, Groq)
+- Per-organization document support
+
+---
 
 ## Features
 
-- **High-Performance LLM**: Uses Groq for ultra-fast inference.
-- **Vector Search**: Pinecone for scalable similarity search.
-- **Local Embeddings**: Uses Ollama for generating embeddings locally.
-- **Pluggable Data Loaders**: Strategy pattern supports multiple data sources:
-  - `standard` – Basic file ingestion (PDF, TXT, MD, etc.)
-  - `directory` – Custom directory loader with sidecar metadata (`.meta.json`)
-  - `herb` – HERB enterprise dataset (Slack, PRs, Meetings, Documents)
-  - `ragbench` – HuggingFace RagBench datasets
-- **Heuristic Metadata Extraction**: Fast, loader-based title/summary generation (no LLM calls during ingestion).
-- **Detailed Logging**: Logs every query, including retrieval timing, chunks used, and the final response in JSON format.
-- **Evaluation Framework**: Built-in tools to evaluate RAG accuracy using RAGAS and LLM-as-a-Judge.
+- **Dual Collection RAG**: Ingests policy PDFs into two Qdrant collections:
+	- **Parents**: Full policy sections (for compliance checks)
+	- **Children**: Fine-grained snippets (for answer fact-checking)
+- **AI-powered PDF Parsing**: Uses Docling for accurate PDF-to-Markdown conversion
+- **Local Embeddings**: Embeddings generated via Ollama (snowflake-arctic-embed2)
+- **Fast LLM Synthesis**: Uses Groq for rapid, high-quality LLM responses
+- **Per-Organization Filtering**: Each org’s docs are indexed with metadata for targeted queries
+- **Policy Compliance & Answer Scoring**: Built-in evaluators for both transcript compliance and answer correctness
+- **Detailed Logging**: All queries and evaluations are logged as JSON in `logs/`
+- **Evaluation Suite**: Automated scoring and reporting for compliance and answer accuracy
+
+---
 
 ## Setup
 
 1. **Install Dependencies**
-   Ensure you have Python 3.11+ installed.
-
-   ```bash
-   uv sync
-   ```
-
-   (Or use `pip install -r requirements.txt` if you export dependencies).
+	 - Requires Python 3.11+
+	 - Install with:
+		 ```bash
+		 pip install -r requirements.txt
+		 ```
+		 (Or use `uv sync` if using uv)
 
 2. **Environment Configuration**
-   Copy `.env.example` to `.env` and fill in your API keys:
+	 - Copy `.env.example` to `.env` and fill in:
+		 - `GROQ_API_KEY` (Groq LLM)
+		 - `QDRANT_URL` (Qdrant vector DB, default: `http://localhost:6333`)
+		 - `OLLAMA_BASE_URL` (Ollama embeddings, default: `http://localhost:11434`)
 
-   ```bash
-   cp .env.example .env
-   ```
+3. **Prepare Policy Documents**
+	 - Place PDFs in `docs/`:
+		 ```
+		 docs/
+		 ├── org1/           # one sub-folder per organization
+		 │   ├── policy_a.pdf
+		 │   └── policy_b.pdf
+		 ├── org2/
+		 │   └── handbook.pdf
+		 └── ...
+		 ```
+	 - PDFs in subfolders are tagged with the folder name as `organization` metadata.
+	 - PDFs directly in `docs/` are tagged as `organization = "default"`.
 
-   - **GROQ_API_KEY**: Your Groq API key.
-   - **PINECONE_API_KEY**: Your Pinecone API key.
-   - **PINECONE_INDEX_NAME**: (Optional) Name of your index.
+4. **Start Services**
+	 - Ensure Qdrant and Ollama are running (see their docs for Docker or local start).
 
-3. **Start Local Embeddings (Ollama)**
-   This project uses Ollama for local embeddings. You can start it easily with Docker:
-
-   ```bash
-   # Start in background
-   docker compose up -d
-   ```
-
-   (Alternatively, install Ollama from [ollama.com](https://ollama.com) and run it manually).
+---
 
 ## Usage
 
-Run the module from the project root.
+Run from the `final-rag` directory:
 
 ### 1. Ingest Documents
 
-Process and index documents. Data loaders are configured in `rag_app/config.py`.
-
 ```bash
-uv run python -m rag_app.main --ingest
+python main.py --ingest
+```
+Use `--force` to wipe and re-index:
+```bash
+python main.py --ingest --force
 ```
 
-Use `--force` to force a complete re-index:
+### 2. Querying
 
+- **Single Query:**
+	```bash
+	python main.py -q "What is the refund policy?" --org org1
+	```
+- **Interactive Mode:**
+	```bash
+	python main.py
+	```
+
+### 3. Policy Compliance Check
+
+Evaluate if a transcript complies with policy:
 ```bash
-uv run python -m rag_app.main --ingest --force
+python main.py --compliance "The agent promised a full refund with no questions asked." --org org1
 ```
 
-### 2. Interactive Search (Default)
+### 4. Answer Correctness Check
 
-Start an interactive chat session to query your documents.
-
+Check if an agent’s answer is factually correct:
 ```bash
-uv run python -m rag_app.main
+python main.py --check-answer --question "Refund window?" --answer "30 days" --org org1
 ```
 
-### 3. Single Query
+---
 
-Execute a quick single query and exit.
+## Evaluation & Logs
 
-```bash
-uv run python -m rag_app.main -q "What is the main topic?"
-```
+- All queries and evaluations are logged in the `logs/` directory as JSON.
+- Each log includes:
+	- Timestamp, model info, org, and query type
+	- Retrieved chunks and metadata
+	- LLM response and evaluation scores
 
-### 4. Evaluation
+---
 
-Run the evaluation suite to measure accuracy and performance. This uses the HERB dataset (or your custom data) to benchmark the RAG system.
+## Notes
 
-```bash
-# Run full evaluation (default limit: 10 samples)
-uv run python -m rag_app.main --evaluate
+- The ingestion pipeline discovers PDFs recursively in `docs/`.
+- Per-organization filtering is enabled via the `--org` flag.
+- For compliance and answer checks, replace the quoted text with your own queries or transcripts.
 
-# Run with custom limit
-uv run python -m rag_app.main --evaluate --limit 20
+---
 
-# Filter by product/category
-uv run python -m rag_app.main --evaluate --filter "ActionGenie"
-```
-
-Reports are generated in the `reports/` directory as JSON files, containing:
-
-- Accuracy scores (LLM-as-a-Judge)
-- Latency metrics (retrieval vs synthesis)
-- Detailed Q&A logs with retrieved contexts
-
-## Logs
-
-Query logs are automatically saved to the `logs/` directory in JSON format. Each log includes:
-
-- Timestamp & Model info
-- Retrieval & Synthesis timing
-- Retrieved text chunks with metadata (and scores)
-- Final response
+For more details, see the code and comments in each module.
