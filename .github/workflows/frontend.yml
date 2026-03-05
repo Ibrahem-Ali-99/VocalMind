@@ -21,7 +21,7 @@ env:
 
 jobs:
   frontend:
-    name: 🎨 Next.js Build & Lint
+    name: 🎨 Frontend Lint, Build & Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
