@@ -1,0 +1,19 @@
+# Default owners for the entire repo
+* @VocalMind/core-team
+
+# Backend
+/backend/ @VocalMind/backend-team
+
+# Frontend
+/frontend/ @VocalMind/frontend-team
+
+# Microservices
+/services/ @VocalMind/ml-team
+
+# Infrastructure
+/infra/ @VocalMind/devops-team
+/docker-compose.yml @VocalMind/devops-team
+/.github/ @VocalMind/devops-team
+
+# Research
+/research/ @VocalMind/ml-team

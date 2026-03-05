@@ -1,7 +1,7 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
-from sqlalchemy import Column, Enum as SAEnum
+from sqlalchemy import Enum as SAEnum
 from app.models.enums import OrgStatus
 
 

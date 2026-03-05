@@ -1,0 +1,67 @@
+[project]
+name = "rag-app"
+version = "0.1.0"
+description = "Generic RAG system using LlamaIndex, Groq, and Pinecone"
+requires-python = ">=3.11"
+dependencies = [
+    # Core LlamaIndex
+    "llama-index>=0.12.0",
+    # Groq LLM
+    "llama-index-llms-groq>=0.3.0",
+    # Ollama Embeddings (local)
+    "llama-index-embeddings-ollama>=0.5.0",
+    # Pinecone Vector Store
+    "llama-index-vector-stores-pinecone>=0.4.0",
+    "pinecone>=5.0.0",
+    # Utils
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    # Evaluation
+    "ragas>=0.2.0",
+    # Data Processing
+    "pandas>=2.3.3",
+    "langchain-groq>=1.1.1",
+    "langchain-community>=0.4.1",
+    "pydantic-settings>=2.12.0",
+    "datasets>=2.19.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rag_app"]
+
+[project.optional-dependencies]
+ingestion = [
+    # AI-powered PDF -> Markdown (IBM Docling: DocLayNet + TableFormer)
+    "docling>=2.15.0",
+    # LangChain text splitting (Markdown header + recursive character)
+    "langchain>=0.2.0",
+    "langchain-text-splitters>=0.2.0",
+    # Qdrant vector database client
+    "qdrant-client>=1.9.0",
+    # HTTP client for Ollama embedding API
+    "httpx>=0.27.0",
+    # Encoding artifact repair
+    "ftfy>=6.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+    "pytest-env>=1.2.0",
+    "ruff>=0.15.4",
+]
+
+[tool.pytest.ini_options]
+env = [
+    "GROQ_API_KEY=dummy_groq_key",
+    "PINECONE_API_KEY=dummy_pinecone_key",
+]
+
+[tool.uv.sources]
+markupsafe = { index = "pypi" }
+
