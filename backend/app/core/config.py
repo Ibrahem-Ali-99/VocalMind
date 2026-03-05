@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     EMOTION_API_URL: str = "http://localhost:8000"
     VAD_API_URL: str = "http://localhost:8002"
 
+    # Supabase (for routes that use Supabase client directly)
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_KEY: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
 

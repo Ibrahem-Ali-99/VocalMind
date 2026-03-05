@@ -13,18 +13,58 @@ services:
       POSTGRES_PASSWORD: vocalmind_dev
     volumes:
       - vocalmind_data:/var/lib/postgresql/data
-      - ./docker/init:/docker-entrypoint-initdb.d
+      - ./infra/docker/init-db:/docker-entrypoint-initdb.d
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U vocalmind" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # ── Backend API ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vocalmind-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://vocalmind:vocalmind_dev@db:5432/vocalmind
+      - EMOTION_API_URL=http://emotion:8001
+      - VAD_API_URL=http://vad:8002
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - ./backend/app:/app/app
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vocalmind-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    restart: unless-stopped
+
   # ── Ollama ──────────────────────────────────────────────────────────────────
-  # Local LLM runtime — serves the nomic-embed-text embedding model.
   ollama:
     image: ollama/ollama:latest
-    container_name: vocalmind_ollama
+    container_name: vocalmind-ollama
     ports:
       - "11434:11434"
     volumes:
@@ -38,13 +78,12 @@ services:
     restart: unless-stopped
 
   # ── Qdrant ──────────────────────────────────────────────────────────────────
-  # Vector database — stores parent + child chunks with embeddings.
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: vocalmind_qdrant
+    container_name: vocalmind-qdrant
     ports:
-      - "6333:6333" # REST API + Web UI (http://localhost:6333/dashboard)
-      - "6334:6334" # gRPC
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -56,32 +95,29 @@ services:
     restart: unless-stopped
 
   # ── Ingestion Pipeline ─────────────────────────────────────────────────────
-  # One-shot: PDF → Docling → chunks → Ollama embeddings → Qdrant.
-  # Usage: docker compose up ingestion
   ingestion:
     build:
-      context: ./Experiments/Rag
+      context: ./services/rag
       dockerfile: ingestion-pipeline/Dockerfile
-    container_name: vocalmind_ingestion
+    container_name: vocalmind-ingestion
     depends_on:
       ollama:
         condition: service_healthy
       qdrant:
         condition: service_healthy
     volumes:
-      - ./Experiments/Rag/ingestion-pipeline/NA_docs:/app/NA_docs
-      - ./Experiments/Rag/ingestion-pipeline/parsed_docs:/app/parsed_docs
+      - ./services/rag/ingestion-pipeline/NA_docs:/app/NA_docs
+      - ./services/rag/ingestion-pipeline/parsed_docs:/app/parsed_docs
     environment:
       - OLLAMA_URL=http://ollama:11434
       - QDRANT_URL=http://qdrant:6333
       - EMBEDDING_MODEL=nomic-embed-text
-    restart: "no" # one-shot: exits after processing all PDFs
+    restart: "no"
 
-  # ── VAD Preprocessing ──────────────────────────────────────────────────
-  # Silero VAD: splits audio into speech segments (CPU-only).
+  # ── VAD Preprocessing ──────────────────────────────────────────────────────
   vad:
     build:
-      context: ./docker/vad
+      context: ./services/vad
     container_name: vocalmind-vad
     ports:
       - "8002:8002"
@@ -93,7 +129,37 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # ── Emotion Recognition ────────────────────────────────────────────────────
+  emotion:
+    build:
+      context: ./services/emotion
+    container_name: vocalmind-emotion
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── WhisperX ASR ───────────────────────────────────────────────────────────
+  whisperx:
+    build:
+      context: ./services/whisperx
+    container_name: vocalmind-whisperx
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
 volumes:
-  vocalmind_data: # PostgreSQL data
-  ollama_data: # Ollama model cache
-  qdrant_data: # Qdrant vector storage
+  vocalmind_data:
+  ollama_data:
+  qdrant_data:

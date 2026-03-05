@@ -53,6 +53,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.2",
     "pytest-env>=1.2.0",
+    "ruff>=0.15.4",
 ]
 
 [tool.pytest.ini_options]
