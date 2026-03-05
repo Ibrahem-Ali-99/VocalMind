@@ -1,5 +1,5 @@
-# ── VocalMind Ingestion Pipeline ──────────────────────────────────────────────
-# Docling (AI-powered PDF parsing) + Ollama embeddings + Qdrant vector store.
+# ── VocalMind Final RAG — Ingestion Container ────────────────────────────────
+# Docling (AI-powered PDF → Markdown) + Ollama embeddings + Qdrant vector store.
 # First build takes 5-10 min — Docling downloads PyTorch CPU + AI model weights.
 FROM python:3.11-slim
 
@@ -13,17 +13,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies from the parent pyproject.toml [ingestion] extras
+# Install Python dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir ".[ingestion]"
+RUN pip install --no-cache-dir .
 
 # Pre-download Docling AI models into the image (avoids download at runtime)
 RUN python -c "from docling.document_converter import DocumentConverter; DocumentConverter()"
 
-# Copy pipeline script
-COPY ingestion-pipeline/ingestion_pipeline.py .
+# Copy all application code
+COPY config.py ingest.py query_engine.py evaluator.py main.py __init__.py ./
 
 # Directories mapped via Docker volumes at runtime
-RUN mkdir -p /app/NA_docs /app/parsed_docs
+RUN mkdir -p /app/docs /app/parsed_docs /app/logs /app/reports
 
-CMD ["python", "ingestion_pipeline.py"]
+# Default: run ingestion
+CMD ["python", "main.py", "--ingest"]
