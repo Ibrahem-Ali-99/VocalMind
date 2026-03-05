@@ -80,3 +80,14 @@ test-results/
 accessibility-report.json
 lint-results*.json
 
+# Next.js
+.next/
+out/
+
+.eslintcache
+.vercel/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
