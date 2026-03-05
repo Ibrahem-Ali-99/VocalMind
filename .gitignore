@@ -1,93 +1,60 @@
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Python
+# ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Virtual environments
-venv/
-ENV/
-env/
+dist/
+build/
 .venv/
+venv/
+.eggs/
+*.egg
 
-# IDE / Editor / OS
-.idea/
+# ── Node.js ───────────────────────────────────────────────────────────────
+node_modules/
+.next/
+dist/
+
+# ── Environment & Secrets ─────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────
 .vscode/
+.idea/
 *.swp
 *.swo
-*~
 .DS_Store
 Thumbs.db
 
-# Jupyter Notebooks
-.ipynb_checkpoints/
+# ── Testing & Tooling ────────────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage/
+test-results/
+playwright-report/
 
-# Logs
-logs/
+# ── Docker ────────────────────────────────────────────────────────────────
 *.log
 
-# Node modules
-node_modules/
+# ── Research outputs (don't version large files) ─────────────────────────
+# research/voice-gen/generated_audio/
+*.flac
+*.ogg
 
-# uv
-uv.lock
-
-# Project specific
-data/
-reports/
-Experiments/Rag/data/
-Experiments/Rag/logs/
-Experiments/Rag/reports/
-parsed_docs/
-
-# Model files
-best_model_3class.pt
+# ── ML artifacts ──────────────────────────────────────────────────────────
 *.pt
 *.pth
+*.ckpt
+*.safetensors
 *.bin
 *.onnx
-*.safetensors
+*.h5
 
-# Testing reports
-playwright-report/
-test-results/
-accessibility-report.json
-lint-results*.json
-
-# Next.js
-.next/
-out/
-
-.eslintcache
-.vercel/
-coverage/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+# ── Misc ──────────────────────────────────────────────────────────────────
+uv.lock
+*.heapsnapshot

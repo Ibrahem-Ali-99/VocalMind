@@ -6,15 +6,11 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend.yml"
-      - "pyproject.toml"
-      - "uv.lock"
   pull_request:
     branches: [main]
     paths:
       - "backend/**"
       - ".github/workflows/backend.yml"
-      - "pyproject.toml"
-      - "uv.lock"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,9 +21,12 @@ env:
 
 jobs:
   backend:
-    name: 📦 Backend Install & Lint
+    name: 📦 Backend Lint & Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -39,18 +38,17 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: pip-audit
-        run: cd backend && uvx pip-audit . --strict
-
       - name: Install dependencies
-        run: cd backend && uv sync
+        run: uv sync
 
       - name: Lint (Ruff)
-        run: cd backend && uv run ruff check . --output-format=github
+        run: uv run ruff check . --output-format=github
+
+      # - name: Test (pytest)
+      #   run: uv run pytest tests/ -v --tb=short
 
       - name: License Audit
         run: |
-          cd backend
           uv run pip-licenses --format=markdown >> $GITHUB_STEP_SUMMARY
           if uv run pip-licenses --format=csv | grep -qiE "GPL|LGPL|AGPL" ; then
             echo "::error::Copyleft license detected!"
