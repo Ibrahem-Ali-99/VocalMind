@@ -1,4 +1,4 @@
-.PHONY: help up down build test lint seed
+.PHONY: help up down build logs backend-dev backend-test backend-lint backend-install frontend-dev frontend-build frontend-lint frontend-test frontend-install seed migrate clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -39,8 +39,11 @@ frontend-dev: ## Run frontend in dev mode
 frontend-build: ## Build frontend
 	cd frontend && npm run build
 
-frontend-test: ## Run frontend tests
-	cd frontend && npm test
+frontend-lint: ## Lint frontend code
+	cd frontend && npm run lint
+
+frontend-test: ## Run frontend E2E tests (Cypress)
+	cd frontend && npm run cy:run
 
 frontend-install: ## Install frontend dependencies
 	cd frontend && npm ci
@@ -48,10 +51,10 @@ frontend-install: ## Install frontend dependencies
 # ── Database ──────────────────────────────────────────────────────────────
 
 seed: ## Seed the database
-	cd infra && python scripts/seed_database.py
+	cd backend && uv run python ../infra/scripts/seed_database.py
 
 migrate: ## Run database migrations
-	cd infra && python scripts/migrate.py
+	cd backend && uv run python ../infra/scripts/migrate.py
 
 # ── Utilities ─────────────────────────────────────────────────────────────
 
@@ -59,4 +62,4 @@ clean: ## Remove all caches and build artifacts
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
-	rm -rf frontend/dist frontend/.next
+	rm -rf frontend/dist
