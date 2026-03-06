@@ -1,4 +1,3 @@
-docs/
 # VocalMind RAG
 
 **Dual-granularity Policy Compliance & Answer Scoring with Docling, Qdrant, and Groq**
@@ -121,4 +120,24 @@ python main.py --check-answer --question "Refund window?" --answer "30 days" --o
 
 ---
 
-For more details, see the code and comments in each module.
+## Testing
+
+Unit tests are provided for all core RAG modules (ingestion, query engine, evaluator, config). Tests are located in the `tests/` directory and cover:
+- Ingestion pipeline logic (cleaning, chunking, metadata)
+- Query engine node conversion and log writing
+- Evaluator result models and JSON parsing
+- Config and settings validation
+
+### Running Tests
+
+You can run all tests with:
+
+```bash
+uv run pytest tests/ -v --tb=short
+```
+Or, if not using `uv`:
+```bash
+pytest tests/ -v --tb=short
+```
+
+All tests are unit tests and do not require external services or network access.

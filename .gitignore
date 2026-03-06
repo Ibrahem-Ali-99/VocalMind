@@ -59,8 +59,11 @@ research/voice-gen/generated_audio/
 
 # ── Misc ──────────────────────────────────────────────────────────────────
 
+
 # ── RAG outputs ─────────────────────────────────────────────────────
 services/rag/parsed_docs/
-services/rag/logs/
+services/rag/logs/ 
+
+
 uv.lock
 *.heapsnapshot
