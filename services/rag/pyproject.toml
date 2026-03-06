@@ -41,6 +41,7 @@ packages = ["."]
 dev = [
     "pytest>=9.0.0",
     "pytest-env>=1.2.0",
+    "ruff>=0.11.0",
 ]
 
 [tool.pytest.ini_options]

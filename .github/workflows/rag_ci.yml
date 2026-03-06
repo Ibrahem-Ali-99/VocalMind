@@ -2,7 +2,7 @@ name: RAG CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, RAG]
     paths:
       - "services/rag/**"
       - ".github/workflows/rag_ci.yml"
@@ -39,10 +39,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --group dev
 
       - name: Lint (Ruff)
         run: uv run ruff check . --output-format=github
 
-      # - name: Test
-      #   run: uv run pytest tests/ -v --tb=short
+      - name: Test
+        run: uv run pytest tests/ -v --tb=short
