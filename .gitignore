@@ -35,8 +35,8 @@ Thumbs.db
 .coverage
 htmlcov/
 coverage/
-test-results/
-playwright-report/
+cypress/videos/
+cypress/screenshots/
 
 # ── Docker ────────────────────────────────────────────────────────────────
 *.log

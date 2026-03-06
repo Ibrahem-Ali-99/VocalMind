@@ -40,11 +40,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # - name: Lint
-      #   run: npm run lint
+      - name: Lint
+        run: npm run lint
 
       - name: Build
         run: npm run build
-        env:
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'dummy_secret_for_ci_testing' }}
-          NEXT_PUBLIC_USE_MOCKS: "true"
+
+      - name: Run Cypress E2E
+        uses: cypress-io/github-action@v6
+        with:
+          install: false
+          start: npm run preview
+          wait-on: "http://localhost:3000"
+          wait-on-timeout: 120
+          working-directory: frontend
+
+      - name: Upload screenshots and videos on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            frontend/cypress/screenshots
+            frontend/cypress/videos
