@@ -4,7 +4,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=True, future=True)
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=True,
+    future=True,
+    connect_args={
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0
+    }
+)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -22,7 +30,7 @@ async def create_db_and_tables():
         Organization, User, Interaction, Transcript,
         Utterance, EmotionEvent, InteractionScore,
         CompanyPolicy, OrganizationPolicy, PolicyCompliance,
-        EmotionFeedback, ComplianceFeedback, ManagerQuery, HumanFeedback,
+        EmotionFeedback, ComplianceFeedback,
     )
 
     async with engine.begin() as conn:

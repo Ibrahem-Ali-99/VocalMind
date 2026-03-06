@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     EMOTION_API_URL: str = "http://localhost:8000"
     VAD_API_URL: str = "http://localhost:8002"
 
+    # Kaggle Emotion API (ngrok URL)
+    KAGGLE_NGROK_URL: str = ""
+    KAGGLE_API_SECRET: str = "vocalmind_secret_gpu_key"
+
     # Supabase (for routes that use Supabase client directly)
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_KEY: str = ""

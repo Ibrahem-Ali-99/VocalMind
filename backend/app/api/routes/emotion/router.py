@@ -5,6 +5,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 
 from app.api.routes.emotion.pipeline import process_audio
 from app.api.routes.emotion.service import emotion_client
@@ -12,12 +13,16 @@ from app.api.routes.emotion.service import emotion_client
 router = APIRouter()
 
 
-@router.post("/analyze", summary="Single-file Emotion Analysis")
-async def analyze_emotion(file: UploadFile = File(...)):
-    """Analyze one audio file and return the dominant emotion."""
-    if not file.filename.endswith(".wav"):
-        raise HTTPException(status_code=400, detail="Only .wav files are supported.")
-    return await emotion_client.analyze_audio(file)
+class AnalyzeRequest(BaseModel):
+    file_path: str
+
+
+@router.post("/analyze", summary="Single-file Emotion Analysis (Kaggle)")
+async def analyze_emotion(request: AnalyzeRequest):
+    """Analyze one audio file from a local path and return the dominant emotion."""
+    if not (request.file_path.endswith(".wav") or request.file_path.endswith(".mp3")):
+        raise HTTPException(status_code=400, detail="Only .wav and .mp3 files are supported.")
+    return await emotion_client.analyze_local_file(request.file_path)
 
 
 @router.post("/process", summary="Full Audio Processing Pipeline")
