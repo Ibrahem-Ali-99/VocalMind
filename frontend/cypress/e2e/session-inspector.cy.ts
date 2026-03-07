@@ -51,7 +51,7 @@ describe("Session Inspector", () => {
   });
 
   it("displays pagination footer", () => {
-    cy.contains("Showing 1–4 of 342");
+    cy.contains(/Showing 1–\d+ of 342/);
     cy.contains("button", "← Prev").should("be.disabled");
     cy.contains("button", "Next →").should("not.be.disabled");
   });

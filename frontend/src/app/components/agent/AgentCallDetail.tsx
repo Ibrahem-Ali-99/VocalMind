@@ -1,20 +1,21 @@
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Target, Play } from "lucide-react";
-import { mockUtterances, mockEmotionEvents, mockPolicyViolations, mockAgentPersonalData } from "../../data/mockData";
+import { mockInteractions, mockUtterances, mockEmotionEvents, mockPolicyViolations } from "../../data/mockData";
 
 export function AgentCallDetail() {
   const { id } = useParams();
+  const interaction = mockInteractions.find((i) => i.id === id);
   
   const callData = {
-    date: "27 Feb 2025",
-    time: "09:14",
-    duration: "5:42",
-    language: "ar-EG",
-    overallScore: 88,
-    empathyScore: 85,
-    policyScore: 91,
-    resolutionScore: 88,
-    responseTime: 2.1,
+    date: interaction?.date || "27 Feb 2025",
+    time: interaction?.time || "09:14",
+    duration: interaction?.duration || "5:42",
+    language: interaction?.language || "ar-EG",
+    overallScore: interaction?.overallScore || 88,
+    empathyScore: interaction?.empathyScore || 85,
+    policyScore: interaction?.policyScore || 91,
+    resolutionScore: interaction?.resolutionScore || 88,
+    responseTime: interaction?.responseTime ? (interaction.responseTime.toString().includes('s') ? interaction.responseTime.toString() : `${interaction.responseTime}s`) : "2.1s",
   };
 
   const getScoreColor = (score: number) => {
@@ -37,6 +38,10 @@ export function AgentCallDetail() {
         return { bg: "#F1F5F9", text: "#475569", label: "Neutral" };
     }
   };
+
+  const utterances = mockUtterances.filter((u) => u.interactionId === id);
+  const emotionEvents = mockEmotionEvents.filter((e) => e.interactionId === id);
+  const policyViolations = mockPolicyViolations.filter((v) => v.interactionId === id);
 
   return (
     <div className="p-6 space-y-6">
@@ -123,14 +128,14 @@ export function AgentCallDetail() {
           <div className="bg-[#FFFBEB] rounded-lg p-3 text-center">
             <div className="text-[11px] text-[#6B7280] mb-1">Resp. Time</div>
             <div className="text-[18px] font-semibold text-[#92400E]">
-              {callData.responseTime}s
+              {callData.responseTime}
             </div>
           </div>
         </div>
       </div>
 
       {/* Coaching Points Card (only if violations exist) */}
-      {mockPolicyViolations.length > 0 && (
+      {policyViolations.length > 0 && (
         <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-[14px] p-6">
           <div className="flex items-center gap-2 mb-1">
             <Target className="w-[15px] h-[15px] text-[#92400E]" />
@@ -143,7 +148,7 @@ export function AgentCallDetail() {
           </p>
 
           <div className="space-y-3">
-            {mockPolicyViolations.map((violation) => (
+            {policyViolations.map((violation) => (
               <div key={violation.id} className="bg-white border border-[#FDE68A] rounded-[10px] p-3.5">
                 <h4 className="text-[14px] font-semibold text-[#111827] mb-2">
                   {violation.policyTitle}
@@ -170,7 +175,7 @@ export function AgentCallDetail() {
         </p>
 
         <div className="space-y-4 max-h-[280px] overflow-y-auto">
-          {mockUtterances.map((utterance) => {
+          {utterances.map((utterance) => {
             const isAgent = utterance.speaker === "agent";
             const emotionStyle = getEmotionStyle(utterance.emotion);
 
@@ -209,7 +214,7 @@ export function AgentCallDetail() {
                       className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{ backgroundColor: emotionStyle.bg, color: emotionStyle.text }}
                     >
-                      {emotionStyle.label} {utterance.confidence}%
+                      {emotionStyle.label} {Math.round(utterance.confidence * 100)}%
                     </span>
                   </div>
 
@@ -234,7 +239,7 @@ export function AgentCallDetail() {
         </p>
 
         <div className="space-y-4">
-          {mockEmotionEvents.map((event) => {
+          {emotionEvents.map((event) => {
             const fromStyle = getEmotionStyle(event.fromEmotion);
             const toStyle = getEmotionStyle(event.toEmotion);
             const isPositive = event.toEmotion === "happy";

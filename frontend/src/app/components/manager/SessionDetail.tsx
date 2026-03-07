@@ -6,6 +6,9 @@ import { mockInteractions, mockUtterances, mockEmotionEvents, mockPolicyViolatio
 export function SessionDetail() {
   const { id } = useParams();
   const interaction = mockInteractions.find((i) => i.id === id) || mockInteractions[0];
+  const utterances = mockUtterances.filter((u) => u.interactionId === (id || interaction.id));
+  const emotionEvents = mockEmotionEvents.filter((e) => e.interactionId === (id || interaction.id));
+  
   const [flaggedEvents, setFlaggedEvents] = useState<string[]>([]);
   const [flaggedViolations, setFlaggedViolations] = useState<string[]>([]);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState<string[]>([]);
@@ -140,7 +143,7 @@ export function SessionDetail() {
         </p>
 
         <div className="space-y-4 max-h-[280px] overflow-y-auto">
-          {mockUtterances.map((utterance) => {
+          {utterances.map((utterance) => {
             const isAgent = utterance.speaker === "agent";
             const emotionStyle = getEmotionStyle(utterance.emotion);
 
@@ -179,7 +182,7 @@ export function SessionDetail() {
                       className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{ backgroundColor: emotionStyle.bg, color: emotionStyle.text }}
                     >
-                      {emotionStyle.label} {utterance.confidence}%
+                      {emotionStyle.label} {Math.round(utterance.confidence * 100)}%
                     </span>
                   </div>
 
@@ -204,7 +207,7 @@ export function SessionDetail() {
         </p>
 
         <div className="space-y-4">
-          {mockEmotionEvents.map((event) => {
+          {emotionEvents.map((event) => {
             const isFlagged = flaggedEvents.includes(event.id);
             const hasSubmitted = feedbackSubmitted.includes(event.id);
             const fromStyle = getEmotionStyle(event.fromEmotion);

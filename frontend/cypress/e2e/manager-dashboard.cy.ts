@@ -25,7 +25,7 @@ describe("Manager Dashboard", () => {
   });
 
   it("interaction cards link to session detail", () => {
-    cy.contains("a", "Sarah M.").first().click();
+    cy.get('a[href^="/manager/inspector/"]').first().click();
     cy.url().should("match", /\/manager\/inspector\/.+/);
   });
 

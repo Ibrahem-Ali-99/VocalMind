@@ -10,11 +10,13 @@ vi.mock('lucide-react', () => {
     const icons = [
         'BarChart2', 'Phone', 'CheckCircle', 'AlertTriangle', 'Star', 'TrendingUp', 'TrendingDown',
         'Target', 'Zap', 'Search', 'ArrowLeft', 'Play', 'ThumbsUp', 'ThumbsDown', 'XCircle', 'Flag',
-        'BookOpen', 'HelpCircle', 'Info', 'ChevronDown'
+        'BookOpen', 'HelpCircle', 'Info', 'ChevronDown',
+        'Mic', 'UserCircle', 'Shield', 'MessageSquare', 'Send', 'Activity',
+        'LayoutDashboard', 'Settings', 'ChevronLeft', 'ChevronRight', 'Bell', 'Download',
     ]
     const mock: any = {}
     icons.forEach(icon => {
-        mock[icon] = (props: any) => <div {...props} data-testid={`icon-${icon.toLowerCase()}`} />
+        mock[icon] = () => <span data-testid={`icon-${icon.toLowerCase()}`} />
     })
     return mock
 })
