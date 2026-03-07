@@ -25,6 +25,9 @@ backend-dev: ## Run backend in dev mode
 backend-test: ## Run backend tests
 	cd backend && uv run pytest tests/ -v
 
+backend-test-cov: ## Run backend tests with coverage
+	cd backend && uv run pytest --cov=app --cov-report=term --cov-report=html tests/ -v
+
 backend-lint: ## Lint backend code
 	cd backend && uv run ruff check .
 
@@ -44,6 +47,9 @@ frontend-lint: ## Lint frontend code
 
 frontend-test: ## Run frontend E2E tests (Cypress)
 	cd frontend && npm run cy:run
+
+frontend-test-cov: ## Run frontend tests with coverage
+	cd frontend && npx vitest run --coverage.enabled --coverage.reporter=text --coverage.reporter=html
 
 frontend-install: ## Install frontend dependencies
 	cd frontend && npm ci
