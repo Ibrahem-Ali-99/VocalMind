@@ -1,10 +1,10 @@
 # Audio Processing Pipeline — Orchestrator
 #
 # The backend is a thin orchestrator that calls two microservices:
-#   1. VAD Container (POST /split) → returns timestamped audio clips
-#   2. Emotion Container (POST /predict) → returns emotion per clip
+#   1. VAD  (POST /split)   → returns timestamped audio clips
+#   2. Emotion (POST /predict) → returns emotion per clip
 #
-# No ML dependencies live in the backend.
+# Routes to Docker or Kaggle based on IS_LOCAL setting.
 
 import base64
 import logging
@@ -20,6 +20,11 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _vad_url() -> str:
+    base = settings.VAD_API_URL if settings.IS_LOCAL else settings.KAGGLE_SERVER_URL
+    return f"{base.rstrip('/')}/split"
+
+
 async def process_audio(
     audio_bytes: bytes,
     filename: str,
@@ -27,27 +32,26 @@ async def process_audio(
 ) -> List[Dict[str, Any]]:
     """
     Orchestration pipeline:
-      1. Send full audio to VAD container → get segments + base64 clips
-      2. Send each clip to Emotion container → get emotion label
+      1. Send full audio to VAD service → get segments + base64 clips
+      2. Send each clip to Emotion service → get emotion label
       3. Aggregate into utterance-shaped dicts
     """
 
-    # ── Step 1: Call VAD Container ──────────────────────────────────
-    vad_url = f"{settings.VAD_API_URL.rstrip('/')}/split"
+    # ── Step 1: Call VAD Service ────────────────────────────────────
     timeout = httpx.Timeout(120.0, connect=10.0)
+    headers = {} if settings.IS_LOCAL else {"ngrok-skip-browser-warning": "true"}
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
-                vad_url,
+                _vad_url(),
                 files={"file": (filename, audio_bytes, "audio/wav")},
+                headers=headers,
             )
     except httpx.RequestError as e:
-        logger.error(f"VAD service unreachable: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="VAD service unreachable. Ensure the vad container is running.",
-        )
+        target = "Docker container" if settings.IS_LOCAL else "Kaggle server"
+        logger.error(f"VAD service unreachable ({target}): {e}")
+        raise HTTPException(status_code=503, detail=f"VAD service unreachable ({target}).")
 
     if response.status_code != 200:
         logger.error(f"VAD service error {response.status_code}: {response.text}")

@@ -67,3 +67,4 @@ services/rag/logs/
 
 uv.lock
 *.heapsnapshot
+research/voices-examples/

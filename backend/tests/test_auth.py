@@ -5,7 +5,6 @@ This module validates login flows, user registration, and token generation
 by mocking external identity providers (Google OAuth).
 """
 
-from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 def test_login_page_redirect(client: TestClient):

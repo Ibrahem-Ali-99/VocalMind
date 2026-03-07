@@ -21,13 +21,15 @@ class Settings(BaseSettings):
     # Database (Docker Postgres)
     DATABASE_URL: str = "postgresql+asyncpg://vocalmind:vocalmind_dev@localhost:5432/vocalmind"
 
-    # Emotion API (Docker Container)
-    EMOTION_API_URL: str = "http://localhost:8000"
+    # AI service routing: True = Docker containers, False = Kaggle server
+    IS_LOCAL: bool = True
+
+    # Docker container URLs (used when IS_LOCAL=true)
+    EMOTION_API_URL: str = "http://localhost:8001"
     VAD_API_URL: str = "http://localhost:8002"
 
-    # Kaggle Emotion API (ngrok URL)
-    KAGGLE_NGROK_URL: str = ""
-    KAGGLE_API_SECRET: str = "vocalmind_secret_gpu_key"
+    # Kaggle server URL (used when IS_LOCAL=false)
+    KAGGLE_SERVER_URL: str = ""
 
     # Supabase (for routes that use Supabase client directly)
     SUPABASE_URL: str = ""
