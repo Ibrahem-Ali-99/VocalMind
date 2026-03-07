@@ -1,4 +1,4 @@
-.PHONY: help up down build logs backend-dev backend-test backend-lint backend-install frontend-dev frontend-build frontend-lint frontend-test frontend-install seed migrate clean
+.PHONY: help up down build logs be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install seed migrate clean test-all
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -46,13 +46,13 @@ fe-lint: ## Lint frontend code
 	cd frontend && npm run lint
 
 fe-test: ## Run frontend E2E tests (Cypress)
-	cd frontend && npm run cy:run
+	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npm run cy:run"
 
 fe-e2e-summary: ## Run frontend E2E tests with concise summary
-	cd frontend && npx cypress run --reporter list
+	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npx cypress run --reporter list"
 
 fe-e2e-cov: ## Run frontend E2E tests and generate code coverage report
-	cd frontend && npx cypress run --env coverage=true && npx nyc report --reporter=text-summary
+	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npx cypress run --env coverage=true" && npx nyc report --reporter=text-summary
 
 fe-test-cov: ## Run frontend unit tests with coverage report
 	cd frontend && npx vitest run --coverage.enabled --coverage.reporter=text --coverage.reporter=html
@@ -60,6 +60,32 @@ fe-test-cov: ## Run frontend unit tests with coverage report
 fe-install: ## Install frontend dependencies
 	cd frontend && npm ci
 
+# ── RAG ───────────────────────────────────────────────────────────────────
+
+rag-lint: ## Lint RAG code
+	cd services/rag && uv run ruff check .
+
+rag-test: ## Run RAG tests
+	cd services/rag && uv run pytest tests/ -v
+
+rag-install: ## Install RAG dependencies
+	cd services/rag && uv sync
+
+# ── CI/CD ─────────────────────────────────────────────────────────────────
+
+test-all: ## Run all tests required for CI/CD and clean up
+	$(MAKE) -j test-backend test-frontend test-rag
+	$(MAKE) clean
+
+test-backend: be-lint be-test
+
+test-frontend:
+	$(MAKE) fe-lint
+	$(MAKE) fe-build
+	$(MAKE) fe-test-cov
+	$(MAKE) fe-test
+
+test-rag: rag-lint rag-test
 # ── Database ──────────────────────────────────────────────────────────────
 
 seed: ## Seed the database
@@ -71,9 +97,5 @@ migrate: ## Run database migrations
 # ── Utilities ─────────────────────────────────────────────────────────────
 
 clean: ## Remove all caches and build artifacts
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .nyc_output -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name coverage -exec rm -rf {} + 2>/dev/null || true
-	rm -rf frontend/dist
+	find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache -o -name .nyc_output -o -name coverage \) -prune -exec rm -rf {} + 2>/dev/null || true
+	rm -rf frontend/dist frontend/.nyc_output
