@@ -30,4 +30,11 @@ describe("Landing Page", () => {
   it("displays the footer note", () => {
     cy.contains("Each portal provides a tailored experience based on your role");
   });
+
+  it("lists feature descriptions for each portal", () => {
+    cy.contains("Comprehensive dashboard with org-wide KPIs");
+    cy.contains("Session Inspector with emotion detection");
+    cy.contains("Personal performance metrics and trends");
+    cy.contains("Customer emotion journey insights");
+  });
 });

@@ -19,39 +19,42 @@ logs: ## Follow logs for all services
 
 # ── Backend ───────────────────────────────────────────────────────────────
 
-backend-dev: ## Run backend in dev mode
+be-dev: ## Run backend in dev mode
 	cd backend && uv run uvicorn app.main:app --reload --port 8000
 
-backend-test: ## Run backend tests
+be-test: ## Run backend tests
 	cd backend && uv run pytest tests/ -v
 
-backend-test-cov: ## Run backend tests with coverage
+be-test-cov: ## Run backend tests with coverage
 	cd backend && uv run pytest --cov=app --cov-report=term --cov-report=html tests/ -v
 
-backend-lint: ## Lint backend code
+be-lint: ## Lint backend code
 	cd backend && uv run ruff check .
 
-backend-install: ## Install backend dependencies
+be-install: ## Install backend dependencies
 	cd backend && uv sync
 
 # ── Frontend ──────────────────────────────────────────────────────────────
 
-frontend-dev: ## Run frontend in dev mode
+fe-dev: ## Run frontend in dev mode
 	cd frontend && npm run dev
 
-frontend-build: ## Build frontend
+fe-build: ## Build frontend
 	cd frontend && npm run build
 
-frontend-lint: ## Lint frontend code
+fe-lint: ## Lint frontend code
 	cd frontend && npm run lint
 
-frontend-test: ## Run frontend E2E tests (Cypress)
+fe-test: ## Run frontend E2E tests (Cypress)
 	cd frontend && npm run cy:run
 
-frontend-test-cov: ## Run frontend tests with coverage
+fe-e2e-summary: ## Run frontend E2E tests with concise summary
+	cd frontend && npx cypress run --reporter list
+
+fe-test-cov: ## Run frontend tests with coverage
 	cd frontend && npx vitest run --coverage.enabled --coverage.reporter=text --coverage.reporter=html
 
-frontend-install: ## Install frontend dependencies
+fe-install: ## Install frontend dependencies
 	cd frontend && npm ci
 
 # ── Database ──────────────────────────────────────────────────────────────
