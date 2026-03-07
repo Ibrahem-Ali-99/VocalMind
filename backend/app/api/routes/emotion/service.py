@@ -57,13 +57,13 @@ class EmotionAPIClient:
                 return response.json()
             logger.error(f"Emotion API error {response.status_code}: {response.text}")
             raise HTTPException(status_code=502, detail=f"Emotion service error: {response.text}")
+        except httpx.TimeoutException:
+            logger.error("Emotion API timed out.")
+            raise HTTPException(status_code=504, detail="Emotion service timed out.")
         except httpx.RequestError as e:
             logger.error(f"Emotion API unreachable: {e}")
             target = "Docker container" if settings.IS_LOCAL else "Kaggle server"
             raise HTTPException(status_code=503, detail=f"Emotion service unreachable ({target}).")
-        except httpx.TimeoutException:
-            logger.error("Emotion API timed out.")
-            raise HTTPException(status_code=504, detail="Emotion service timed out.")
 
 
 # Module-level singleton

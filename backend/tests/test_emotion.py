@@ -1,55 +1,76 @@
 """
-Unit tests for the Emotion Analysis service and endpoints.
+Unit tests for the Emotion Analysis endpoints.
 
-This module validates the handling of audio file uploads, extension checks,
-and the integration with the remote Kaggle GPU worker (via mocking).
+Covers /analyze (success, .mp3, invalid extension) and /process (success, invalid extension).
 """
 
-
+from uuid import uuid4
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
+
+# ── /analyze ─────────────────────────────────────────────────────────────────
+
 @patch("app.api.routes.emotion.router.emotion_client.analyze_audio", new_callable=AsyncMock)
 def test_analyze_upload_success(mock_analyze, client: TestClient):
-    """
-    Tests successful emotion analysis using a mocked remote response.
-    """
-    # Configure the mock to return a sample emotion result (matching Kaggle format)
     mock_analyze.return_value = {
         "emotion": "happy",
         "confidence": 0.95,
-        "raw_result": {
-            "labels": ["happy", "neutral"],
-            "scores": [0.95, 0.05]
-        }
+        "raw_result": {"labels": ["happy", "neutral"], "scores": [0.95, 0.05]},
     }
-
-    # Execute request with multipart file
     response = client.post(
         "/api/v1/emotion/analyze",
-        files={"file": ("sample.wav", b"fake audio content", "audio/wav")}
+        files={"file": ("sample.wav", b"fake audio content", "audio/wav")},
     )
-
     assert response.status_code == 200
     data = response.json()
     assert data["emotion"] == "happy"
     assert data["confidence"] == 0.95
 
-def test_analyze_invalid_extension(client: TestClient):
-    """
-    Tests that the API rejects files with unsupported extensions.
 
-    Args:
-        client (TestClient): The FastAPI test client fixture.
-
-    Asserts:
-        Status code is 400.
-        Detail message specifies invalid file format.
-    """
+@patch("app.api.routes.emotion.router.emotion_client.analyze_audio", new_callable=AsyncMock)
+def test_analyze_mp3_accepted(mock_analyze, client: TestClient):
+    """MP3 files should pass the extension check."""
+    mock_analyze.return_value = {"emotion": "neutral", "confidence": 0.7}
     response = client.post(
         "/api/v1/emotion/analyze",
-        files={"file": ("test_audio.txt", b"not audio", "text/plain")}
+        files={"file": ("recording.mp3", b"fake mp3", "audio/mpeg")},
+    )
+    assert response.status_code == 200
+
+
+def test_analyze_invalid_extension(client: TestClient):
+    response = client.post(
+        "/api/v1/emotion/analyze",
+        files={"file": ("test_audio.txt", b"not audio", "text/plain")},
     )
     assert response.status_code == 400
-    # Match the exact message from router.py: "Only .wav and .mp3 files are supported."
+    assert "Only .wav and .mp3 files are supported" in response.json()["detail"]
+
+
+# ── /process ─────────────────────────────────────────────────────────────────
+
+@patch("app.api.routes.emotion.router.process_audio", new_callable=AsyncMock)
+def test_process_endpoint_success(mock_pipeline, client: TestClient):
+    interaction_id = uuid4()
+    mock_pipeline.return_value = [
+        {"emotion": "angry", "start_time_seconds": 0.0, "end_time_seconds": 2.0},
+    ]
+    response = client.post(
+        f"/api/v1/emotion/process?interaction_id={interaction_id}",
+        files={"file": ("call.wav", b"audio-bytes", "audio/wav")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_segments"] == 1
+    assert data["interaction_id"] == str(interaction_id)
+
+
+def test_process_invalid_extension(client: TestClient):
+    interaction_id = uuid4()
+    response = client.post(
+        f"/api/v1/emotion/process?interaction_id={interaction_id}",
+        files={"file": ("notes.pdf", b"not audio", "application/pdf")},
+    )
+    assert response.status_code == 400
     assert "Only .wav and .mp3 files are supported" in response.json()["detail"]
