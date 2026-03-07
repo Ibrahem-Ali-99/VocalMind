@@ -51,7 +51,10 @@ fe-test: ## Run frontend E2E tests (Cypress)
 fe-e2e-summary: ## Run frontend E2E tests with concise summary
 	cd frontend && npx cypress run --reporter list
 
-fe-test-cov: ## Run frontend tests with coverage
+fe-e2e-cov: ## Run frontend E2E tests and generate code coverage report
+	cd frontend && npx cypress run --env coverage=true && npx nyc report --reporter=text-summary
+
+fe-test-cov: ## Run frontend unit tests with coverage report
 	cd frontend && npx vitest run --coverage.enabled --coverage.reporter=text --coverage.reporter=html
 
 fe-install: ## Install frontend dependencies
@@ -71,4 +74,6 @@ clean: ## Remove all caches and build artifacts
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .nyc_output -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name coverage -exec rm -rf {} + 2>/dev/null || true
 	rm -rf frontend/dist

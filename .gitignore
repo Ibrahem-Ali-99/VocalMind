@@ -35,6 +35,7 @@ Thumbs.db
 .coverage
 htmlcov/
 coverage/
+.nyc_output/
 cypress/videos/
 cypress/screenshots/
 
