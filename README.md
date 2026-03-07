@@ -1,87 +1,116 @@
-# 🧠 VocalMind
+# VocalMind
 
-**VocalMind** is a modular AI ecosystem designed to bridge the gap between **voice research** and **production applications**. It integrates advanced speech processing (ASR, Diarization, Synthesis) with context-aware intelligence (RAG) to create next-generation conversational agents.
+VocalMind is a modular AI ecosystem integrating speech processing (ASR, Diarization, Synthesis) with retrieval-augmented generation (RAG) to create context-aware conversational agents, designed for call center and telecom use cases.
 
 ---
 
 ## Architecture
 
-| Component    | Directory            | Tech Stack                  | Description                                                     |
-| :----------- | :------------------- | :-------------------------- | :-------------------------------------------------------------- |
-| **Backend**  | `backend/`           | FastAPI, SQLModel, Postgres | Central API gateway with auth, emotion, transcription endpoints |
-| **Frontend** | `frontend/`          | Vite, React, Tailwind, MUI  | Manager and agent dashboards with analytics                     |
-| **VAD**      | `services/vad/`      | Silero VAD, FastAPI         | Voice Activity Detection microservice (CPU-only)                |
-| **WhisperX** | `services/whisperx/` | WhisperX, FastAPI           | Automatic Speech Recognition microservice                       |
-| **Emotion**  | `services/emotion/`  | Transformers, FastAPI       | Speech emotion recognition microservice                         |
-| **RAG**      | `services/rag/`      | LlamaIndex, Qdrant, Groq    | Retrieval-Augmented Generation for knowledge queries            |
-| **Research** | `research/`          | Jupyter                     | Experiments for ASR, diarization, emotion, voice gen            |
+| Component    | Tech Stack | Description |
+| :----------- | :--------- | :---------- |
+| **Backend**  | FastAPI, SQLModel, asyncpg | Central API gateway with auth (JWT/Google OAuth), Supabase integration, and dispute handling. |
+| **Frontend** | React 18, Vite, Tailwind v4, MUI, Radix UI | Manager and agent dashboards with session analysis. Tested with Cypress E2E and Vitest. |
+| **VAD**      | Silero VAD, FastAPI | Voice Activity Detection microservice. |
+| **WhisperX** | WhisperX, pyannote, FastAPI | Automatic Speech Recognition and Diarization microservice. |
+| **Emotion**  | Transformers, FastAPI | Speech emotion recognition microservice. |
+| **RAG**      | LlamaIndex, Qdrant, Groq, Ollama | Retrieval-Augmented Generation for knowledge queries. |
+| **Ingestion**| LlamaIndex | Automated pipeline for RAG document ingestion. |
+| **Research** | Jupyter | Reference experiments for speech pipelines and voice generation. |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- **Python 3.11+** with [uv](https://github.com/astral-sh/uv)
+- **Python 3.12+** (via [uv](https://github.com/astral-sh/uv))
 - **Node.js 20+**
 - **Docker & Docker Compose**
 
-### 1. Start All Services
+### Configuration
+Copy `.env.example` to `.env` and fill in the required api keys:
+```bash
+cp .env.example .env
+```
+Key requirements: Groq, Google, Pinecone, ElevenLabs, HuggingFace.
+
+### 1. Start Services (Docker)
+
+Start all services (Database, Backend, Frontend, Ollama, Qdrant, Ingestion, VAD, Emotion, WhisperX):
 
 ```bash
-make up          # Starts DB, Ollama, Qdrant, VAD, Emotion, WhisperX
+make up
 ```
 
-### 2. Run Backend (Dev Mode)
+### 2. Run Local Development
 
+**Backend:**
 ```bash
 make backend-install
 make backend-dev     # → http://localhost:8000
 ```
 
-### 3. Run Frontend (Dev Mode)
-
+**Frontend:**
 ```bash
 make frontend-install
 make frontend-dev    # → http://localhost:3000
 ```
 
-### 4. Run Everything with Docker
-
-```bash
-docker compose up --build
-```
-
 ---
 
-## 📁 Project Structure
+## Project Structure
 
-```
+```text
 VocalMind/
 ├── backend/          # FastAPI API gateway
-├── frontend/         # Vite + React dashboard
+├── frontend/         # React dashboard (Manager & Agent routes)
 ├── services/         # Microservices (VAD, WhisperX, Emotion, RAG)
-├── infra/            # Infrastructure (DB init, scripts)
-├── research/         # Jupyter notebooks & experiments
-├── docs/             # Documentation
-├── .github/          # CI/CD workflows
-├── docker-compose.yml
-├── Makefile
-└── CONTRIBUTING.md
+├── infra/            # DB initialization and python seed scripts
+├── research/         # Jupyter notebooks & prototype scripts
+├── data/             # General data and reference materials
+├── docker/           # Shared Docker configuration artifacts
+├── docs/             # Documentation assets
+├── AudioData/        # Sample audio inputs for testing
+├── .github/          # CI workflows (ci.yml, backend.yml, frontend.yml, rag_ci.yml)
+├── docker-compose.yml# Multi-container service definitions
+├── Makefile          # Unified development commands
+└── CONTRIBUTING.md   # Guidelines
 ```
 
 ---
 
-## 🧪 Development
+## Useful Commands
 
+### Backend
 ```bash
-make backend-test    # Run backend tests
-make backend-lint    # Lint with Ruff
-make frontend-build  # Build frontend
-make clean           # Remove caches
+make backend-install  # Install dependencies
+make backend-dev      # Run api gateway
+make backend-test     # Run pytest suite
+make backend-lint     # Run Ruff linter
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
+### Frontend
+```bash
+make frontend-install # Install dependencies
+make frontend-test    # Run Cypress E2E tests
+make frontend-lint    # Run ESLint validation
+make frontend-build   # Build production bundle
+```
+
+### Docker
+```bash
+make up               # Start all services
+make logs             # Tail container logs
+make build            # Rebuild images
+make down             # Stop all services
+```
+
+### General
+```bash
+make clean            # Remove caches and build artifacts
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ---
 
