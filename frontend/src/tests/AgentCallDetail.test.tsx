@@ -31,7 +31,7 @@ describe('AgentCallDetail', () => {
     })
 
     it('renders coaching points from policy violations for int-002', () => {
-        renderWithId('int-002') 
+        renderWithId('int-002')
         expect(screen.getByText('Coaching Points')).toBeInTheDocument()
     })
 
@@ -56,5 +56,18 @@ describe('AgentCallDetail', () => {
         expect(screen.getByText(/2025-03-01/)).toBeInTheDocument()
         const elements = screen.getAllByText(/78%/)
         expect(elements.length).toBeGreaterThan(0)
+    })
+
+    it('renders default values for non-existent interaction', () => {
+        renderWithId('non-existent')
+        expect(screen.getByText(/27 Feb 2025/)).toBeInTheDocument()
+        expect(screen.getByText(/09:14/)).toBeInTheDocument()
+        expect(screen.getAllByText(/88%/).length).toBeGreaterThan(0)
+    })
+
+    it('renders happy emotion styles in journey and transcript', () => {
+        // int-005 has a happy utterance
+        renderWithId('int-005')
+        expect(screen.getByText(/Happy/)).toBeInTheDocument()
     })
 })

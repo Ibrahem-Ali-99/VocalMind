@@ -1,7 +1,7 @@
 """
 Unit tests for the Emotion Analysis endpoints.
 
-Covers /analyze (success, .mp3, invalid extension) and /process (success, invalid extension).
+Covers /analyze (success, .mp3, invalid extension), /analyze-local (success), and /process (success, invalid extension).
 """
 
 from uuid import uuid4
@@ -46,6 +46,27 @@ def test_analyze_invalid_extension(client: TestClient):
     )
     assert response.status_code == 400
     assert "Only .wav and .mp3 files are supported" in response.json()["detail"]
+
+
+# ── /analyze-local ───────────────────────────────────────────────────────────
+
+@patch("app.api.routes.emotion.router.emotion_client.analyze_local_file", new_callable=AsyncMock)
+def test_analyze_local_success(mock_analyze, client: TestClient):
+    mock_analyze.return_value = {
+        "top_emotion": "happy",
+        "top_score": 0.95,
+        "emotions": [{"label": "happy", "score": 0.95}, {"label": "neutral", "score": 0.05}],
+        "filename": "sample.wav"
+    }
+
+    response = client.post(
+        "/api/v1/emotion/analyze-local",
+        json={"file_path": "dummy_path/sample.wav"}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["top_emotion"] == "happy"
 
 
 # ── /process ─────────────────────────────────────────────────────────────────

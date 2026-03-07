@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.22",
     "sqlmodel>=0.0.33",
     "supabase>=2.28.0",
+    "tenacity>=9.1.4",
     "uvicorn>=0.40.0",
 ]
 

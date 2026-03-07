@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     EMOTION_API_URL: str = "http://localhost:8001"
     VAD_API_URL: str = "http://localhost:8002"
 
+    # Kaggle Emotion API (ngrok URL)
+    KAGGLE_NGROK_URL: str = ""
+    KAGGLE_API_SECRET: str = "vocalmind_secret_gpu_key"
+
     # Kaggle server URL (used when IS_LOCAL=false)
     KAGGLE_SERVER_URL: str = ""
 

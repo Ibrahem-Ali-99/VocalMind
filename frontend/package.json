@@ -1,11 +1,12 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "my-make-file",
   "private": true,
   "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000 --host",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "build": "tsc -b && vite build",
     "preview": "vite preview --port 3000",
     "lint": "tsc --noEmit",
@@ -88,10 +89,5 @@
     "vite": "6.3.5",
     "vite-plugin-istanbul": "^7.2.1",
     "vitest": "^4.0.18"
-  },
-  "pnpm": {
-    "overrides": {
-      "vite": "6.3.5"
-    }
   }
 }
