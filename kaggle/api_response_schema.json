@@ -1,0 +1,43 @@
+{
+  "/transcribe": {
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/transcribe -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077589677/2077589677_final_stereo.wav\"",
+    "response": {
+      "text": "Hello world.",
+      "language": "en",
+      "segments": [
+        {"start": 0.0, "end": 2.5, "text": "Hello world."}
+      ]
+    }
+  },
+  "/emotion": {
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/emotion -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077593127/2077593127_final_stereo.wav\"",
+    "response": {
+      "top_emotion": "neutral",
+      "emotions": [
+        {"label": "neutral", "score": 0.996}
+      ]
+    }
+  },
+  "/diarize": {
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/diarize -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077589677/2077589677_final_stereo.wav\"",
+    "response": {
+      "segments": [
+        {"start": 0.0, "end": 2.5, "speaker": "SPEAKER_00"}
+      ]
+    }
+  },
+  "/full": {
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/full -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077593127/2077593127_final_stereo.wav\"",
+    "response": {
+      "text": "Hello world.",
+      "language": "en",
+      "segments": [
+        {"start": 0.0, "end": 2.5, "text": "Hello world.", "speaker": "SPEAKER_00"}
+      ],
+      "top_emotion": "neutral",
+      "emotions": [
+        {"label": "neutral", "score": 0.996}
+      ]
+    }
+  }
+}
