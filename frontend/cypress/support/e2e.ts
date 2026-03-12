@@ -3,3 +3,6 @@ import './commands';
 
 // Import code coverage support hooks
 import '@cypress/code-coverage/support';
+
+// Import local API mocks
+import './mockApi';
