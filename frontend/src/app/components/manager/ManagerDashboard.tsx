@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import {
   BarChart2,
@@ -7,6 +8,7 @@ import {
   Star,
   TrendingUp,
   TrendingDown,
+  Loader2,
 } from "lucide-react";
 import {
   LineChart,
@@ -23,17 +25,43 @@ import {
   Cell,
   ResponsiveContainer,
 } from "recharts";
-import {
-  mockWeeklyTrend,
-  mockEmotionDistribution,
-  mockPolicyCompliance,
-  mockAgentPerformance,
-  mockInteractions,
-} from "../../data/mockData";
+import { getDashboardStats, type DashboardStats } from "../../services/api";
 
 export function ManagerDashboard() {
-  const sortedInteractions = [...mockInteractions].sort((a, b) => a.overallScore - b.overallScore);
-  const leaderboard = [...mockAgentPerformance].sort((a, b) => b.overallScore - a.overallScore);
+  const [data, setData] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDashboardStats()
+      .then(setData)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-[#3B82F6] animate-spin" />
+        <span className="ml-3 text-[#6B7280] text-sm">Loading dashboard...</span>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
+          <p className="text-[#6B7280] text-sm">Failed to load dashboard data</p>
+          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const sortedInteractions = [...data.interactions].sort((a, b) => a.overallScore - b.overallScore);
+  const leaderboard = [...data.agentPerformance].sort((a, b) => b.overallScore - a.overallScore);
 
   return (
     <div className="p-6 space-y-6">
@@ -50,10 +78,10 @@ export function ManagerDashboard() {
             </div>
           </div>
           <div className="text-[40px] leading-none text-[#2563EB] mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
-            84.2%
+            {data.kpis.avgScore}%
           </div>
           <div className="text-[12px] text-[#9CA3AF]">
-            ↑ 2.3% from last week
+            overall average
           </div>
         </div>
 
@@ -68,10 +96,10 @@ export function ManagerDashboard() {
             </div>
           </div>
           <div className="text-[40px] leading-none text-[#059669] mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
-            342
+            {data.kpis.totalCalls}
           </div>
           <div className="text-[12px] text-[#9CA3AF]">
-            this week
+            completed calls
           </div>
         </div>
 
@@ -86,7 +114,7 @@ export function ManagerDashboard() {
             </div>
           </div>
           <div className="text-[40px] leading-none text-[#059669] mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
-            88%
+            {data.kpis.resolutionRate}%
           </div>
           <div className="text-[12px] text-[#9CA3AF]">
             of completed calls
@@ -104,7 +132,7 @@ export function ManagerDashboard() {
             </div>
           </div>
           <div className="text-[40px] leading-none text-[#DC2626] mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
-            12
+            {data.kpis.violationCount}
           </div>
           <div className="text-[12px] text-[#9CA3AF]">
             interactions flagged
@@ -123,7 +151,7 @@ export function ManagerDashboard() {
             interaction_scores.overall_score avg, grouped by interaction_date
           </p>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={mockWeeklyTrend}>
+            <LineChart data={data.weeklyTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
               <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#6B7280' }} />
               <YAxis tick={{ fontSize: 12, fill: '#6B7280' }} domain={[70, 95]} />
@@ -151,7 +179,7 @@ export function ManagerDashboard() {
           <ResponsiveContainer width="100%" height={160}>
             <PieChart>
               <Pie
-                data={mockEmotionDistribution}
+                data={data.emotionDistribution}
                 cx="50%"
                 cy="50%"
                 innerRadius={40}
@@ -159,14 +187,14 @@ export function ManagerDashboard() {
                 paddingAngle={2}
                 dataKey="value"
               >
-                {mockEmotionDistribution.map((entry, index) => (
+                {data.emotionDistribution.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
           <div className="grid grid-cols-2 gap-2 mt-3">
-            {mockEmotionDistribution.map((item) => (
+            {data.emotionDistribution.map((item) => (
               <div key={item.name} className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
                 <span className="text-[12px] text-[#6B7280]">
@@ -187,13 +215,13 @@ export function ManagerDashboard() {
           policy_compliance JOIN company_policies — compliance rate per policy_category
         </p>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={mockPolicyCompliance} layout="vertical">
+          <BarChart data={data.policyCompliance} layout="vertical">
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
             <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 12, fill: '#6B7280' }} />
             <YAxis dataKey="category" type="category" width={150} tick={{ fontSize: 12, fill: '#6B7280' }} />
             <Tooltip />
             <Bar dataKey="rate" radius={[0, 6, 6, 0]}>
-              {mockPolicyCompliance.map((entry, index) => (
+              {data.policyCompliance.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
             </Bar>
@@ -210,7 +238,7 @@ export function ManagerDashboard() {
           interaction_scores: empathy_score · policy_score · resolution_score per agent
         </p>
         <ResponsiveContainer width="100%" height={210}>
-          <BarChart data={mockAgentPerformance}>
+          <BarChart data={data.agentPerformance}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#6B7280' }} />
             <YAxis domain={[60, 100]} tick={{ fontSize: 12, fill: '#6B7280' }} />

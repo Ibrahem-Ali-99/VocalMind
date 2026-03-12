@@ -1,9 +1,42 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router";
-import { Search, ChevronDown } from "lucide-react";
-import { mockInteractions } from "../../data/mockData";
+import { Search, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
+import { getInteractions, type InteractionSummary } from "../../services/api";
 
 export function SessionInspector() {
-  const sortedInteractions = [...mockInteractions].sort((a, b) => a.overallScore - b.overallScore);
+  const [interactions, setInteractions] = useState<InteractionSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getInteractions()
+      .then(setInteractions)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-[#3B82F6] animate-spin" />
+        <span className="ml-3 text-[#6B7280] text-sm">Loading interactions...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
+          <p className="text-[#6B7280] text-sm">Failed to load interactions</p>
+          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const sortedInteractions = [...interactions].sort((a, b) => a.overallScore - b.overallScore);
 
   return (
     <div className="p-6">
