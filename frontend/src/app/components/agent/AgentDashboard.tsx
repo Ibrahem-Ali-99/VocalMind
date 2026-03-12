@@ -1,10 +1,59 @@
-import { Link } from "react-router";
-import { Star, Phone, Target, Zap } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Link, useParams } from "react-router";
+import { Star, Phone, Target, Zap, Loader2, AlertTriangle } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { mockAgentPersonalData } from "../../data/mockData";
+import { getAgentProfile, getAgents, type AgentProfile } from "../../services/api";
 
 export function AgentDashboard() {
-  const data = mockAgentPersonalData;
+  const { agentId: routeAgentId } = useParams();
+  const [data, setData] = useState<AgentProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadAgent = async () => {
+      try {
+        let targetId = routeAgentId;
+        if (!targetId) {
+          // No auth — auto-select the first agent
+          const agents = await getAgents();
+          if (agents.length === 0) {
+            setError("No agents found in the database");
+            return;
+          }
+          targetId = agents[0].id;
+        }
+        const profile = await getAgentProfile(targetId);
+        setData(profile);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to load");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAgent();
+  }, [routeAgentId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-[#10B981] animate-spin" />
+        <span className="ml-3 text-[#6B7280] text-sm">Loading your dashboard...</span>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
+          <p className="text-[#6B7280] text-sm">Failed to load agent data</p>
+          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

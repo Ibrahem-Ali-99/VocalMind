@@ -1,9 +1,17 @@
 import { useState } from "react";
 import { MessageSquare, Mic, Send } from "lucide-react";
-import { mockAssistantMessages } from "../../data/mockData";
+
+interface AssistantMessage {
+  id: string;
+  type: "user" | "ai";
+  content: string;
+  mode?: string;
+  sql?: string;
+  executionTime?: string;
+}
 
 export function ManagerAssistant() {
-  const [messages, setMessages] = useState(mockAssistantMessages);
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
 

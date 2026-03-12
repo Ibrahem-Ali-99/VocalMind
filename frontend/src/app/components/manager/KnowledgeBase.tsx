@@ -1,13 +1,46 @@
-import { useState } from "react";
-import { BookOpen, HelpCircle, Info, Search } from "lucide-react";
+import { useState, useEffect } from "react";
+import { BookOpen, HelpCircle, Info, Search, Loader2, AlertTriangle } from "lucide-react";
 import { Switch } from "../../components/ui/switch";
-import { mockPolicies, mockFAQs } from "../../data/mockData";
+import { getPolicies, getFaqs, type PolicyData, type FAQData } from "../../services/api";
 
 export function KnowledgeBase() {
-  const [policies, setPolicies] = useState(mockPolicies);
-  const [faqs, setFaqs] = useState(mockFAQs);
+  const [policies, setPolicies] = useState<PolicyData[]>([]);
+  const [faqs, setFaqs] = useState<FAQData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [policySearch, setPolicySearch] = useState("");
   const [faqSearch, setFaqSearch] = useState("");
+
+  useEffect(() => {
+    Promise.all([getPolicies(), getFaqs()])
+      .then(([p, f]) => {
+        setPolicies(p);
+        setFaqs(f);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-[#3B82F6] animate-spin" />
+        <span className="ml-3 text-[#6B7280] text-sm">Loading knowledge base...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
+          <p className="text-[#6B7280] text-sm">Failed to load knowledge base</p>
+          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   const togglePolicy = (id: string) => {
     setPolicies(policies.map((p) => (p.id === id ? { ...p, isActive: !p.isActive } : p)));
