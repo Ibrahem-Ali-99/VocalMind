@@ -1,21 +1,66 @@
+import { useState, useEffect, useRef } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Target, Play } from "lucide-react";
-import { mockInteractions, mockUtterances, mockEmotionEvents, mockPolicyViolations } from "../../data/mockData";
+import { ArrowLeft, Target, Play, Headphones, Loader2, AlertTriangle } from "lucide-react";
+import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
 
 export function AgentCallDetail() {
   const { id } = useParams();
-  const interaction = mockInteractions.find((i) => i.id === id);
-  
+  const [data, setData] = useState<InteractionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const handleJumpTo = (seconds: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = seconds;
+      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+    }
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    getInteractionDetail(id)
+      .then(setData)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-[#10B981] animate-spin" />
+        <span className="ml-3 text-[#6B7280] text-sm">Loading call details...</span>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
+          <p className="text-[#6B7280] text-sm">Failed to load call details</p>
+          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const interaction = data.interaction;
+  const utterances = data.utterances;
+  const emotionEvents = data.emotionEvents;
+  const policyViolations = data.policyViolations;
+
   const callData = {
-    date: interaction?.date || "27 Feb 2025",
-    time: interaction?.time || "09:14",
-    duration: interaction?.duration || "5:42",
-    language: interaction?.language || "ar-EG",
-    overallScore: interaction?.overallScore || 88,
-    empathyScore: interaction?.empathyScore || 85,
-    policyScore: interaction?.policyScore || 91,
-    resolutionScore: interaction?.resolutionScore || 88,
-    responseTime: interaction?.responseTime ? (interaction.responseTime.toString().includes('s') ? interaction.responseTime.toString() : `${interaction.responseTime}s`) : "2.1s",
+    date: interaction.date,
+    time: interaction.time,
+    duration: interaction.duration,
+    language: interaction.language,
+    overallScore: interaction.overallScore,
+    empathyScore: interaction.empathyScore,
+    policyScore: interaction.policyScore,
+    resolutionScore: interaction.resolutionScore,
+    responseTime: interaction.responseTime,
   };
 
   const getScoreColor = (score: number) => {
@@ -38,10 +83,6 @@ export function AgentCallDetail() {
         return { bg: "#F1F5F9", text: "#475569", label: "Neutral" };
     }
   };
-
-  const utterances = mockUtterances.filter((u) => u.interactionId === id);
-  const emotionEvents = mockEmotionEvents.filter((e) => e.interactionId === id);
-  const policyViolations = mockPolicyViolations.filter((v) => v.interactionId === id);
 
   return (
     <div className="p-6 space-y-6">
@@ -104,6 +145,27 @@ export function AgentCallDetail() {
 
         {/* Divider */}
         <div className="h-px bg-[#E5E7EB] mb-4" />
+
+        {/* Audio Player (if available) */}
+        {interaction.audioFilePath && (
+          <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 flex items-center gap-4 mb-6">
+            <div className="w-10 h-10 bg-[#EFF6FF] text-[#3B82F6] rounded-xl flex items-center justify-center shrink-0">
+              <Headphones className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[14px] font-semibold text-[#374151] mb-2">Session Recording</p>
+              <audio 
+                ref={audioRef}
+                controls 
+                className="w-full h-8" 
+                src={getAudioUrl(interaction.id)}
+                preload="metadata"
+              >
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+          </div>
+        )}
 
         {/* Score Grid */}
         <div className="grid grid-cols-4 gap-4">
@@ -280,7 +342,10 @@ export function AgentCallDetail() {
                     </span>
                   </div>
 
-                  <button className="flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-lg text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors">
+                  <button 
+                    onClick={() => handleJumpTo(event.jumpToSeconds)}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-lg text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors"
+                  >
                     <Play className="w-3 h-3" />
                     Jump to {event.timestamp}
                   </button>

@@ -1,17 +1,57 @@
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Play, ThumbsUp, ThumbsDown, CheckCircle, XCircle, Flag } from "lucide-react";
-import { useState } from "react";
-import { mockInteractions, mockUtterances, mockEmotionEvents, mockPolicyViolations } from "../../data/mockData";
+import { ArrowLeft, Play, Headphones, ThumbsUp, ThumbsDown, CheckCircle, XCircle, Flag, Loader2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
 
 export function SessionDetail() {
   const { id } = useParams();
-  const interaction = mockInteractions.find((i) => i.id === id) || mockInteractions[0];
-  const utterances = mockUtterances.filter((u) => u.interactionId === (id || interaction.id));
-  const emotionEvents = mockEmotionEvents.filter((e) => e.interactionId === (id || interaction.id));
-  
+  const [data, setData] = useState<InteractionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [flaggedEvents, setFlaggedEvents] = useState<string[]>([]);
   const [flaggedViolations, setFlaggedViolations] = useState<string[]>([]);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState<string[]>([]);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const handleJumpTo = (seconds: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = seconds;
+      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+    }
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    getInteractionDetail(id)
+      .then(setData)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-[#3B82F6] animate-spin" />
+        <span className="ml-3 text-[#6B7280] text-sm">Loading session...</span>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangleIcon className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
+          <p className="text-[#6B7280] text-sm">Failed to load session</p>
+          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const interaction = data.interaction;
+  const utterances = data.utterances;
+  const emotionEvents = data.emotionEvents;
 
   const getScoreColor = (score: number) => {
     if (score >= 85) return "#10B981";
@@ -104,7 +144,28 @@ export function SessionDetail() {
         {/* Divider */}
         <div className="h-px bg-[#E5E7EB] mb-4" />
 
-        {/* Score Grid */}
+        {/* Audio Player (if available) */}
+      {interaction.audioFilePath && (
+        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 flex items-center gap-4">
+          <div className="w-10 h-10 bg-[#EFF6FF] text-[#3B82F6] rounded-xl flex items-center justify-center shrink-0">
+            <Headphones className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <p className="text-[14px] font-semibold text-[#374151] mb-2">Session Recording</p>
+            <audio 
+              ref={audioRef}
+              controls 
+              className="w-full h-8" 
+              src={getAudioUrl(interaction.id)}
+              preload="metadata"
+            >
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        </div>
+      )}
+
+      {/* Score Grid */}
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-[#EFF6FF] rounded-lg p-3 text-center">
             <div className="text-[11px] text-[#6B7280] mb-1">Empathy</div>
@@ -243,7 +304,10 @@ export function SessionDetail() {
                     </span>
                   </div>
 
-                  <button className="flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-lg text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors">
+                  <button 
+                    onClick={() => handleJumpTo(event.jumpToSeconds)}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-lg text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors"
+                  >
                     <Play className="w-3 h-3" />
                     Jump to {event.timestamp}
                   </button>
@@ -314,9 +378,9 @@ export function SessionDetail() {
           policy_compliance WHERE is_compliant = FALSE — only violated policies are shown here
         </p>
 
-        {mockPolicyViolations.length > 0 ? (
+        {data.policyViolations.length > 0 ? (
           <div className="space-y-4">
-            {mockPolicyViolations.map((violation) => {
+            {data.policyViolations.map((violation) => {
               const isFlagged = flaggedViolations.includes(violation.id);
               const hasSubmitted = feedbackSubmitted.includes(violation.id);
 
