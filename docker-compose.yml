@@ -98,7 +98,7 @@ services:
   ingestion:
     build:
       context: ./services/rag
-      dockerfile: ingestion-pipeline/Dockerfile
+      dockerfile: Dockerfile
     container_name: vocalmind-ingestion
     depends_on:
       ollama:
@@ -106,8 +106,8 @@ services:
       qdrant:
         condition: service_healthy
     volumes:
-      - ./services/rag/ingestion-pipeline/NA_docs:/app/NA_docs
-      - ./services/rag/ingestion-pipeline/parsed_docs:/app/parsed_docs
+      - ./services/rag/NA_docs:/app/NA_docs
+      - ./services/rag/parsed_docs:/app/parsed_docs
     environment:
       - OLLAMA_URL=http://ollama:11434
       - QDRANT_URL=http://qdrant:6333

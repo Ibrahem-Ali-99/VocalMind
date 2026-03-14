@@ -4,11 +4,21 @@ import psycopg
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Fix path to import seed_database
-sys.path.append(str(Path(__file__).parent.parent))
-import scripts.seed_database as seed_database
+import importlib.util
+from pathlib import Path
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+# Mock Supabase env vars so seed_database can be loaded for its constants
+os.environ.setdefault("SUPABASE_URL", "http://mock")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "mock")
+
+# Fix path to import seed_database
+seed_db_path = Path(__file__).parent / "seed_database.py"
+spec = importlib.util.spec_from_file_location("seed_database", seed_db_path)
+seed_database = importlib.util.module_from_spec(spec)
+# Prevent the module from exiting if it can't find keys (we already mocked them but just in case)
+spec.loader.exec_module(seed_database)
+
+load_dotenv(Path(__file__).parent.parent.parent / "backend" / ".env")
 
 def seed():
     print("Seeding database via direct PostgreSQL connection (psycopg)...")
