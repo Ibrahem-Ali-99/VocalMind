@@ -1,8 +1,11 @@
 import os
 import sys
 import psycopg
-from dotenv import load_dotenv
-from pathlib import Path
+try:
+    from dotenv import load_dotenv
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
 
 import importlib.util
 from pathlib import Path
@@ -12,19 +15,29 @@ os.environ.setdefault("SUPABASE_URL", "http://mock")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "mock")
 
 # Fix path to import seed_database
-seed_db_path = Path(__file__).parent / "seed_database.py"
+ROOT = Path(__file__).parent
+seed_db_path = ROOT / "seed_database.py"
 spec = importlib.util.spec_from_file_location("seed_database", seed_db_path)
 seed_database = importlib.util.module_from_spec(spec)
-# Prevent the module from exiting if it can't find keys (we already mocked them but just in case)
+# Prevent the module from exiting if it can't find keys
 spec.loader.exec_module(seed_database)
 
-load_dotenv(Path(__file__).parent.parent.parent / "backend" / ".env")
+def load_config():
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        return db_url
+    
+    env_path = ROOT.parent.parent / "backend" / ".env"
+    if HAS_DOTENV and env_path.exists():
+        load_dotenv(env_path)
+        return os.getenv("DATABASE_URL")
+    return None
 
 def seed():
     print("Seeding database via direct PostgreSQL connection (psycopg)...")
-    db_url = os.getenv("DATABASE_URL")
+    db_url = load_config()
     if not db_url:
-        print("ERROR: DATABASE_URL not found in .env")
+        print("ERROR: DATABASE_URL not found")
         return
     
     if "+asyncpg" in db_url:

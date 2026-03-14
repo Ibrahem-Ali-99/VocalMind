@@ -12,7 +12,11 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
 
 try:
     import asyncpg
@@ -22,15 +26,26 @@ except ImportError:
 
 ROOT = Path(__file__).parent.parent
 ENV_FILE = ROOT / ".env"
-SCHEMA_FILE = ROOT / "docker" / "init" / "01_schema.sql"
+SCHEMA_FILE = ROOT / "docker" / "init-db" / "01_schema.sql"
 
 def load_config() -> str:
-    """Load DATABASE_URL from .env."""
+    """Load DATABASE_URL from environment or .env."""
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        if "+asyncpg" in db_url:
+            db_url = db_url.replace("+asyncpg", "")
+        return db_url
+
     if not ENV_FILE.exists():
         print(f"ERROR: .env not found at {ENV_FILE}")
         sys.exit(1)
 
-    load_dotenv(ENV_FILE)
+    if HAS_DOTENV:
+        load_dotenv(ENV_FILE)
+    elif not db_url:
+        print("ERROR: python-dotenv not found and DATABASE_URL is not set. Please install python-dotenv or set DATABASE_URL.")
+        sys.exit(1)
+
     db_url = os.getenv("DATABASE_URL")
 
     if not db_url:
