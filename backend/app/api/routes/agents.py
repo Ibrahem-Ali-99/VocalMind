@@ -1,4 +1,3 @@
-import asyncio
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select, func
 from uuid import UUID
