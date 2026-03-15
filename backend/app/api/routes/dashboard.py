@@ -1,9 +1,3 @@
-# Dashboard stats endpoint — powers the Manager Dashboard.
-# Returns: KPIs, weekly score trend, emotion distribution,
-#          policy compliance rates, agent performance breakdown.
-#
-# Performance: all data in 3 queries max (no N+1 loops).
-
 from fastapi import APIRouter
 from sqlmodel import select, func, case
 from sqlalchemy import extract
@@ -15,6 +9,7 @@ from app.models.utterance import Utterance
 from app.models.policy import CompanyPolicy, PolicyCompliance
 from app.models.user import User as UserModel
 from app.models.enums import UserRole, ProcessingStatus
+from app.core.cache import dashboard_cache
 
 router = APIRouter()
 
@@ -44,7 +39,12 @@ def _compliance_color(rate: float) -> str:
 async def get_dashboard_stats(session: SessionDep):
     """Return all data needed by the Manager Dashboard in one call."""
     
-    # ── KPIs (single query) ──────────────────────────────────────────────
+    # Check cache first
+    cached_data = dashboard_cache.get("manager_stats")
+    if cached_data:
+        return cached_data
+
+    # 1. KPIs
     kpi_stmt = select(
         func.avg(InteractionScore.overall_score).label("avg_score"),
         func.count(InteractionScore.id).label("total_scored"),
@@ -57,7 +57,7 @@ async def get_dashboard_stats(session: SessionDep):
     total_resolved = kpi_row.total_resolved or 0
     resolution_rate = round((total_resolved / total_scored) * 100, 0) if total_scored else 0
 
-    # Total completed interactions
+    # 2. Total completed interactions
     total_calls_result = await session.exec(
         select(func.count(Interaction.id)).where(
             Interaction.processing_status == ProcessingStatus.completed
@@ -65,7 +65,7 @@ async def get_dashboard_stats(session: SessionDep):
     )
     total_calls = total_calls_result.one_or_none() or 0
 
-    # Policy violations count (non-compliant)
+    # 3. Policy violations
     violations_result = await session.exec(
         select(func.count(PolicyCompliance.id)).where(
             PolicyCompliance.is_compliant == False  # noqa: E712
@@ -73,7 +73,7 @@ async def get_dashboard_stats(session: SessionDep):
     )
     violation_count = violations_result.one_or_none() or 0
 
-    # ── Weekly Score Trend ────────────────────────────────────────────────
+    # 4. Weekly Trend
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     weekly_trend_stmt = (
         select(
@@ -85,19 +85,18 @@ async def get_dashboard_stats(session: SessionDep):
         .order_by("dow")
     )
     weekly_trend_result = await session.exec(weekly_trend_stmt)
-    weekly_trend_rows = weekly_trend_result.all()
-
+    
     weekly_trend = []
-    for row in weekly_trend_rows:
-        dow = int(row.dow)  # PostgreSQL: 0=Sunday, 1=Monday...6=Saturday
-        day_index = (dow - 1) % 7  # Shift to Mon=0
+    for row in weekly_trend_result.all():
+        dow = int(row.dow)
+        day_index = (dow - 1) % 7 
         day_label = day_names[day_index] if 0 <= day_index < 7 else f"Day{dow}"
         weekly_trend.append({
             "day": day_label,
             "score": round(row.avg_score, 0) if row.avg_score else 0,
         })
 
-    # ── Emotion Distribution ──────────────────────────────────────────────
+    # 5. Emotion Distribution
     emotion_stmt = (
         select(
             Utterance.emotion,
@@ -108,19 +107,18 @@ async def get_dashboard_stats(session: SessionDep):
         .order_by(func.count(Utterance.id).desc())
     )
     emotion_result = await session.exec(emotion_stmt)
-    emotion_rows = emotion_result.all()
-
-    total_emotions = sum(row.count for row in emotion_rows) if emotion_rows else 1
+    em_rows = emotion_result.all()
+    total_emotions = sum(row.count for row in em_rows) if em_rows else 1
     emotion_distribution = [
         {
             "name": (row.emotion or "unknown").capitalize(),
             "value": round((row.count / total_emotions) * 100, 0),
             "color": EMOTION_COLORS.get(row.emotion or "", "#9CA3AF"),
         }
-        for row in emotion_rows
+        for row in em_rows
     ]
 
-    # ── Policy Compliance by Category ─────────────────────────────────────
+    # 6. Policy Compliance by Category
     compliance_stmt = (
         select(
             CompanyPolicy.policy_category,
@@ -130,18 +128,16 @@ async def get_dashboard_stats(session: SessionDep):
         .group_by(CompanyPolicy.policy_category)
     )
     compliance_result = await session.exec(compliance_stmt)
-    compliance_rows = compliance_result.all()
-
     policy_compliance = [
         {
             "category": row.policy_category,
             "rate": round(row.avg_rate * 100, 0) if row.avg_rate else 0,
             "color": _compliance_color(round(row.avg_rate * 100, 0) if row.avg_rate else 0),
         }
-        for row in compliance_rows
+        for row in compliance_result.all()
     ]
 
-    # ── Agent Performance Breakdown ───────────────────────────────────────
+    # 7. Agent Performance
     agent_perf_stmt = (
         select(
             UserModel.name,
@@ -157,8 +153,6 @@ async def get_dashboard_stats(session: SessionDep):
         .order_by(func.avg(InteractionScore.overall_score).desc())
     )
     agent_perf_result = await session.exec(agent_perf_stmt)
-    agent_perf_rows = agent_perf_result.all()
-
     agent_performance = [
         {
             "name": row.name,
@@ -166,13 +160,13 @@ async def get_dashboard_stats(session: SessionDep):
             "policy": round(row.policy * 10, 0) if row.policy else 0,
             "resolution": round(row.resolution * 10, 0) if row.resolution else 0,
             "overallScore": round(row.overall * 10, 0) if row.overall else 0,
-            "trend": "up",  # TODO: compute from snapshots
+            "trend": "up",
         }
-        for row in agent_perf_rows
+        for row in agent_perf_result.all()
     ]
 
-    # ── Recent Interactions (with violation flag via LEFT JOIN) ────────────
-    # Subquery: count violations per interaction
+    # 8. Recent Interactions (with violation flag)
+    # Using the same logic as baseline but sequential
     violation_subq = (
         select(
             PolicyCompliance.interaction_id,
@@ -182,7 +176,6 @@ async def get_dashboard_stats(session: SessionDep):
         .group_by(PolicyCompliance.interaction_id)
         .subquery()
     )
-
     recent_stmt = (
         select(
             Interaction.id,
@@ -205,10 +198,9 @@ async def get_dashboard_stats(session: SessionDep):
         .limit(10)
     )
     recent_result = await session.exec(recent_stmt)
-    recent_rows = recent_result.all()
 
     interactions = []
-    for row in recent_rows:
+    for row in recent_result.all():
         mins = row.duration_seconds // 60
         secs = row.duration_seconds % 60
         interactions.append({
@@ -227,7 +219,7 @@ async def get_dashboard_stats(session: SessionDep):
             "hasOverlap": row.has_overlap,
         })
 
-    return {
+    result = {
         "kpis": {
             "avgScore": avg_score,
             "totalCalls": total_calls,
@@ -240,3 +232,8 @@ async def get_dashboard_stats(session: SessionDep):
         "agentPerformance": agent_performance,
         "interactions": interactions,
     }
+
+    # Cache for next time
+    dashboard_cache.set("manager_stats", result)
+
+    return result

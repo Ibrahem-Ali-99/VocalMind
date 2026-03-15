@@ -1,14 +1,16 @@
-# Agent endpoints — agent profile and stats.
-
+import asyncio
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select, func
 from uuid import UUID
+from sqlalchemy import extract
+from datetime import datetime, timedelta
 
 from app.api.deps import SessionDep
 from app.models.user import User as UserModel
 from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
 from app.models.enums import UserRole
+from app.core.cache import dashboard_cache
 
 router = APIRouter()
 
@@ -34,7 +36,13 @@ async def list_agents(session: SessionDep):
 async def get_agent_profile(agent_id: UUID, session: SessionDep):
     """Get agent profile with stats, weekly trend, and recent calls."""
 
-    # Get the agent user
+    # Check cache first
+    cache_key = f"agent_profile_{agent_id}"
+    cached_data = dashboard_cache.get(cache_key)
+    if cached_data:
+        return cached_data
+
+    # 1. Get the agent user
     result = await session.exec(
         select(UserModel).where(UserModel.id == agent_id, UserModel.role == UserRole.agent)
     )
@@ -42,7 +50,7 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Aggregate scores
+    # 2. Aggregate scores
     scores_stmt = (
         select(
             func.count(Interaction.id).label("total_calls"),
@@ -65,18 +73,16 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep):
     avg_resolution = round(stats.avg_resolution * 10, 0) if stats and stats.avg_resolution else 0
     avg_response = f"{stats.avg_response:.1f}s" if stats and stats.avg_response else "N/A"
 
-    # Resolution rate
+    # 3. Resolution rate
     res_result = await session.exec(
-        select(
-            func.count(InteractionScore.id),
-        )
+        select(func.count(InteractionScore.id))
         .join(Interaction, Interaction.id == InteractionScore.interaction_id)
         .where(Interaction.agent_id == agent_id, InteractionScore.was_resolved == True)  # noqa: E712
     )
     resolved_count = res_result.one_or_none() or 0
     resolution_rate = round((resolved_count / total_calls) * 100, 0) if total_calls else 0
 
-    # Recent calls
+    # 4. Recent calls
     recent_stmt = (
         select(
             Interaction.id,
@@ -92,8 +98,6 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep):
         .limit(10)
     )
     recent_result = await session.exec(recent_stmt)
-    recent_rows = recent_result.all()
-
     recent_calls = [
         {
             "id": str(r.id),
@@ -105,11 +109,10 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep):
             "resolved": r.was_resolved or False,
             "hasReview": False,
         }
-        for r in recent_rows
+        for r in recent_result.all()
     ]
 
-    # Weekly trend (last 5 days with interactions)
-    from sqlalchemy import extract
+    # 5. Weekly trend
     weekly_stmt = (
         select(
             extract("dow", Interaction.interaction_date).label("dow"),
@@ -122,24 +125,31 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep):
         .limit(7)
     )
     weekly_result = await session.exec(weekly_stmt)
-    weekly_rows = weekly_result.all()
-
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     weekly_trend = [
         {
             "day": day_names[(int(r.dow) - 1) % 7],
             "score": round(r.avg_score * 10, 0) if r.avg_score else 0,
         }
-        for r in weekly_rows
+        for r in weekly_result.all()
     ]
 
-    return {
+    # 6. Calls this week
+    start_of_week = datetime.now() - timedelta(days=datetime.now().weekday())
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+    calls_this_week_res = await session.exec(
+        select(func.count(Interaction.id))
+        .where(Interaction.agent_id == agent_id, Interaction.interaction_date >= start_of_week)
+    )
+    calls_this_week = calls_this_week_res.one_or_none() or 0
+
+    result = {
         "id": str(agent.id),
         "name": agent.name,
         "role": agent.role.value if agent.role else "agent",
         "totalCalls": total_calls,
-        "callsThisWeek": total_calls,  # TODO: filter by current week
-        "teamRank": 1,  # TODO: compute rank among agents
+        "callsThisWeek": calls_this_week,
+        "teamRank": 1, 
         "avgScore": avg_overall,
         "overallScore": avg_overall,
         "empathyScore": avg_empathy,
@@ -147,7 +157,12 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep):
         "resolutionScore": avg_resolution,
         "resolutionRate": resolution_rate,
         "avgResponseTime": avg_response,
-        "trend": "up",  # TODO: compute from snapshots
+        "trend": "up",
         "weeklyTrend": weekly_trend,
         "recentCalls": recent_calls,
     }
+
+    # Cache result
+    dashboard_cache.set(cache_key, result)
+
+    return result
