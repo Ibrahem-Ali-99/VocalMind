@@ -78,11 +78,33 @@ beforeEach(() => {
     body: mockFAQs
   }).as('getFaqs');
 
-  cy.intercept('GET', '**/api/v1/agents/current', {
+  cy.intercept('GET', '**/api/v1/agents', {
+    statusCode: 200,
+    body: mockAgentPerformance.map((a, i) => ({ id: `agent-00${i+1}`, name: a.name, role: "Agent" }))
+  }).as('getAgents');
+
+  cy.intercept('GET', '**/api/v1/agents/*', {
     statusCode: 200,
     body: mockAgentPersonalData
-  }).as('getAgentData');
-  
+  }).as('getAgentProfile');
+
+  cy.intercept('POST', '**/api/v1/assistant/query', {
+    statusCode: 200,
+    body: {
+      id: "resp-001",
+      type: "ai",
+      content: "I've analyzed your query. Finding top performing agents...",
+      mode: "chat",
+      sql: "SELECT * FROM interactions LIMIT 5",
+      execution_time: "120ms",
+      data: [
+        { name: "Sarah M.", score: 92 },
+        { name: "John D.", score: 85 }
+      ],
+      success: true
+    }
+  }).as('postAssistantQuery');
+
   cy.intercept('POST', '**/api/v1/chat', {
     statusCode: 200,
     body: { answer: "Here is your requested answer.", context: "Knowledge context" }

@@ -12,8 +12,8 @@ class FAQArticle(SQLModel, table=True):
     answer: str
     category: str = Field(max_length=100)
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class OrganizationFAQArticle(SQLModel, table=True):
@@ -24,4 +24,4 @@ class OrganizationFAQArticle(SQLModel, table=True):
     organization_id: UUID = Field(foreign_key="organizations.id")
     article_id: UUID = Field(foreign_key="faq_articles.id")
     is_active: bool = Field(default=True)
-    assigned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    assigned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

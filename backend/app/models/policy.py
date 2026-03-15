@@ -13,8 +13,8 @@ class CompanyPolicy(SQLModel, table=True):
     policy_title: str = Field(max_length=255)
     policy_text: str
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class OrganizationPolicy(SQLModel, table=True):
@@ -25,7 +25,7 @@ class OrganizationPolicy(SQLModel, table=True):
     organization_id: UUID = Field(foreign_key="organizations.id")
     policy_id: UUID = Field(foreign_key="company_policies.id")
     is_active: bool = Field(default=True)
-    assigned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    assigned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class PolicyCompliance(SQLModel, table=True):

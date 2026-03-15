@@ -206,3 +206,26 @@ export interface AgentProfile {
 export function getAgentProfile(agentId: string): Promise<AgentProfile> {
   return apiFetch<AgentProfile>(`/agents/${agentId}`);
 }
+
+// ── Assistant ────────────────────────────────────────────────────────────────
+
+export interface AssistantResponse {
+  id: string;
+  type: "user" | "ai";
+  content: string;
+  mode: string;
+  sql?: string;
+  execution_time?: string;
+  data?: any[];
+  success: boolean;
+}
+
+export function sendAssistantQuery(text: string, mode: "chat" | "voice" = "chat"): Promise<AssistantResponse> {
+  return apiFetch<AssistantResponse>(`/assistant/query`, {
+    method: "POST",
+    body: JSON.stringify({
+      query_text: text,
+      mode: mode,
+    }),
+  });
+}

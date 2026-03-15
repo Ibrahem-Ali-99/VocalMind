@@ -1,19 +1,19 @@
 import { useState } from "react";
 import { MessageSquare, Mic, Send } from "lucide-react";
+import { sendAssistantQuery, AssistantResponse } from "../../services/api";
 
-interface AssistantMessage {
+interface AssistantMessage extends Partial<AssistantResponse> {
   id: string;
   type: "user" | "ai";
   content: string;
   mode?: string;
-  sql?: string;
-  executionTime?: string;
 }
 
 export function ManagerAssistant() {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const suggestedQueries = [
     "Show top performing agents this week",
@@ -22,26 +22,39 @@ export function ManagerAssistant() {
     "Show emotion trends across all calls",
   ];
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async (textOverride?: string) => {
+    const queryText = textOverride || input;
+    if (!queryText.trim()) return;
 
-    const newUserMessage = {
-      id: `msg_${Date.now()}`,
-      type: "user" as const,
-      mode: "chat" as const,
-      content: input,
+    const userMsgId = `msg_${Date.now()}`;
+    const newUserMessage: AssistantMessage = {
+      id: userMsgId,
+      type: "user",
+      content: queryText,
     };
 
-    const newAiMessage = {
-      id: `msg_${Date.now() + 1}`,
-      type: "ai" as const,
-      content: "I've analyzed your query. Here are the results based on the current data in your organization's database.",
-      sql: `SELECT * FROM interactions WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 10`,
-      executionTime: "98ms",
-    };
-
-    setMessages([...messages, newUserMessage, newAiMessage]);
+    setMessages((prev) => [...prev, newUserMessage]);
     setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await sendAssistantQuery(queryText);
+      const aiMessage: AssistantMessage = {
+        ...response,
+        type: "ai",
+      };
+      setMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      const errorMessage: AssistantMessage = {
+        id: `msg_err_${Date.now()}`,
+        type: "ai",
+        content: "I'm sorry, I'm having trouble connecting to the service. Please make sure the backend is running.",
+        success: false
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -78,7 +91,7 @@ export function ManagerAssistant() {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 bg-[#F9FAFB] overflow-y-auto p-5 space-y-3">
+      <div className="flex-1 bg-[#F9FAFB] overflow-y-auto p-5 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full">
             <div className="w-14 h-14 bg-[#EFF6FF] rounded-2xl flex items-center justify-center mb-4">
@@ -103,24 +116,62 @@ export function ManagerAssistant() {
                     <p className="text-[14px]">{message.content}</p>
                   </div>
                 ) : (
-                  <div className="max-w-[520px] bg-white border border-[#E5E7EB] shadow-sm rounded-[18px_18px_18px_4px] px-4 py-3 space-y-3">
-                    <p className="text-[14px] text-[#374151]">{message.content}</p>
+                  <div className="max-w-[90%] md:max-w-[600px] bg-white border border-[#E5E7EB] shadow-sm rounded-[18px_18px_18px_4px] px-4 py-3 space-y-3">
+                    <p className="text-[14px] text-[#374151] font-medium">{message.content}</p>
                     
-                    {message.sql && (
-                      <div
-                        className="bg-[#0D1117] rounded-lg p-3 overflow-x-auto"
-                        style={{ fontFamily: 'var(--font-mono)' }}
-                      >
-                        <pre className="text-[11px] text-[#A7F3D0] whitespace-pre-wrap">
-                          {message.sql}
-                        </pre>
+                    {/* Render Data Table if success and data exists */}
+                    {message.success && message.data && message.data.length > 0 && (
+                      <div className="border border-[#F3F4F6] rounded-lg overflow-hidden bg-white">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-[#F3F4F6]">
+                            <thead className="bg-[#F9FAFB]">
+                              <tr>
+                                {Object.keys(message.data[0]).map((key) => (
+                                  <th
+                                    key={key}
+                                    className="px-3 py-2 text-left text-[11px] font-bold text-[#6B7280] uppercase tracking-wider"
+                                  >
+                                    {key.replace(/_/g, " ")}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-[#F3F4F6]">
+                              {message.data.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-[#F9FAFB]">
+                                  {Object.values(row).map((val: any, vIdx) => (
+                                    <td key={vIdx} className="px-3 py-2 whitespace-nowrap text-[13px] text-[#374151]">
+                                      {typeof val === "number" ? (val % 1 === 0 ? val : val.toFixed(1)) : String(val)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     )}
 
-                    {message.executionTime && (
+                    {message.sql && (
+                      <details className="cursor-pointer">
+                        <summary className="text-[11px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors mb-1">
+                          Show generated SQL
+                        </summary>
+                        <div
+                          className="bg-[#0D1117] rounded-lg p-3 overflow-x-auto"
+                          style={{ fontFamily: 'var(--font-mono)' }}
+                        >
+                          <pre className="text-[10px] text-[#A7F3D0] whitespace-pre-wrap">
+                            {message.sql}
+                          </pre>
+                        </div>
+                      </details>
+                    )}
+
+                    {message.execution_time && (
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-1 bg-[#F3F4F6] text-[#9CA3AF] rounded text-[10px]">
-                          Executed in {message.executionTime}
+                          Executed in {message.execution_time}
                         </span>
                       </div>
                     )}
@@ -128,6 +179,17 @@ export function ManagerAssistant() {
                 )}
               </div>
             ))}
+            {isLoading && (
+               <div className="flex justify-start">
+                  <div className="bg-white border border-[#E5E7EB] shadow-sm rounded-[18px_18px_18px_4px] px-4 py-3">
+                     <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-[#3B82F6] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-[#3B82F6] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-[#3B82F6] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                     </div>
+                  </div>
+               </div>
+            )}
           </>
         )}
       </div>
@@ -141,8 +203,9 @@ export function ManagerAssistant() {
           {suggestedQueries.map((query, index) => (
             <button
               key={index}
-              onClick={() => setInput(query)}
-              className="px-3 py-2 bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] rounded-lg text-[12px] text-left hover:bg-[#DBEAFE] transition-colors"
+              onClick={() => handleSend(query)}
+              className="px-3 py-2 bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] rounded-lg text-[12px] text-left hover:bg-[#DBEAFE] transition-colors disabled:opacity-50"
+              disabled={isLoading}
             >
               {query}
             </button>
@@ -170,12 +233,14 @@ export function ManagerAssistant() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             placeholder="Ask about scores, violations, agent trends…"
-            className="flex-1 h-11 px-4 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[14px] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]"
+            disabled={isLoading}
+            className="flex-1 h-11 px-4 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[14px] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] disabled:opacity-50"
           />
 
           <button
-            onClick={handleSend}
-            className="w-11 h-11 flex-shrink-0 bg-[#2563EB] hover:bg-[#1D4ED8] flex items-center justify-center rounded-xl transition-colors"
+            onClick={() => handleSend()}
+            disabled={isLoading || !input.trim()}
+            className="w-11 h-11 flex-shrink-0 bg-[#2563EB] hover:bg-[#1D4ED8] disabled:bg-gray-400 flex items-center justify-center rounded-xl transition-colors"
           >
             <Send className="w-5 h-5 text-white" />
           </button>

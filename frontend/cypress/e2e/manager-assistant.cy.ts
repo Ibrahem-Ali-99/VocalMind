@@ -9,7 +9,7 @@ describe("Manager Assistant", () => {
   });
 
   it("displays the initial assistant welcome message", () => {
-    cy.contains("Hello! I'm your VocalMind assistant.");
+    cy.contains("Voice or text — queries are logged to assistant_queries");
   });
 
   it("shows suggested query buttons", () => {
@@ -20,10 +20,10 @@ describe("Manager Assistant", () => {
     cy.contains("button", "Show emotion trends across all calls");
   });
 
-  it("fills input when a suggested query is clicked", () => {
+  it("sends a message when a suggested query is clicked", () => {
     cy.contains("button", "Show top performing agents this week").click();
-    cy.get('input[placeholder="Ask about scores, violations, agent trends…"]')
-      .should("have.value", "Show top performing agents this week");
+    cy.contains("Show top performing agents this week");
+    cy.contains("I've analyzed your query.");
   });
 
   it("sends a message and receives an AI response", () => {
@@ -38,7 +38,7 @@ describe("Manager Assistant", () => {
     // SQL block should be visible
     cy.contains("SELECT * FROM interactions");
     // Execution time badge
-    cy.contains("Executed in 98ms");
+    cy.contains("Executed in 120ms");
   });
 
   it("sends a message via Enter key", () => {
@@ -49,15 +49,8 @@ describe("Manager Assistant", () => {
   });
 
   it("does not send empty messages", () => {
-    // Count existing messages
-    cy.get('[class*="justify-end"], [class*="justify-start"]').then(($msgs) => {
-      const initialCount = $msgs.length;
-      // Try to send empty message
-      cy.get('button').filter(':has(svg.lucide-send)').click();
-      // Count should not increase
-      cy.get('[class*="justify-end"], [class*="justify-start"]')
-        .should("have.length", initialCount);
-    });
+    // Send button should be disabled when input is empty
+    cy.get('button').filter(':has(svg.lucide-send)').should("be.disabled");
   });
 
   it("has a microphone button for voice input", () => {

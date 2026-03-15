@@ -21,4 +21,4 @@ class AssistantQuery(SQLModel, table=True):
     generated_sql: Optional[str] = None
     response_text: Optional[str] = None
     execution_time_ms: Optional[int] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
