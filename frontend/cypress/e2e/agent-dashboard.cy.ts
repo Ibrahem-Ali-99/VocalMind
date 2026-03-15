@@ -4,9 +4,9 @@ describe("Agent Dashboard", () => {
   });
 
   it("renders agent performance stats", () => {
-    cy.contains("Avg Score");
+    cy.contains("Overall Score");
     cy.contains("88%");
-    cy.contains("Resolution");
+    cy.contains("Resolution Rate");
     cy.contains("91%");
   });
 
@@ -22,7 +22,7 @@ describe("Agent Dashboard", () => {
   it("renders the hero card with agent info", () => {
     cy.contains("MY PERFORMANCE");
     cy.contains("Sarah M.");
-    cy.contains("Agent · VocalMind Corp");
+    cy.contains("Senior Agent · VocalMind Corp");
   });
 
   it("shows score breakdown progress bars", () => {

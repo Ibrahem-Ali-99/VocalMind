@@ -35,6 +35,19 @@ beforeEach(() => {
     body: mockInteractions
   }).as('getInteractions');
 
+  // Wildcard fallback for any interaction detail (registered first so specific ones override via LIFO)
+  cy.intercept('GET', '**/api/v1/interactions/int-*', (req) => {
+    req.reply({
+      statusCode: 200,
+      body: {
+        interaction: mockInteractions[0],
+        utterances: mockUtterances,
+        emotionEvents: mockEmotionEvents,
+        policyViolations: mockPolicyViolations
+      }
+    });
+  });
+
   cy.intercept('GET', '**/api/v1/interactions/int-001', {
     statusCode: 200,
     body: {
@@ -54,19 +67,6 @@ beforeEach(() => {
       policyViolations: mockPolicyViolations
     }
   }).as('getInteraction002');
-  
-  // Wildcard for any interaction detail route just in case
-  cy.intercept('GET', '**/api/v1/interactions/int-*', (req) => {
-    req.reply({
-      statusCode: 200,
-      body: {
-        interaction: mockInteractions[0], // fallback
-        utterances: mockUtterances,
-        emotionEvents: mockEmotionEvents,
-        policyViolations: mockPolicyViolations
-      }
-    });
-  });
 
   cy.intercept('GET', '**/api/v1/knowledge/policies', {
     statusCode: 200,

@@ -72,7 +72,7 @@ export function AgentDashboard() {
               {data.name}
             </h2>
             <p className="text-[13px] text-white/60">
-              Agent · VocalMind Corp
+              {data.role} · VocalMind Corp
             </p>
           </div>
 
@@ -125,7 +125,7 @@ export function AgentDashboard() {
         <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-5 shadow-sm">
           <div className="flex items-start justify-between mb-3">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
-              Avg Score
+              Overall Score
             </span>
             <div className="w-9 h-9 bg-[#ECFDF5] rounded-xl flex items-center justify-center">
               <Star className="w-[18px] h-[18px] text-[#10B981]" />
@@ -161,7 +161,7 @@ export function AgentDashboard() {
         <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-5 shadow-sm">
           <div className="flex items-start justify-between mb-3">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
-              Resolution
+              Resolution Rate
             </span>
             <div className="w-9 h-9 bg-[#F5F3FF] rounded-xl flex items-center justify-center">
               <Target className="w-[18px] h-[18px] text-[#8B5CF6]" />
