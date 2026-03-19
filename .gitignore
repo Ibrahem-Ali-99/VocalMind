@@ -146,3 +146,9 @@ Thumbs.db
 cypress/videos/
 cypress/screenshots/
 cypress/downloads/
+
+# ── Backend Local Overrides ──────────────────────────────────────────────
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.pytest_cache/
