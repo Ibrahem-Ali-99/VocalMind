@@ -55,7 +55,7 @@ async def get_dashboard_stats(session: SessionDep):
             kpi_stmt = select(
                 func.avg(InteractionScore.overall_score).label("avg_score"),
                 func.count(InteractionScore.id).label("total_scored"),
-                func.sum(case((InteractionScore.was_resolved == True, 1), else_=0)).label("total_resolved"),
+                func.sum(case((InteractionScore.was_resolved.is_(True), 1), else_=0)).label("total_resolved"),
             )
             kpi_result = await s.exec(kpi_stmt)
             kpi_row = kpi_result.one()
@@ -77,7 +77,7 @@ async def get_dashboard_stats(session: SessionDep):
     async def _fetch_violations():
         async with AsyncSession(engine) as s:
             violations_result = await s.exec(
-                select(func.count(PolicyCompliance.id)).where(PolicyCompliance.is_compliant == False)
+                select(func.count(PolicyCompliance.id)).where(PolicyCompliance.is_compliant.is_(False))
             )
             return violations_result.one_or_none() or 0
 
@@ -184,7 +184,7 @@ async def get_dashboard_stats(session: SessionDep):
                     PolicyCompliance.interaction_id,
                     func.count(PolicyCompliance.id).label("viol_count"),
                 )
-                .where(PolicyCompliance.is_compliant == False)
+                .where(PolicyCompliance.is_compliant.is_(False))
                 .group_by(PolicyCompliance.interaction_id)
                 .subquery()
             )
@@ -290,7 +290,7 @@ async def prewarm_dashboard_cache() -> None:
                 kpi_stmt = select(
                     func.avg(InteractionScore.overall_score).label("avg_score"),
                     func.count(InteractionScore.id).label("total_scored"),
-                    func.sum(case((InteractionScore.was_resolved == True, 1), else_=0)).label("total_resolved"),
+                    func.sum(case((InteractionScore.was_resolved.is_(True), 1), else_=0)).label("total_resolved"),
                 )
                 r = await s.exec(kpi_stmt)
                 row = r.one()
@@ -310,7 +310,7 @@ async def prewarm_dashboard_cache() -> None:
 
             async def _violations():
                 r = await s.exec(
-                    select(func.count(PolicyCompliance.id)).where(PolicyCompliance.is_compliant == False)
+                    select(func.count(PolicyCompliance.id)).where(PolicyCompliance.is_compliant.is_(False))
                 )
                 return r.one_or_none() or 0
 
@@ -405,7 +405,7 @@ async def prewarm_dashboard_cache() -> None:
                         PolicyCompliance.interaction_id,
                         func.count(PolicyCompliance.id).label("viol_count"),
                     )
-                    .where(PolicyCompliance.is_compliant == False)
+                    .where(PolicyCompliance.is_compliant.is_(False))
                     .group_by(PolicyCompliance.interaction_id)
                     .subquery()
                 )

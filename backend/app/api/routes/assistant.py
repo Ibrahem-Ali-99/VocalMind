@@ -1,22 +1,21 @@
 import time
 import logging
+import random
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from sqlmodel import text
 from uuid import UUID
 
-logger = logging.getLogger(__name__)
-
 from app.core.config import settings
 from google import genai
 from google.genai import types
 
-from sqlalchemy.ext.asyncio import AsyncSession as SAAsyncSession
 from app.core.database import engine
 from app.api.deps import SessionDep
 from app.models.enums import QueryMode
 from app.schemas.assistant import AssistantQueryRequest
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
@@ -100,9 +99,6 @@ Write 2-4 sentences of plain text answering the question using the actual data.
 - If a raw 0-1 float appears (like 0.8), present it as 80%.
 - If results are empty, say no data was found for that time period and suggest trying "last 30 days" or "all time".
 - No markdown, no bullet points, no SQL repetition."""
-
-
-import random
 
 class IntentResolver:
     def __init__(self):

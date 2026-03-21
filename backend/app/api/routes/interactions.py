@@ -176,6 +176,40 @@ async def get_interaction_detail(interaction_id: UUID):
     mins = row.duration_seconds // 60
     secs = row.duration_seconds % 60
 
+    utterances = [
+        {
+            "id": str(u.id),
+            "interactionId": str(u.interaction_id),
+            "speaker": u.speaker_role.value if u.speaker_role else "unknown",
+            "text": u.text or "",
+            "startTime": u.start_time_seconds,
+            "endTime": u.end_time_seconds,
+            "timestamp": f"{int(u.start_time_seconds) // 60:02d}:{int(u.start_time_seconds) % 60:02d}",
+            "emotion": u.emotion or "neutral",
+            "confidence": u.emotion_confidence or 0,
+        }
+        for u in utterances_rows
+    ]
+
+    emotion_events = [
+        {
+            "id": str(e.id),
+            "interactionId": str(e.interaction_id),
+            "previousEmotion": e.previous_emotion or "neutral",
+            "newEmotion": e.new_emotion,
+            "fromEmotion": e.previous_emotion or "neutral",
+            "toEmotion": e.new_emotion,
+            "jumpToSeconds": e.jump_to_seconds,
+            "timestamp": f"{int(e.jump_to_seconds) // 60:02d}:{int(e.jump_to_seconds) % 60:02d}",
+            "confidenceScore": e.confidence_score or 0,
+            "delta": e.emotion_delta or 0,
+            "speaker": e.speaker_role.value if e.speaker_role else "customer",
+            "llmJustification": e.llm_justification or "",
+            "justification": e.llm_justification or "",
+        }
+        for e in events_rows
+    ]
+
     policy_violations = [
         {
             "id": str(v.id),

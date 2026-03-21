@@ -2,7 +2,7 @@ name: Frontend CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     paths:
       - "frontend/**"
       - ".github/workflows/frontend.yml"
@@ -30,27 +30,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "${{ env.NODE_VERSION }}"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: |
+          pnpm install
+          pnpm exec cypress install
 
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Run Cypress E2E
         uses: cypress-io/github-action@v6
         with:
           install: false
-          start: npm run preview
+          start: pnpm run preview
           wait-on: "http://localhost:3000"
           wait-on-timeout: 120
           working-directory: frontend
