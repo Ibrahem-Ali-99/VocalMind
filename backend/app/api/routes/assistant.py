@@ -102,19 +102,59 @@ Write 2-4 sentences of plain text answering the question using the actual data.
 - No markdown, no bullet points, no SQL repetition."""
 
 
+import random
+
 class IntentResolver:
     def __init__(self):
-        self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        # Pool of Gemini API keys to avoid 15 RPM free tier limits
+        api_keys = [
+            settings.GOOGLE_API_KEY,  # Original key
+            
+            
+            
+        ]
+        self._keys = [k for k in api_keys if k]
+        # We don't initialize a single client here anymore
+
+    async def _generate_content_with_fallback(self, prompt: str, temperature: float) -> Optional[str]:
+        """Tries to generate content using available keys, falling back on 429 errors."""
+        if not self._keys:
+            logger.error("No valid Gemini API keys configured.")
+            raise Exception("No API keys")
+            
+        keys_to_try = list(self._keys)
+        random.shuffle(keys_to_try)
+        
+        last_error = None
+        for key in keys_to_try:
+            try:
+                client = genai.Client(api_key=key)
+                response = await client.aio.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(temperature=temperature),
+                )
+                return response.text
+            except Exception as exc:
+                msg = str(exc)
+                if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+                    # Rate limit hit with this key, try the next one
+                    last_error = exc
+                    continue
+                else:
+                    # Other errors (auth, bad request) should break immediately
+                    raise exc
+                    
+        # If we exhausted all keys and all gave 429s, raise the last rate limit error
+        if last_error:
+            raise last_error
+        return None
 
     async def resolve_sql(self, question: str, org_id: UUID) -> Optional[str]:
         prompt = _build_sql_prompt(org_id, question)
         try:
-            response = await self._client.aio.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.0),
-            )
-            sql = (response.text or "").strip()
+            response_text = await self._generate_content_with_fallback(prompt, 0.0)
+            sql = (response_text or "").strip()
 
             # Strip markdown fences if Gemini adds them
             for fence in ("```sql", "```"):
@@ -137,7 +177,7 @@ class IntentResolver:
         except Exception as exc:
             msg = str(exc)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
-                logger.error(f"Gemini API Rate Limit hit: {exc}")
+                logger.error(f"Gemini API Rate Limit hit after trying all keys: {exc}")
                 return "RATE_LIMIT_ERROR"
             logger.error(f"Gemini SQL gen failed: {exc}")
             return None
@@ -145,12 +185,8 @@ class IntentResolver:
     async def synthesize_answer(self, question: str, sql: str, rows: list) -> str:
         prompt = _build_synthesis_prompt(question, sql, rows)
         try:
-            response = await self._client.aio.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.3),
-            )
-            return (response.text or "").strip()
+            response_text = await self._generate_content_with_fallback(prompt, 0.3)
+            return (response_text or "").strip()
         except Exception as exc:
             logger.warning(f"Synthesis failed: {exc}")
             return f"I found {len(rows)} result(s)." if rows else "No results found for that query."
