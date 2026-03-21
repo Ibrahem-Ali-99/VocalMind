@@ -145,3 +145,32 @@ class TestValidateChunks:
         report = DocumentIngestionPipeline._validate_chunks(chunks, "TEST")
         assert report["duplicates"] == 1
         assert len(report["warnings"]) == 1
+
+
+class TestRunDiscovery:
+    def test_run_discovers_policy_and_sop_pdfs(self, pipeline, tmp_path):
+        org_dir = tmp_path / "nexalink"
+        policy_dir = org_dir / "policy-docs"
+        sop_dir = org_dir / "sop-procedures"
+        policy_dir.mkdir(parents=True)
+        sop_dir.mkdir(parents=True)
+
+        (policy_dir / "policy-a.pdf").write_bytes(b"%PDF-1.4")
+        (sop_dir / "sop-a.pdf").write_bytes(b"%PDF-1.4")
+
+        seen: list[tuple[str, str]] = []
+
+        def _fake_process_file(pdf_path: str, org_name: str):
+            seen.append((pdf_path, org_name))
+            return {"file": os.path.basename(pdf_path), "org": org_name}
+
+        pdfs = sorted(tmp_path.rglob("*.pdf"))
+        with patch.object(DocumentIngestionPipeline, "_process_file", side_effect=_fake_process_file):
+            reports = [
+                pipeline._process_file(str(pdf), pdf.parent.parent.name)
+                for pdf in pdfs
+            ]
+
+        assert len(reports) == 2
+        assert {org for _, org in seen} == {"nexalink"}
+        assert {os.path.basename(path) for path, _ in seen} == {"policy-a.pdf", "sop-a.pdf"}

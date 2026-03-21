@@ -43,28 +43,46 @@ beforeEach(() => {
         interaction: mockInteractions[0],
         utterances: mockUtterances,
         emotionEvents: mockEmotionEvents,
-        policyViolations: mockPolicyViolations
+        policyViolations: mockPolicyViolations,
+        llmTriggers: { 
+          available: true, 
+          processAdherence: { isResolved: true, detectedTopic: "Account Login", efficiencyScore: 9, justification: "Agent followed all steps.", missingSopSteps: [] },
+          nliPolicy: { nliCategory: "Entailment", justification: "Agent followed policy.", evidenceQuotes: [] },
+          emotionShift: { isDissonanceDetected: false, dissonanceType: "None", rootCause: "Professional", counterfactualCorrection: "", evidenceQuotes: [] }
+        }
       }
     });
   });
 
-  cy.intercept('GET', '**/api/v1/interactions/int-001', {
+  cy.intercept('GET', '**/api/v1/interactions/int-001*', {
     statusCode: 200,
     body: {
       interaction: mockInteractions[0],
       utterances: mockUtterances,
       emotionEvents: mockEmotionEvents,
-      policyViolations: mockPolicyViolations
+      policyViolations: mockPolicyViolations,
+      llmTriggers: { 
+        available: true, 
+        processAdherence: { isResolved: true, detectedTopic: "Account Login", efficiencyScore: 9, justification: "Agent followed all steps.", missingSopSteps: [] },
+        nliPolicy: { nliCategory: "Entailment", justification: "Agent followed policy.", evidenceQuotes: [] },
+        emotionShift: { isDissonanceDetected: false, dissonanceType: "None", rootCause: "Professional", counterfactualCorrection: "", evidenceQuotes: [] }
+      }
     }
   }).as('getInteraction001');
 
-  cy.intercept('GET', '**/api/v1/interactions/int-002', {
+  cy.intercept('GET', '**/api/v1/interactions/int-002*', {
     statusCode: 200,
     body: {
       interaction: mockInteractions[1],
       utterances: mockUtterances,
       emotionEvents: mockEmotionEvents,
-      policyViolations: mockPolicyViolations
+      policyViolations: mockPolicyViolations,
+      llmTriggers: { 
+        available: true, 
+        processAdherence: { isResolved: false, detectedTopic: "Billing Inquiry", efficiencyScore: 5, justification: "Agent missed closing statement.", missingSopSteps: ["Closing Statement"] },
+        nliPolicy: { nliCategory: "Benign Deviation", justification: "Agent deviation was minor.", evidenceQuotes: [] },
+        emotionShift: { isDissonanceDetected: true, dissonanceType: "Late Empathy", rootCause: "Agent delayed empathy", counterfactualCorrection: "Express empathy earlier", evidenceQuotes: [] }
+      }
     }
   }).as('getInteraction002');
 

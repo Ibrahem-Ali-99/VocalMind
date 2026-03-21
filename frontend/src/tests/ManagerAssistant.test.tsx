@@ -1,10 +1,31 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ManagerAssistant } from '../app/components/manager/ManagerAssistant'
 import { MemoryRouter } from 'react-router'
 
+const { sendAssistantQueryMock } = vi.hoisted(() => ({
+    sendAssistantQueryMock: vi.fn(),
+}))
+
+vi.mock('../app/services/api', () => ({
+    sendAssistantQuery: sendAssistantQueryMock,
+    getAssistantHistory: vi.fn(async () => []),
+}))
+
 describe('ManagerAssistant', () => {
+    beforeEach(() => {
+        sendAssistantQueryMock.mockReset()
+        sendAssistantQueryMock.mockResolvedValue({
+            id: 'ai-1',
+            type: 'ai',
+            content: 'Mocked assistant reply',
+            mode: 'chat',
+            success: true,
+            data: [],
+        })
+    })
+
     it('renders the header with title and description', () => {
         render(
             <MemoryRouter>
@@ -23,7 +44,7 @@ describe('ManagerAssistant', () => {
             </MemoryRouter>
         )
 
-        expect(screen.getByText(/I'm your VocalMind assistant/)).toBeInTheDocument()
+        expect(screen.getByText('Ask anything about your call centre')).toBeInTheDocument()
     })
 
     it('renders suggested query buttons', () => {
@@ -33,27 +54,27 @@ describe('ManagerAssistant', () => {
             </MemoryRouter>
         )
 
-        expect(screen.getByText('Show top performing agents this week')).toBeInTheDocument()
-        expect(screen.getByText('List all policy violations today')).toBeInTheDocument()
-        expect(screen.getByText('Which agent has the lowest resolution rate?')).toBeInTheDocument()
-        expect(screen.getByText('Show emotion trends across all calls')).toBeInTheDocument()
+        expect(screen.getByText('Who are the top 5 agents by overall score?')).toBeInTheDocument()
+        expect(screen.getByText('List all policy violations')).toBeInTheDocument()
+        expect(screen.getByText('What are the most common customer emotions?')).toBeInTheDocument()
+        expect(screen.getByText('help')).toBeInTheDocument()
     })
 
-    it('fills input when clicking a suggested query', () => {
+    it('sends suggested query immediately when clicked', async () => {
         render(
             <MemoryRouter>
                 <ManagerAssistant />
             </MemoryRouter>
         )
 
-        const suggestedBtn = screen.getByText('Show top performing agents this week')
+        const suggestedBtn = screen.getByText('Who are the top 5 agents by overall score?')
         fireEvent.click(suggestedBtn)
 
-        const input = screen.getByPlaceholderText('Ask about scores, violations, agent trends…') as HTMLInputElement
-        expect(input.value).toBe('Show top performing agents this week')
+        expect(sendAssistantQueryMock).toHaveBeenCalledWith('Who are the top 5 agents by overall score?')
+        expect(await screen.findByText('Mocked assistant reply')).toBeInTheDocument()
     })
 
-    it('sends a message and displays AI response on Enter', () => {
+    it('sends a message and displays AI response on Enter', async () => {
         render(
             <MemoryRouter>
                 <ManagerAssistant />
@@ -65,10 +86,10 @@ describe('ManagerAssistant', () => {
         fireEvent.keyDown(input, { key: 'Enter' })
 
         expect(screen.getByText('Test question')).toBeInTheDocument()
-        expect(screen.getByText(/I've analyzed your query/)).toBeInTheDocument()
+        expect(await screen.findByText('Mocked assistant reply')).toBeInTheDocument()
     })
 
-    it('clears input after sending a message', () => {
+    it('clears input after sending a message', async () => {
         render(
             <MemoryRouter>
                 <ManagerAssistant />
@@ -79,6 +100,7 @@ describe('ManagerAssistant', () => {
         fireEvent.change(input, { target: { value: 'Test question' } })
         fireEvent.keyDown(input, { key: 'Enter' })
 
+        await screen.findByText('Mocked assistant reply')
         expect(input.value).toBe('')
     })
 
@@ -92,8 +114,7 @@ describe('ManagerAssistant', () => {
         const input = screen.getByPlaceholderText('Ask about scores, violations, agent trends…')
         fireEvent.keyDown(input, { key: 'Enter' })
 
-        // Should still only have the initial assistant message, no AI response added
-        expect(screen.queryByText(/I've analyzed your query/)).not.toBeInTheDocument()
+        expect(sendAssistantQueryMock).not.toHaveBeenCalled()
     })
 
     it('toggles recording state when clicking the mic button', () => {

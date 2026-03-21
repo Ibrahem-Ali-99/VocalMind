@@ -16,10 +16,10 @@ describe("Agent Portal Navigation", () => {
   it("collapses and expands the sidebar", () => {
     cy.contains("span", "My Performance").should("be.visible");
 
-    cy.get("button").find("svg.lucide-chevron-left").click();
+    cy.get('button[title="Collapse sidebar"]').click();
     cy.contains("span", "My Performance").should("not.exist");
 
-    cy.get("button").find("svg.lucide-chevron-right").click();
+    cy.get('button[title="Expand sidebar"]').click();
     cy.contains("span", "My Performance").should("be.visible");
   });
 });

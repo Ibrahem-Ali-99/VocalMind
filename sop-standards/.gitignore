@@ -1,0 +1,3 @@
+**/parsed-docs/*.md
+**/parsed-docs/*.json
+_pipeline_report.json

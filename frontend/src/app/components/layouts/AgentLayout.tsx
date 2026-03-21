@@ -1,14 +1,13 @@
 import { Outlet, Link, useLocation } from "react-router";
 import { useState } from "react";
 import {
-  Mic,
+  Menu,
   Activity,
   Phone,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   Bell,
 } from "lucide-react";
+import logoSrc from "../../../assets/logo/logo.svg";
 
 export function AgentLayout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -17,7 +16,6 @@ export function AgentLayout() {
   const navItems = [
     { icon: Activity, label: "My Performance", path: "/agent" },
     { icon: Phone, label: "My Calls", path: "/agent/calls" },
-    { icon: Settings, label: "Settings", path: "/agent/settings" },
   ];
 
   const getPageTitle = () => {
@@ -31,20 +29,32 @@ export function AgentLayout() {
       {/* Sidebar */}
       <div
         className={`${
-          collapsed ? "w-[72px]" : "w-[240px]"
+          collapsed ? "w-[80px]" : "w-[248px]"
         } bg-[#0D1117] border-r border-[#1F2937] flex flex-col transition-all duration-300`}
       >
-        {/* Logo Area */}
-        <div className="h-16 flex items-center px-4 border-b border-[#1F2937]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-[#10B981] rounded-xl flex items-center justify-center flex-shrink-0">
-              <Mic className="w-[18px] h-[18px] text-white" />
-            </div>
+        {/* Logo + Menu Header */}
+        <div className={`border-b border-[#1F2937] ${collapsed ? "px-2 py-4" : "px-4 py-4"}`}>
+          <Link
+            to="/agent"
+            className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} cursor-pointer rounded-xl px-2 py-1.5 hover:bg-[#111827] transition-colors`}
+            title="Go to dashboard"
+          >
+            <img src={logoSrc} alt="VocalMind" className="w-10 h-10 rounded-xl object-contain flex-shrink-0" />
             {!collapsed && (
-              <span className="text-white font-bold text-lg" style={{ fontFamily: 'var(--font-sans)' }}>
+              <span className="text-white font-semibold text-[18px] leading-none" style={{ fontFamily: "var(--font-sans)" }}>
                 VocalMind
               </span>
             )}
+          </Link>
+          <div className="mt-3 flex justify-center">
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className={`${collapsed ? "w-10" : "w-full"} h-9 flex items-center justify-center gap-2 text-[#9CA3AF] hover:text-white bg-[#111827] hover:bg-[#1F2937] border border-[#1F2937] rounded-xl transition-colors`}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <Menu className="w-5 h-5" />
+              {!collapsed && <span className="text-[12px] font-medium">Collapse</span>}
+            </button>
           </div>
         </div>
 
@@ -63,7 +73,7 @@ export function AgentLayout() {
         )}
 
         {/* Navigation */}
-        <nav className="flex-1 px-2 py-2 space-y-2">
+        <nav className="flex-1 px-2 py-3 space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path || 
@@ -73,7 +83,7 @@ export function AgentLayout() {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-3 px-3 h-11 rounded-lg transition-all ${
+                className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} px-3 h-11 rounded-xl transition-all ${
                   isActive
                     ? "bg-[#10B981] text-white shadow-lg shadow-[#10B981]/20"
                     : "text-[#6B7280] hover:text-[#E5E7EB] hover:bg-[#1F2937]"
@@ -90,34 +100,20 @@ export function AgentLayout() {
           })}
         </nav>
 
-        {/* Bottom Section */}
-        <div className="border-t border-[#1F2937] p-4">
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="w-full flex items-center justify-center h-8 text-[#6B7280] hover:text-white transition-colors mb-3"
+        {/* Bottom Settings */}
+        <div className="border-t border-[#1F2937] p-2">
+          <Link
+            to="/agent/settings"
+            className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} px-3 h-11 rounded-xl transition-all ${
+              location.pathname === "/agent/settings"
+                ? "bg-[#10B981] text-white shadow-lg shadow-[#10B981]/20"
+                : "text-[#6B7280] hover:text-[#E5E7EB] hover:bg-[#1F2937]"
+            }`}
+            title="Settings"
           >
-            {collapsed ? (
-              <ChevronRight className="w-5 h-5" />
-            ) : (
-              <ChevronLeft className="w-5 h-5" />
-            )}
-          </button>
-
-          {!collapsed && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#10B981] flex items-center justify-center text-white text-xs font-semibold">
-                RK
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-white text-xs font-medium truncate">
-                  Rajesh Kumar
-                </div>
-                <div className="text-[#6B7280] text-[11px]">
-                  Agent
-                </div>
-              </div>
-            </div>
-          )}
+            <Settings className="w-[18px] h-[18px] flex-shrink-0" />
+            {!collapsed && <span className="text-[14px] font-medium">Settings</span>}
+          </Link>
         </div>
       </div>
 
