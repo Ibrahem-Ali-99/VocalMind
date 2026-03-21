@@ -16,10 +16,10 @@ export function ManagerAssistant() {
   const [isLoading, setIsLoading] = useState(false);
 
   const suggestedQueries = [
-    "Show top performing agents this week",
-    "List all policy violations today",
-    "Which agent has the lowest resolution rate?",
-    "Show emotion trends across all calls",
+    "Who are the top 5 agents by overall score?",
+    "List all policy violations",
+    "What are the most common customer emotions?",
+    "help",
   ];
 
   const handleSend = async (textOverride?: string) => {
