@@ -36,7 +36,7 @@ export function SessionInspector() {
         <div className="text-center">
           <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
           <p className="text-[#6B7280] text-sm">Failed to load interactions</p>
-          <p className="text-[#9CA3AF] text-xs mt-1">{error}</p>
+          <p className="text-muted-foreground/80 text-xs mt-1">{error}</p>
         </div>
       </div>
     );
@@ -89,9 +89,9 @@ export function SessionInspector() {
       {/* Top Controls */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h2 className="text-[22px] font-bold text-[#111827] mb-1">
-            Session Inspector
-          </h2>
+            <div className="text-label mb-2">
+              SESSION INSPECTOR
+            </div>
           <p className="text-[13px] text-[#6B7280]">
             {totalItems} interaction{totalItems !== 1 ? "s" : ""} · sorted by {sortField}
           </p>
@@ -99,7 +99,7 @@ export function SessionInspector() {
 
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-label-foreground" />
             <input
               type="text"
               placeholder="Search agent, date, ID…"
@@ -108,22 +108,22 @@ export function SessionInspector() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1); // Reset page on search
               }}
-              className="w-[200px] h-10 pl-9 pr-3 bg-white border border-[#E5E7EB] rounded-[10px] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]"
+              className="w-[200px] h-10 pl-9 pr-3 bg-input border border-border rounded-[10px] text-[13px] focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all shadow-inner"
             />
           </div>
 
-          <button className="flex items-center gap-2 h-10 px-4 bg-white border border-[#E5E7EB] rounded-[10px] text-[13px] text-[#374151] hover:bg-[#F9FAFB] transition-colors">
+          <button className="flex items-center gap-2 h-10 px-4 bg-card border border-border rounded-[10px] text-[13px] text-foreground hover:bg-muted transition-colors">
             All Agents
             <ChevronDown className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center border border-[#E5E7EB] rounded-[10px] overflow-hidden bg-white">
+          <div className="flex items-center border border-border rounded-[10px] overflow-hidden bg-card shadow-inner">
             <button
               onClick={() => handleSort("score")}
               className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
                 sortField === "score"
-                  ? "bg-[#3B82F6] text-white"
-                  : "text-[#6B7280] hover:bg-[#F9FAFB]"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted"
               }`}
             >
               Score {sortField === "score" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
@@ -132,8 +132,8 @@ export function SessionInspector() {
               onClick={() => handleSort("date")}
               className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
                 sortField === "date"
-                  ? "bg-[#3B82F6] text-white"
-                  : "text-[#6B7280] hover:bg-[#F9FAFB]"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted"
               }`}
             >
               Date {sortField === "date" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
@@ -142,8 +142,8 @@ export function SessionInspector() {
               onClick={() => handleSort("duration")}
               className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
                 sortField === "duration"
-                  ? "bg-[#3B82F6] text-white"
-                  : "text-[#6B7280] hover:bg-[#F9FAFB]"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted"
               }`}
             >
               Duration {sortField === "duration" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
@@ -153,40 +153,40 @@ export function SessionInspector() {
       </div>
 
       {/* Interaction Table */}
-      <div className="bg-white rounded-[14px] border border-[#E5E7EB] shadow-sm overflow-hidden">
+      <div className="bg-card rounded-[14px] border border-border transition-all overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-[#E5E7EB] bg-[#F9FAFB]">
-          <div className="col-span-2 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+        <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-border bg-background/50">
+          <div className="col-span-2 text-label">
             Agent
           </div>
-          <div className="col-span-2 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-2 text-label">
             Date & Time
           </div>
-          <div className="col-span-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-1 text-label">
             Duration
           </div>
-          <div className="col-span-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-1 text-label">
             Score
           </div>
-          <div className="col-span-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-1 text-label">
             Empathy
           </div>
-          <div className="col-span-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-1 text-label">
             Policy
           </div>
-          <div className="col-span-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-1 text-label">
             Resolution
           </div>
-          <div className="col-span-2 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-2 text-label">
             Status
           </div>
-          <div className="col-span-1 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+          <div className="col-span-1 text-label">
             Actions
           </div>
         </div>
 
         {/* Rows */}
-        <div className="divide-y divide-[#E5E7EB]">
+        <div className="divide-y divide-border">
           {paginatedInteractions.length === 0 ? (
             <div className="px-5 py-8 text-center text-[#6B7280] text-[13px]">
               No interactions found matching your criteria.
@@ -195,20 +195,20 @@ export function SessionInspector() {
             paginatedInteractions.map((interaction) => (
               <div
                 key={interaction.id}
-                className="grid grid-cols-12 gap-4 px-5 py-4 hover:bg-[#F9FAFB] transition-colors"
+                className="grid grid-cols-12 gap-4 px-5 py-4 hover:bg-muted/40 transition-colors border-b last:border-0 border-border"
               >
               {/* Agent */}
               <div className="col-span-2 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-[#3B82F6] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
                   {interaction.agentName.split(" ").map((n) => n[0]).join("")}
                 </div>
-                <span className="text-[13px] font-semibold text-[#111827]">
+                <span className="text-[13px] font-semibold text-foreground">
                   {interaction.agentName}
                 </span>
               </div>
 
               {/* Date & Time */}
-              <div className="col-span-2 flex items-center text-[13px] text-[#374151]">
+              <div className="col-span-2 flex items-center text-[13px] text-foreground">
                 {interaction.date} · {interaction.time}
               </div>
 
@@ -222,10 +222,10 @@ export function SessionInspector() {
                 <span
                   className={`px-2.5 py-1 rounded-full text-[13px] font-semibold ${
                     interaction.overallScore >= 85
-                      ? "bg-[#ECFDF5] text-[#10B981]"
+                      ? "bg-success/10 text-success"
                       : interaction.overallScore >= 75
-                      ? "bg-[#EFF6FF] text-[#3B82F6]"
-                      : "bg-[#FFFBEB] text-[#F59E0B]"
+                      ? "bg-primary/10 text-primary"
+                      : "bg-destructive/10 text-destructive"
                   }`}
                 >
                   {interaction.overallScore}%
@@ -243,7 +243,7 @@ export function SessionInspector() {
               </div>
 
               {/* Resolution */}
-              <div className="col-span-1 flex items-center text-[12px] text-[#374151]">
+              <div className="col-span-1 flex items-center text-[12px] text-muted-foreground">
                 {interaction.resolutionScore}
               </div>
 
@@ -251,7 +251,7 @@ export function SessionInspector() {
               <div className="col-span-2 flex items-center gap-2">
                 <span
                   className={`text-[12px] font-semibold ${
-                    interaction.resolved ? "text-[#10B981]" : "text-[#EF4444]"
+                    interaction.resolved ? "text-success" : "text-destructive"
                   }`}
                 >
                   {interaction.resolved ? "✓ Resolved" : "✗ Unresolved"}
@@ -267,7 +267,7 @@ export function SessionInspector() {
               <div className="col-span-1 flex items-center">
                 <Link
                   to={`/manager/inspector/${interaction.id}`}
-                  className="text-[12px] text-[#3B82F6] font-medium hover:underline"
+                  className="text-[12px] text-primary font-bold hover:underline"
                 >
                   Inspect →
                 </Link>
@@ -277,22 +277,22 @@ export function SessionInspector() {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-[#E5E7EB] flex items-center justify-between">
-          <span className="text-[12px] text-[#6B7280]">
+        <div className="px-5 py-3 border-t border-border flex items-center justify-between bg-muted/20">
+          <span className="text-[12px] text-muted-foreground">
             Showing {totalItems === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems}
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="px-3 h-8 text-[12px] text-[#6B7280] hover:text-[#111827] disabled:opacity-40"
+              className="px-3 h-8 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors font-medium"
             >
               ← Prev
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages || totalItems === 0}
-              className="px-3 h-8 text-[12px] text-[#6B7280] hover:text-[#111827] disabled:opacity-40"
+              className="px-3 h-8 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors font-medium"
             >
               Next →
             </button>

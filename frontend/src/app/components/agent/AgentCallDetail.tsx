@@ -64,23 +64,23 @@ export function AgentCallDetail() {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 85) return "#10B981";
-    if (score >= 75) return "#3B82F6";
-    return "#F59E0B";
+    if (score >= 85) return "var(--success)";
+    if (score >= 75) return "var(--primary)";
+    return "var(--destructive)";
   };
 
   const getEmotionStyle = (emotion: string) => {
     switch (emotion) {
       case "neutral":
-        return { bg: "#F1F5F9", text: "#475569", label: "Neutral" };
+        return { bg: "var(--muted)", text: "var(--muted-foreground)", label: "Neutral" };
       case "happy":
-        return { bg: "#ECFDF5", text: "#065F46", label: "Happy" };
+        return { bg: "rgba(16, 185, 129, 0.1)", text: "var(--success)", label: "Happy" };
       case "angry":
-        return { bg: "#FEF2F2", text: "#991B1B", label: "Angry" };
+        return { bg: "rgba(239, 68, 68, 0.1)", text: "var(--destructive)", label: "Angry" };
       case "frustrated":
         return { bg: "#FFFBEB", text: "#92400E", label: "Frustrated" };
       default:
-        return { bg: "#F1F5F9", text: "#475569", label: "Neutral" };
+        return { bg: "var(--muted)", text: "var(--muted-foreground)", label: "Neutral" };
     }
   };
 
@@ -96,17 +96,17 @@ export function AgentCallDetail() {
       </Link>
 
       {/* Call Header Card */}
-      <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm">
+      <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
         <div className="flex items-start justify-between mb-6">
           {/* Left: Info */}
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-[#9CA3AF] mb-2">
+            <div className="text-label mb-2">
               CALL DETAIL
             </div>
-            <h2 className="text-[22px] font-bold text-[#111827] mb-2">
+            <h2 className="text-[22px] font-bold text-foreground mb-2">
               {callData.date} · {callData.time}
             </h2>
-            <div className="text-[13px] text-[#6B7280] mb-2">
+            <div className="text-[13px] text-muted-foreground mb-2">
               {callData.duration} · {callData.language}
             </div>
           </div>
@@ -120,7 +120,7 @@ export function AgentCallDetail() {
                   cy="45"
                   r="38"
                   fill="none"
-                  stroke="#E5E7EB"
+                  stroke="var(--border)"
                   strokeWidth="7"
                 />
                 <circle
@@ -144,16 +144,16 @@ export function AgentCallDetail() {
         </div>
 
         {/* Divider */}
-        <div className="h-px bg-[#E5E7EB] mb-4" />
+        <div className="h-px bg-border mb-4" />
 
         {/* Audio Player (if available) */}
         {interaction.audioFilePath && (
-          <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 flex items-center gap-4 mb-6">
-            <div className="w-10 h-10 bg-[#EFF6FF] text-[#3B82F6] rounded-xl flex items-center justify-center shrink-0">
+          <div className="bg-muted/30 border border-border rounded-2xl p-4 flex items-center gap-4 mb-6 transition-all shadow-inner">
+            <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
               <Headphones className="w-5 h-5" />
             </div>
             <div className="flex-1">
-              <p className="text-[14px] font-semibold text-[#374151] mb-2">Session Recording</p>
+              <p className="text-[14px] font-semibold text-foreground mb-2">Session Recording</p>
               <audio 
                 ref={audioRef}
                 controls 
@@ -169,28 +169,28 @@ export function AgentCallDetail() {
 
         {/* Score Grid */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="bg-[#EFF6FF] rounded-lg p-3 text-center">
-            <div className="text-[11px] text-[#6B7280] mb-1">Empathy</div>
-            <div className="text-[18px] font-semibold text-[#1D4ED8]">
+          <div className="bg-primary/10 rounded-lg p-3 text-center">
+            <div className="text-[11px] text-muted-foreground mb-1">Empathy</div>
+            <div className="text-[18px] font-semibold text-primary">
               {callData.empathyScore}%
             </div>
           </div>
-          <div className="bg-[#ECFDF5] rounded-lg p-3 text-center">
-            <div className="text-[11px] text-[#6B7280] mb-1">Policy</div>
-            <div className="text-[18px] font-semibold text-[#065F46]">
+          <div className="bg-success/10 rounded-lg p-3 text-center">
+            <div className="text-[11px] text-muted-foreground mb-1">Policy</div>
+            <div className="text-[18px] font-semibold text-success">
               {callData.policyScore}%
             </div>
           </div>
-          <div className="bg-[#F5F3FF] rounded-lg p-3 text-center">
-            <div className="text-[11px] text-[#6B7280] mb-1">Resolution</div>
-            <div className="text-[18px] font-semibold text-[#6D28D9]">
+          <div className="bg-accent/10 rounded-lg p-3 text-center">
+            <div className="text-[11px] text-muted-foreground mb-1">Resolution</div>
+            <div className="text-[18px] font-semibold text-foreground">
               {callData.resolutionScore}%
             </div>
           </div>
-          <div className="bg-[#FFFBEB] rounded-lg p-3 text-center">
-            <div className="text-[11px] text-[#6B7280] mb-1">Resp. Time</div>
-            <div className="text-[18px] font-semibold text-[#92400E]">
-              {callData.responseTime}
+          <div className="bg-muted/30 rounded-lg p-3 text-center">
+            <div className="text-[11px] text-muted-foreground mb-1">Resp. Time</div>
+            <div className="text-[18px] font-semibold text-foreground">
+              {callData.responseTime}s
             </div>
           </div>
         </div>
@@ -198,27 +198,27 @@ export function AgentCallDetail() {
 
       {/* Coaching Points Card (only if violations exist) */}
       {policyViolations.length > 0 && (
-        <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-[14px] p-6">
+        <div className="bg-warning/5 border border-warning/20 rounded-[14px] p-6 transition-all">
           <div className="flex items-center gap-2 mb-1">
-            <Target className="w-[15px] h-[15px] text-[#92400E]" />
-            <h3 className="text-[14px] font-semibold text-[#92400E]">
+            <Target className="w-[15px] h-[15px] text-warning" />
+            <h3 className="text-[14px] font-semibold text-warning">
               Coaching Points
             </h3>
           </div>
-          <p className="text-[11px] italic text-[#9CA3AF] mb-4">
+          <p className="text-[11px] italic text-muted-foreground mb-4">
             Areas to focus on — sourced from policy_compliance WHERE is_compliant = FALSE
           </p>
 
           <div className="space-y-3">
             {policyViolations.map((violation) => (
-              <div key={violation.id} className="bg-white border border-[#FDE68A] rounded-[10px] p-3.5">
-                <h4 className="text-[14px] font-semibold text-[#111827] mb-2">
+              <div key={violation.id} className="bg-card border border-warning/20 rounded-[10px] p-3.5">
+                <h4 className="text-[14px] font-semibold text-foreground mb-2">
                   {violation.policyTitle}
                 </h4>
-                <p className="text-[12px] text-[#4B5563] mb-2">
+                <p className="text-[12px] text-muted-foreground mb-2">
                   {violation.reasoning}
                 </p>
-                <div className="text-[12px] font-semibold text-[#D97706]">
+                <div className="text-[12px] font-semibold text-warning">
                   Score: {violation.score}% — target 80%+
                 </div>
               </div>
@@ -228,11 +228,11 @@ export function AgentCallDetail() {
       )}
 
       {/* Transcript Card */}
-      <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm">
-        <h3 className="text-[16px] font-semibold text-[#111827] mb-1">
+      <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
+        <h3 className="text-[16px] font-semibold text-foreground mb-1">
           Transcript
         </h3>
-        <p className="text-[11px] italic text-[#9CA3AF] mb-4">
+        <p className="text-[11px] italic text-muted-foreground mb-4">
           utterances ordered by sequence_index
         </p>
 
@@ -248,8 +248,8 @@ export function AgentCallDetail() {
               >
                 {/* Avatar */}
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${
-                    isAgent ? "bg-[#10B981]" : "bg-[#E5E7EB] text-[#6B7280]"
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold flex-shrink-0 ${
+                    isAgent ? "bg-primary" : "bg-muted text-muted-foreground"
                   }`}
                 >
                   {isAgent ? "M" : "C"}
@@ -259,17 +259,17 @@ export function AgentCallDetail() {
                 <div
                   className={`flex-1 max-w-[80%] p-3 ${
                     isAgent
-                      ? "bg-[#ECFDF5] rounded-[0_12px_12px_12px]"
-                      : "bg-[#F9FAFB] rounded-[12px_0_12px_12px]"
+                      ? "bg-success/10 rounded-[0_12px_12px_12px]"
+                      : "bg-muted/50 rounded-[12px_0_12px_12px]"
                   }`}
                   dir="rtl"
                 >
                   {/* Header */}
                   <div className={`flex items-center gap-2 mb-1 ${isAgent ? "" : "flex-row-reverse"}`}>
-                    <span className="text-[13px] font-semibold text-[#6B7280]">
+                    <span className="text-[13px] font-semibold text-muted-foreground">
                       {isAgent ? "Me" : "Customer"}
                     </span>
-                    <span className="text-[12px] text-[#9CA3AF]">
+                    <span className="text-[12px] text-label-foreground">
                       {utterance.timestamp}
                     </span>
                     <span
@@ -281,7 +281,7 @@ export function AgentCallDetail() {
                   </div>
 
                   {/* Text */}
-                  <p className="text-[14px] text-[#374151]">
+                  <p className="text-[14px] text-foreground">
                     {utterance.text}
                   </p>
                 </div>
@@ -292,11 +292,11 @@ export function AgentCallDetail() {
       </div>
 
       {/* Customer Emotion Journey Card */}
-      <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm">
-        <h3 className="text-[16px] font-semibold text-[#111827] mb-1">
+      <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
+        <h3 className="text-[16px] font-semibold text-foreground mb-1">
           Customer Emotion Journey
         </h3>
-        <p className="text-[11px] italic text-[#9CA3AF] mb-4">
+        <p className="text-[11px] italic text-muted-foreground mb-4">
           emotion_events — how customer sentiment changed during this call
         </p>
 
@@ -311,16 +311,16 @@ export function AgentCallDetail() {
                 key={event.id}
                 className={`border rounded-xl p-4 space-y-3 ${
                   isPositive
-                    ? "bg-[#ECFDF5] border-[#A7F3D0]"
-                    : "bg-[#FEF2F2] border-[#FECACA]"
+                    ? "bg-success/5 border-success/30"
+                    : "bg-destructive/5 border-destructive/20"
                 }`}
               >
                 {/* Row 1: Emotion Change + Jump Button */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span
-                      className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                      style={{ fontFamily: 'var(--font-mono)', backgroundColor: "#F3F4F6", border: "1px solid #E5E7EB" }}
+                      className="px-2.5 py-1 rounded-full text-[11px] font-bold"
+                      style={{ fontFamily: 'var(--font-mono)', backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' }}
                     >
                       {event.timestamp}
                     </span>
@@ -333,7 +333,7 @@ export function AgentCallDetail() {
                     >
                       {fromStyle.label}
                     </span>
-                    <span className="text-[#6B7280]">→</span>
+                    <span className="text-muted-foreground/60">→</span>
                     <span
                       className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{ backgroundColor: toStyle.bg, color: toStyle.text }}
@@ -344,16 +344,16 @@ export function AgentCallDetail() {
 
                   <button 
                     onClick={() => handleJumpTo(event.jumpToSeconds)}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-lg text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/30 rounded-lg text-[12px] font-bold hover:bg-primary/20 transition-all shadow-sm"
                   >
-                    <Play className="w-3 h-3" />
+                    <Play className="w-3 h-3 fill-current" />
                     Jump to {event.timestamp}
                   </button>
                 </div>
 
                 {/* Row 2: Justification */}
-                <div className="bg-white/60 border-l-4 border-[#10B981] rounded p-3">
-                  <p className="text-[12px] italic text-[#6B7280]">
+                <div className="bg-background border-l-4 border-success rounded p-3 shadow-inner">
+                  <p className="text-[12px] italic text-muted-foreground leading-relaxed">
                     {event.justification}
                   </p>
                 </div>
