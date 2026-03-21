@@ -2,7 +2,7 @@ import time
 import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException
-from sqlmodel import select, text
+from sqlmodel import text
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -11,86 +11,55 @@ from app.core.config import settings
 from google import genai
 from google.genai import types
 
+from sqlalchemy.ext.asyncio import AsyncSession as SAAsyncSession
+from app.core.database import engine
 from app.api.deps import SessionDep
-from app.models.query import AssistantQuery
-from app.models.enums import QueryMode, UserRole
-from app.models.user import User as UserModel
+from app.models.enums import QueryMode
 from app.schemas.assistant import AssistantQueryRequest
 
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# Full schema definition for accurate Text-to-SQL generation
+# Full schema definition
 # ---------------------------------------------------------------------------
 _SCHEMA_DEFINITION = """
 ### VocalMind Call Center Database Schema
 
-**Table: organizations**
-- id UUID PK
-- name VARCHAR
+**Table: organizations** — id UUID PK, name VARCHAR
 
 **Table: users**
-- id UUID PK
-- name VARCHAR
-- email VARCHAR
-- role VARCHAR  -- values: 'manager', 'agent'
+- id UUID PK, name VARCHAR, email VARCHAR
+- role VARCHAR ('manager' | 'agent')
 - organization_id UUID FK → organizations.id
 
 **Table: interactions**
-- id UUID PK
-- organization_id UUID FK → organizations.id
-- agent_id UUID FK → users.id
-- uploaded_by UUID FK → users.id
-- audio_file_path VARCHAR
-- duration_seconds INTEGER
-- interaction_date TIMESTAMP
-- processing_status VARCHAR  -- values: 'completed', 'pending', 'failed'
-- language_detected VARCHAR
-- has_overlap BOOLEAN
-- channel_count SMALLINT
+- id UUID PK, organization_id UUID FK, agent_id UUID FK → users.id
+- duration_seconds INTEGER, interaction_date TIMESTAMP
+- processing_status VARCHAR ('completed' | 'pending' | 'failed')
+- language_detected VARCHAR, has_overlap BOOLEAN
 
 **Table: interaction_scores**
-- id UUID PK
-- interaction_id UUID FK → interactions.id
-- overall_score FLOAT  -- range 0.0 – 1.0
-- empathy_score FLOAT  -- range 0.0 – 1.0
-- policy_score FLOAT   -- range 0.0 – 1.0
-- resolution_score FLOAT  -- range 0.0 – 1.0
+- id UUID PK, interaction_id UUID FK → interactions.id
+- overall_score FLOAT (0–1), empathy_score FLOAT (0–1)
+- policy_score FLOAT (0–1), resolution_score FLOAT (0–1)
 - was_resolved BOOLEAN
 
-**Table: company_policies**
-- id UUID PK
-- policy_category VARCHAR
-- policy_title VARCHAR
-- policy_text TEXT
-- is_active BOOLEAN
+**Table: company_policies** — id UUID PK, policy_category VARCHAR, policy_title VARCHAR, policy_text TEXT, is_active BOOLEAN
 
-**Table: organization_policies**
-- id UUID PK
-- organization_id UUID FK → organizations.id
-- policy_id UUID FK → company_policies.id
-- is_active BOOLEAN
+**Table: organization_policies** — id UUID PK, organization_id UUID FK, policy_id UUID FK, is_active BOOLEAN
 
 **Table: policy_compliance**
-- id UUID PK
-- interaction_id UUID FK → interactions.id
-- policy_id UUID FK → company_policies.id
-- is_compliant BOOLEAN
-- compliance_score FLOAT  -- range 0.0 – 1.0
-- llm_reasoning TEXT
+- id UUID PK, interaction_id UUID FK, policy_id UUID FK
+- is_compliant BOOLEAN, compliance_score FLOAT (0–1), llm_reasoning TEXT
 
 **Table: utterances**
-- id UUID PK
-- interaction_id UUID FK → interactions.id
-- speaker VARCHAR  -- values: 'agent', 'customer'
-- emotion VARCHAR  -- values: 'neutral', 'happy', 'frustrated', 'angry', 'sad', 'empathetic', 'fearful'
-- start_time FLOAT
-- end_time FLOAT
+- id UUID PK, interaction_id UUID FK
+- speaker VARCHAR ('agent' | 'customer')
+- emotion VARCHAR ('neutral' | 'happy' | 'frustrated' | 'angry' | 'sad' | 'empathetic' | 'fearful')
+- start_time FLOAT, end_time FLOAT
 """
 
-# ---------------------------------------------------------------------------
-# SQL generation prompt
-# ---------------------------------------------------------------------------
+
 def _build_sql_system_prompt(org_id: UUID) -> str:
     return f"""You are an expert PostgreSQL data analyst for VocalMind, a call-center AI monitoring platform.
 Given a natural language question, write a single optimized PostgreSQL SELECT query to answer it.
@@ -98,60 +67,53 @@ Given a natural language question, write a single optimized PostgreSQL SELECT qu
 {_SCHEMA_DEFINITION}
 
 ### Critical Rules:
-1. ALWAYS filter organization scope: use `organization_id = '{str(org_id)}'` on `users` and `interactions` tables.
-2. Output ONLY the raw SQL string — no markdown fences (```sql), no explanations, no quotes.
-3. If the question is unrelated to the schema or impossible to answer with the data above, output exactly: UNKNOWN
-4. SELECT queries only — no INSERT, UPDATE, DELETE, DROP, TRUNCATE, or DDL.
-5. Always add LIMIT 50 unless the user explicitly asks for more or uses an aggregate (COUNT, AVG, SUM).
-6. When joining interactions ↔ interaction_scores, join on: interaction_scores.interaction_id = interactions.id
-7. Scores are stored as 0.0–1.0 floats. Multiply by 10 to get a 0–10 scale if users ask for "out of 10".
-8. For agent name lookups use ILIKE for case-insensitive matching.
-9. Cast UUIDs to TEXT (::text) when including them in SELECT output.
+1. ALWAYS filter organization scope: use `organization_id = '{str(org_id)}'` on users and interactions.
+2. Output ONLY the raw SQL — no markdown fences, no explanations.
+3. If the question cannot be answered, output exactly: UNKNOWN
+4. SELECT only — no INSERT, UPDATE, DELETE, DROP, TRUNCATE, DDL.
+5. Add LIMIT 50 unless user asks for more or query uses aggregates (COUNT/AVG/SUM).
+6. Scores are 0.0–1.0 floats. Multiply by 10 for a 0–10 scale.
+7. Use ILIKE for case-insensitive name matching.
+8. Cast UUIDs to TEXT (::text) in output.
 
 ### Examples:
-Q: Who are the top 5 agents by overall score?
-A: SELECT u.name, ROUND(AVG(s.overall_score) * 10, 1) AS avg_score FROM users u JOIN interactions i ON i.agent_id = u.id AND i.organization_id = '{str(org_id)}' JOIN interaction_scores s ON s.interaction_id = i.id WHERE u.role = 'agent' GROUP BY u.id, u.name ORDER BY avg_score DESC LIMIT 5
+Q: Who are the top 5 agents by overall score this week?
+A: SELECT u.name, ROUND(AVG(s.overall_score) * 10, 1) AS avg_score FROM users u JOIN interactions i ON i.agent_id = u.id AND i.organization_id = '{str(org_id)}' JOIN interaction_scores s ON s.interaction_id = i.id WHERE u.role = 'agent' AND i.interaction_date >= date_trunc('week', now()) GROUP BY u.id, u.name ORDER BY avg_score DESC LIMIT 5
 
-Q: How many policy violations happened this week?
+Q: How many policy violations this week?
 A: SELECT COUNT(*) AS violation_count FROM policy_compliance pc JOIN interactions i ON pc.interaction_id = i.id WHERE pc.is_compliant = false AND i.organization_id = '{str(org_id)}' AND i.interaction_date >= date_trunc('week', now())
 
-Q: What are the most common emotions among customers?
+Q: Most common customer emotions?
 A: SELECT emotion, COUNT(*) AS count FROM utterances u JOIN interactions i ON u.interaction_id = i.id WHERE u.speaker = 'customer' AND i.organization_id = '{str(org_id)}' GROUP BY emotion ORDER BY count DESC LIMIT 10
 """
 
-# ---------------------------------------------------------------------------
-# Answer synthesis prompt  
-# ---------------------------------------------------------------------------
+
 def _build_synthesis_prompt(user_query: str, sql: str, rows: list) -> str:
-    rows_preview = rows[:20]  # Cap to avoid huge prompts
     return f"""You are a helpful business analyst assistant for a call-center manager.
 The manager asked: "{user_query}"
 
-To answer this, the following SQL query was executed:
+SQL executed:
 {sql}
 
-The query returned {len(rows)} row(s). Here are the results (up to 20 shown):
-{rows_preview}
+Results ({len(rows)} row(s), up to 20 shown):
+{rows[:20]}
 
-Write a concise, natural language answer (2–4 sentences) that directly answers the manager's question using the data above.
-- Be specific: mention names, numbers, and percentages from the results.
-- If the results are empty, say so clearly and suggest why (e.g., no data yet, filters too strict).
-- Do not repeat the SQL query.
-- Do not add markdown headers or bullet points — write plain paragraph text.
+Write a concise natural language answer (2–4 sentences) directly addressing the question using the data.
+- Be specific: mention names, numbers, percentages.
+- If empty, explain why (no data yet, filter too strict, etc.).
+- Plain paragraph text only — no markdown, no bullet points, no SQL repetition.
 """
 
 
 class IntentResolver:
-    """LLM-based Text-to-SQL generator with natural language answer synthesis."""
+    """LLM-based Text-to-SQL + answer synthesis using Gemini."""
 
     def __init__(self):
         self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
 
     async def resolve_sql(self, query: str, org_id: UUID) -> Optional[str]:
-        """Convert natural language query into a safe PostgreSQL SELECT statement."""
-        system_prompt = _build_sql_system_prompt(org_id)
-        prompt = f"{system_prompt}\n\nUser Question: {query}\nSQL:"
-
+        """Convert natural language to a safe PostgreSQL SELECT."""
+        prompt = _build_sql_system_prompt(org_id) + f"\n\nUser Question: {query}\nSQL:"
         try:
             response = await self._client.aio.models.generate_content(
                 model="gemini-2.5-flash",
@@ -160,7 +122,6 @@ class IntentResolver:
             )
             sql = (response.text or "").strip()
 
-            # Strip any accidental markdown fences
             for fence in ("```sql", "```"):
                 if sql.startswith(fence):
                     sql = sql[len(fence):]
@@ -174,17 +135,16 @@ class IntentResolver:
             safe = sql.lower()
             forbidden = ("drop ", "delete ", "update ", "insert ", "truncate ", "alter ", "create ")
             if not safe.startswith("select") or any(kw in safe for kw in forbidden):
-                logger.error(f"Unsafe/invalid SQL generated: {sql}")
+                logger.error(f"Unsafe SQL generated: {sql}")
                 return None
 
             return sql
-
         except Exception as exc:
             logger.error(f"SQL generation via Gemini failed: {exc}")
             return None
 
     async def synthesize_answer(self, user_query: str, sql: str, rows: list) -> str:
-        """Use the LLM to produce a human-readable answer from raw SQL results."""
+        """Produce a human-readable answer from raw SQL results."""
         prompt = _build_synthesis_prompt(user_query, sql, rows)
         try:
             response = await self._client.aio.models.generate_content(
@@ -194,140 +154,139 @@ class IntentResolver:
             )
             return (response.text or "").strip()
         except Exception as exc:
-            logger.warning(f"Answer synthesis failed, using fallback: {exc}")
-            if rows:
-                return f"I found {len(rows)} result(s) for your query."
-            return "The query returned no results."
+            logger.warning(f"Answer synthesis failed: {exc}")
+            return f"I found {len(rows)} result(s)." if rows else "The query returned no results."
 
 
 @router.post("/query")
 async def process_assistant_query(
     request: AssistantQueryRequest,
-    session: SessionDep,
+    session: SessionDep,  # kept for FastAPI DI; actual DB uses raw SA engine
 ):
     """Process natural language queries from the Manager Assistant."""
     query_text = request.query_text
     mode = request.mode or QueryMode.chat
 
-    # Identify the manager context
-    user_result = await session.exec(select(UserModel).where(UserModel.role == UserRole.manager))
-    manager = user_result.first()
-    if not manager:
-        user_result = await session.exec(select(UserModel))
-        manager = user_result.first()
+    # Use a raw connection to avoid ALL SQLModel/ORM lazy-loading issues
+    async with engine.connect() as conn:
 
-    if not manager:
-        raise HTTPException(status_code=404, detail="No user found to attribute query")
-
-    org_id = manager.organization_id
-    start_time = time.time()
-    resolver = IntentResolver()
-
-    # Inject short-term conversational memory (last 5 min)
-    last_query_stmt = (
-        select(AssistantQuery)
-        .where(
-            AssistantQuery.user_id == manager.id,
-            AssistantQuery.ai_understanding.isnot(None),
+        # 1. Find the manager (raw SQL — no ORM, no lazy loading)
+        r = await conn.execute(
+            text("SELECT id, organization_id FROM users WHERE role = 'manager' LIMIT 1")
         )
-        .order_by(AssistantQuery.created_at.desc())
-        .limit(1)
-    )
-    last_query_result = await session.exec(last_query_stmt)
-    last_query = last_query_result.first()
+        row = r.first()
+        if not row:
+            r = await conn.execute(text("SELECT id, organization_id FROM users LIMIT 1"))
+            row = r.first()
 
-    context_prefix = ""
-    if last_query and (time.time() - last_query.created_at.timestamp() < 300):
-        context_prefix = (
-            f"Conversational context — the user's previous question was: "
-            f"'{last_query.query_text}'. Use this only if the current question "
-            f"references it with pronouns or relative terms (e.g. 'them', 'that agent', 'those violations'). "
+        if not row:
+            raise HTTPException(status_code=404, detail="No user found to attribute query")
+
+        manager_id = row[0]
+        org_id = row[1]
+        start_time = time.time()
+        resolver = IntentResolver()
+
+        # 2. Recent conversational context (last 5 min)
+        ctx_r = await conn.execute(
+            text("""
+                SELECT query_text, created_at FROM assistant_queries
+                WHERE user_id = :uid AND ai_understanding IS NOT NULL
+                ORDER BY created_at DESC LIMIT 1
+            """),
+            {"uid": str(manager_id)},
         )
+        ctx_row = ctx_r.first()
+        context_prefix = ""
+        if ctx_row and (time.time() - ctx_row[1].timestamp() < 300):
+            context_prefix = (
+                f"Conversational context — the user's previous question was: "
+                f"'{ctx_row[0]}'. Use this only if the current question "
+                f"references it with pronouns or relative terms. "
+            )
 
-    extended_query = context_prefix + query_text
+        extended_query = context_prefix + query_text
 
-    # Step 1: Generate SQL
-    sql = await resolver.resolve_sql(extended_query, org_id)
+        # 3. Generate SQL via Gemini
+        sql = await resolver.resolve_sql(extended_query, org_id)
 
-    if not sql:
-        response_text = (
-            "I'm sorry, I can't answer that question with the available data. "
-            "Please try asking about agents, interactions, scores, compliance, or emotions."
+        if not sql:
+            response_text = (
+                "I'm sorry, I can't answer that with the available data. "
+                "Try asking about agents, interactions, scores, compliance, or emotions."
+            )
+            await conn.execute(
+                text("""
+                    INSERT INTO assistant_queries
+                    (user_id, organization_id, query_mode, query_text, response_text, execution_time_ms)
+                    VALUES (:uid, :oid, :mode, :qt, :rt, :etms)
+                """),
+                {
+                    "uid": str(manager_id), "oid": str(org_id), "mode": mode.value,
+                    "qt": query_text, "rt": response_text,
+                    "etms": int((time.time() - start_time) * 1000),
+                },
+            )
+            await conn.commit()
+            return {"type": "ai", "content": response_text, "mode": mode.value, "success": False}
+
+        # 4. Execute the generated SQL
+        try:
+            exec_start = time.time()
+            result = await conn.execute(text(sql))
+            rows = [dict(r._mapping) for r in result]
+            execution_time_ms = int((time.time() - exec_start) * 1000)
+        except Exception as exc:
+            await conn.rollback()
+            logger.error(f"SQL exec error — {sql!r} — {exc}")
+            err_response = (
+                "I understood your request but hit a database error. "
+                "Try rephrasing or simplifying the question."
+            )
+            await conn.execute(
+                text("""
+                    INSERT INTO assistant_queries
+                    (user_id, organization_id, query_mode, query_text, response_text, execution_time_ms)
+                    VALUES (:uid, :oid, :mode, :qt, :rt, :etms)
+                """),
+                {
+                    "uid": str(manager_id), "oid": str(org_id), "mode": mode.value,
+                    "qt": query_text, "rt": err_response,
+                    "etms": int((time.time() - start_time) * 1000),
+                },
+            )
+            await conn.commit()
+            return {"type": "ai", "content": err_response, "mode": mode.value, "sql": sql, "success": False}
+
+        # 5. Synthesize natural language answer
+        natural_answer = await resolver.synthesize_answer(query_text, sql, rows)
+
+        ins_r = await conn.execute(
+            text("""
+                INSERT INTO assistant_queries
+                (user_id, organization_id, query_mode, query_text,
+                 ai_understanding, generated_sql, response_text, execution_time_ms)
+                VALUES (:uid, :oid, :mode, :qt, :ai, :gsql, :rt, :etms)
+                RETURNING id
+            """),
+            {
+                "uid": str(manager_id), "oid": str(org_id), "mode": mode.value,
+                "qt": query_text, "ai": "Text-to-SQL via Gemini",
+                "gsql": sql, "rt": natural_answer,
+                "etms": execution_time_ms,
+            },
         )
-        failed_query = AssistantQuery(
-            user_id=manager.id,
-            organization_id=org_id,
-            query_mode=mode,
-            query_text=query_text,
-            response_text=response_text,
-            execution_time_ms=int((time.time() - start_time) * 1000),
-        )
-        session.add(failed_query)
-        await session.commit()
+        await conn.commit()
+        inserted_id = ins_r.scalar()
+
         return {
-            "id": str(failed_query.id),
+            "id": str(inserted_id) if inserted_id else "",
             "type": "ai",
-            "content": response_text,
-            "mode": mode.value,
-            "success": False,
-        }
-
-    # Step 2: Execute SQL
-    try:
-        exec_start = time.time()
-        result = await session.exec(text(sql))
-        rows = [dict(row._mapping) for row in result]
-        execution_time_ms = int((time.time() - exec_start) * 1000)
-    except Exception as exc:
-        await session.rollback()
-        logger.error(f"SQL execution error — query: {sql!r} — error: {exc}")
-        err_response = (
-            "I understood your request but encountered a database error while fetching the data. "
-            "Consider rephrasing or simplifying your question."
-        )
-        fallback_query = AssistantQuery(
-            user_id=manager.id,
-            organization_id=org_id,
-            query_mode=mode,
-            query_text=query_text,
-            response_text=err_response,
-            execution_time_ms=int((time.time() - start_time) * 1000),
-        )
-        session.add(fallback_query)
-        await session.commit()
-        return {
-            "id": str(fallback_query.id),
-            "type": "ai",
-            "content": err_response,
+            "content": natural_answer,
             "mode": mode.value,
             "sql": sql,
-            "success": False,
+            "executionTime": f"{execution_time_ms}ms",
+            "data": rows,
+            "rowCount": len(rows),
+            "success": True,
         }
-
-    # Step 3: Synthesize a natural language answer from results
-    natural_answer = await resolver.synthesize_answer(query_text, sql, rows)
-
-    successful_query = AssistantQuery(
-        user_id=manager.id,
-        organization_id=org_id,
-        query_mode=mode,
-        query_text=query_text,
-        ai_understanding="Text-to-SQL via Gemini",
-        generated_sql=sql,
-        response_text=natural_answer,
-        execution_time_ms=execution_time_ms,
-    )
-    session.add(successful_query)
-    await session.commit()
-
-    return {
-        "id": str(successful_query.id),
-        "type": "ai",
-        "content": natural_answer,
-        "mode": mode.value,
-        "sql": sql,
-        "executionTime": f"{execution_time_ms}ms",
-        "data": rows,
-        "rowCount": len(rows),
-        "success": True,
-    }
