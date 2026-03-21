@@ -50,7 +50,6 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION_PARENTS: str = "vocalmind_parents"
     QDRANT_COLLECTION_SOP_PARENTS: str = "vocalmind_sop_parents"
-    QDRANT_COLLECTION_SOP_CHILDREN: str = "vocalmind_sop_children"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     EMBEDDING_MODEL: str = "snowflake-arctic-embed2"
     EMBEDDING_TIMEOUT_SECONDS: float = 60.0

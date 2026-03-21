@@ -3,53 +3,124 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
-dist/
-build/
+*.egg
 .venv/
 venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 .eggs/
-*.egg
+develop-eggs/
+dist/
+build/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+.installed.cfg
+.mypy_cache/
+.pyre/
+.typeguard/
+.hypothesis/
 
-# ── Node.js ───────────────────────────────────────────────────────────────
+# ── Node.js & Frontend ────────────────────────────────────────────────────
 node_modules/
 .next/
-dist/
+out/
+.vite/
+.pnp.*
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.js
+jspm_packages/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# ── Environment & Secrets ─────────────────────────────────────────────────
+# ── Testing & Code Coverage ───────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+htmlcov/
+coverage/
+.nyc_output/
+.nycrc
+*.heapsnapshot
+
+# ── Cypress E2E Testing ───────────────────────────────────────────────────
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
+frontend/cypress/screenshots/
+frontend/cypress/videos/
+
+# ── Linting & Type Checking ───────────────────────────────────────────────
+.ruff_cache/
+.eslintcache
+*.tsbuildinfo
+
+# ── Environment & Secrets ────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
 !.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
 
-# ── IDE / OS ──────────────────────────────────────────────────────────────
+# ── IDE & Editors ────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# ── OS & System Files ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# ── Testing & Tooling ────────────────────────────────────────────────────
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-coverage/
-.nyc_output/
-cypress/videos/
-cypress/screenshots/
-
-# ── Docker ────────────────────────────────────────────────────────────────
+# ── Logs & Databases ────────────────────────────────────────────────────
 *.log
+*.sqlite
+*.sqlite3
 
-# ── Research outputs (don't version large files) ─────────────────────────
-research/voice-gen/generated_audio/
-# *.mp3
-# *.wav
-*.flac
-*.ogg
+# ── Python Backend Local ────────────────────────────────────────────────
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.venv/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/api/__pycache__/
+backend/app/api/routes/__pycache__/
+backend/app/api/routes/auth/__pycache__/
+backend/app/api/routes/emotion/__pycache__/
+backend/app/api/routes/llm_trigger/__pycache__/
+backend/app/core/__pycache__/
+backend/app/llm_trigger/__pycache__/
+backend/app/models/__pycache__/
+backend/app/schemas/__pycache__/
+backend/app/services/
+backend/tests/__pycache__/
+backend/startup.log
 
-# ── ML artifacts ──────────────────────────────────────────────────────────
+# ── Frontend Local ───────────────────────────────────────────────────────
+frontend/.env.local
+frontend/.next/
+frontend/.nyc_output/
+frontend/.pytest_cache/
+
+# ── ML & Model Artifacts ────────────────────────────────────────────────
 *.pt
 *.pth
 *.ckpt
@@ -58,97 +129,20 @@ research/voice-gen/generated_audio/
 *.onnx
 *.h5
 
-# ── Misc ──────────────────────────────────────────────────────────────────
+# ── Audio & Media Files ─────────────────────────────────────────────────
+*.flac
+*.ogg
+# *.mp3
+# *.wav
 
-
-# ── RAG outputs ─────────────────────────────────────────────────────
-services/rag/parsed_docs/
-services/rag/logs/ 
-
-uv.lock
-*.heapsnapshot
+# ── Research & Experiments ──────────────────────────────────────────────
+research/voice-gen/generated_audio/
 research/voices-examples/
+Experiments/
 
-# ── Node.js & Frontend ────────────────────────────────────────────────────
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.pnp.*
-.yarn/cache/
-.yarn/unplugged/
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.js
-jspm_packages/
-.next/
-out/
-build/
-.vite/
-*.tsbuildinfo
-.eslintcache
+# ── RAG & Services ───────────────────────────────────────────────────────
+services/rag/parsed_docs/
+services/rag/logs/
 
-# ── Python & Backend ──────────────────────────────────────────────────────
-*.py[cod]
-*$py.class
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.mypy_cache/
-.pyre/
-.typeguard/
-
-# ── Logs & Databases ──────────────────────────────────────────────────────
-*.log
-*.sqlite
-*.sqlite3
-
-# ── Editors & OS ─────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# ── Testing ──────────────────────────────────────────────────────────────
-cypress/videos/
-cypress/screenshots/
-cypress/downloads/
-
-# ── Backend Local Overrides ──────────────────────────────────────────────
-backend/.env
-backend/.env.*
-!backend/.env.example
-backend/.pytest_cache/
+# ── Lockfiles & Build Info ──────────────────────────────────────────────
+uv.lock

@@ -82,7 +82,6 @@ class DocumentIngestionPipeline:
             settings.qdrant.collection_parents,
             settings.qdrant.collection_children,
             settings.qdrant.collection_sop_parents,
-            settings.qdrant.collection_sop_children,
         ]:
             if name in existing:
                 # Check existing dimension
@@ -440,12 +439,9 @@ class DocumentIngestionPipeline:
 
         # Step 8 — Upload to Qdrant
         if "sop-procedures" in str(pdf_path):
-            print("\n[Step 8] SOP Document detected. Uploading to SOP vector collections...")
+            print("\n[Step 8] SOP Document detected. Uploading to SOP parent collection...")
             n_parents = self._upload_chunks(
                 parent_chunks, settings.qdrant.collection_sop_parents, "parent"
-            )
-            n_children = self._upload_chunks(
-                child_chunks, settings.qdrant.collection_sop_children, "child"
             )
         else:
             print("\n[Step 8] Uploading Policy to Qdrant...")
@@ -458,8 +454,11 @@ class DocumentIngestionPipeline:
 
         print(f"\n{'─'*50}")
         print(f"  DONE: {base_name}")
-        print(f"  Parents  : {n_parents} → {'SOP Parents' if 'sop-procedures' in str(pdf_path) else 'Policy Parents'}")
-        print(f"  Children : {n_children} → {'SOP Children' if 'sop-procedures' in str(pdf_path) else 'Policy Children'}")
+        if "sop-procedures" in str(pdf_path):
+            print(f"  Parents  : {n_parents} → SOP Parents")
+        else:
+            print(f"  Parents  : {n_parents} → Policy Parents")
+            print(f"  Children : {n_children} → Policy Children")
         print(f"  Warnings : {len(all_warnings)}")
         print(f"{'─'*50}")
 
@@ -492,7 +491,6 @@ class DocumentIngestionPipeline:
                 settings.qdrant.collection_parents,
                 settings.qdrant.collection_children,
                 settings.qdrant.collection_sop_parents,
-                settings.qdrant.collection_sop_children,
             ]:
                 try:
                     self.qdrant.delete_collection(name)

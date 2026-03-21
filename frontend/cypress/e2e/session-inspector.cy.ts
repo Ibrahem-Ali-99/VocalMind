@@ -6,25 +6,20 @@ describe("Session Inspector", () => {
   it("renders the page heading and subtitle", () => {
     cy.contains("h2", "Session Inspector");
     // Flexible match because the total count depends on mock data
-    cy.contains("interactions · sorted by score");
+    cy.contains(/Analyze \d+ automated LLM agent evaluations/);
   });
 
   it("displays search input and filter controls", () => {
-    cy.get('input[placeholder="Search agent, date, ID…"]').should("exist");
-    cy.contains("button", "All Agents");
-    cy.contains("button", "Score ↓");
-    cy.contains("button", "Date");
-    cy.contains("button", "Duration");
+    cy.get('input[placeholder="Search agent, date, ID..."]').should("exist");
+    cy.contains("select", "Any Resolution");
+    cy.contains("select", "Any Policies");
   });
 
   it("renders table headers", () => {
     cy.contains("Agent");
-    cy.contains("Date & Time");
-    cy.contains("Duration");
+    cy.contains("Session Info");
     cy.contains("Score");
-    cy.contains("Empathy");
-    cy.contains("Policy");
-    cy.contains("Resolution");
+    cy.contains("Automated Metrics (Emp / Pol / Res)");
     cy.contains("Status");
     cy.contains("Actions");
   });
@@ -43,19 +38,22 @@ describe("Session Inspector", () => {
   });
 
   it("shows violation badges for flagged interactions", () => {
-    cy.contains("⚠ Violation");
+    cy.contains("Violation");
   });
 
   it("has Inspect links that navigate to session detail", () => {
-    cy.contains("a", "Inspect →").first().click();
-    cy.url().should("match", /\/manager\/inspector\/.+/);
+    // Wait for data
+    cy.contains("Sarah M.").should("be.visible");
+    // Target the link by href pattern
+    cy.get('a[href*="/manager/inspector/int-"]').first().click();
+    cy.url().should("include", "/manager/inspector/int-");
   });
 
   it("displays pagination footer", () => {
     cy.contains(/Showing 1–\d+ of \d+/);
-    cy.contains("button", "← Prev").should("be.disabled");
+    cy.contains("button", "Previous").should("be.disabled");
     // Based on whether there's more than 10 mock interactions 
     // it could be disabled or not. Let's just check it exists.
-    cy.contains("button", "Next →").should("exist");
+    cy.contains("button", "Next page").should("exist");
   });
 });

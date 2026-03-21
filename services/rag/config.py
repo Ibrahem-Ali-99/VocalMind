@@ -48,7 +48,6 @@ class QdrantConfig(BaseSettings):
     collection_parents: str = "vocalmind_parents"
     collection_children: str = "vocalmind_children"
     collection_sop_parents: str = "vocalmind_sop_parents"
-    collection_sop_children: str = "vocalmind_sop_children"
 
 
 class ParentChunkingConfig(BaseSettings):
