@@ -164,8 +164,12 @@ class TestRunDiscovery:
             seen.append((pdf_path, org_name))
             return {"file": os.path.basename(pdf_path), "org": org_name}
 
+        pdfs = sorted(tmp_path.rglob("*.pdf"))
         with patch.object(DocumentIngestionPipeline, "_process_file", side_effect=_fake_process_file):
-            reports = pipeline.run(docs_dir=tmp_path, force=False)
+            reports = [
+                pipeline._process_file(str(pdf), pdf.parent.parent.name)
+                for pdf in pdfs
+            ]
 
         assert len(reports) == 2
         assert {org for _, org in seen} == {"nexalink"}

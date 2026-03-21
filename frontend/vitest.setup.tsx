@@ -5,12 +5,16 @@ import React from 'react'
 
 expect.extend(matchers)
 
+if (!HTMLElement.prototype.scrollIntoView) {
+    HTMLElement.prototype.scrollIntoView = () => {}
+}
+
 // Mock Lucide Icons
 vi.mock('lucide-react', () => {
     const icons = [
         'BarChart2', 'Phone', 'CheckCircle', 'AlertTriangle', 'Star', 'TrendingUp', 'TrendingDown',
         'Target', 'Zap', 'Search', 'ArrowLeft', 'Play', 'ThumbsUp', 'ThumbsDown', 'XCircle', 'Flag',
-        'BookOpen', 'HelpCircle', 'Info', 'ChevronDown',
+        'BookOpen', 'HelpCircle', 'Info', 'ChevronDown', 'FileText', 'Calendar', 'Clock', 'PhoneCall', 'Pause',
         'Mic', 'UserCircle', 'Shield', 'MessageSquare', 'Send', 'Activity',
         'LayoutDashboard', 'Settings', 'ChevronLeft', 'ChevronRight', 'Bell', 'Download',
         'Loader2', 'Headphones', 'AlertCircle', 'ChevronUp', 'Quote',

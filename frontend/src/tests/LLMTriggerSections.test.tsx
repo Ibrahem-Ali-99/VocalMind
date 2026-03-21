@@ -46,6 +46,7 @@ vi.mock("../app/services/api", () => {
         detectedTopic: "billing_issue",
         isResolved: false,
         efficiencyScore: 6,
+        justification: "Agent missed one verification step.",
         missingSopSteps: ["Confirm account details"],
         evidenceQuotes: [],
         citations: [],
@@ -75,7 +76,7 @@ describe("LLM trigger sections", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("LLM Trigger Status")).toBeInTheDocument();
+    expect(await screen.findByText("Automated Evaluation")).toBeInTheDocument();
     expect(screen.getByText("billing_issue")).toBeInTheDocument();
     expect(screen.getByText("Contradiction")).toBeInTheDocument();
   });

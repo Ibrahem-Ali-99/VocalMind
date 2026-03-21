@@ -32,6 +32,7 @@ def test_map_llm_trigger_report_contains_process_and_nli_fields():
             detected_topic="billing_issue",
             is_resolved=False,
             efficiency_score=5,
+            justification="Agent confirmed the account check but did not complete full SOP verification.",
             missing_sop_steps=["Confirm account details"],
             evidence_quotes=["Let me check your account."],
             citations=[

@@ -484,7 +484,7 @@ class DocumentIngestionPipeline:
         Returns:
             List of per-file validation reports.
         """
-        docs_dir = docs_dir or settings.DOCS_DIR
+        docs_dir = Path(settings.DOCS_DIR) if docs_dir is None else Path(docs_dir)
 
         if force:
             print("\n⚠  Force mode — deleting existing collections...")
@@ -503,22 +503,51 @@ class DocumentIngestionPipeline:
 
         # Discover PDFs from org policy and SOP folders.
         pdf_files: list[tuple[str, str]] = []  # (pdf_path, org_name)
+        seen_paths: set[str] = set()
 
-        # Discover PDFs exclusively from org policy folders for RAG.
+        # Discover PDFs from expected org subfolders, with root fallback.
         for org_dir in sorted(docs_dir.iterdir()):
-            if org_dir.is_dir():
-                folder_candidates = [org_dir / "policy-docs", org_dir / "sop-procedures"]
-                discovered_in_subdirs = False
-                for candidate in folder_candidates:
-                    if candidate.exists() and candidate.is_dir():
-                        discovered_in_subdirs = True
-                        for pdf in sorted(candidate.glob("*.pdf")):
-                            pdf_files.append((str(pdf), org_dir.name))
+            if not org_dir.is_dir():
+                continue
 
-                # Fallback: also check org root for direct PDFs.
-                if not discovered_in_subdirs:
-                    for pdf in sorted(org_dir.glob("*.pdf")):
+            discovered_in_subdirs = False
+            for candidate in (org_dir / "policy-docs", org_dir / "sop-procedures"):
+                if not candidate.is_dir():
+                    continue
+
+                discovered_in_subdirs = True
+                for pattern in ("*.pdf", "*.PDF"):
+                    for pdf in sorted(candidate.glob(pattern)):
+                        key = str(pdf.resolve())
+                        if key in seen_paths:
+                            continue
+                        seen_paths.add(key)
                         pdf_files.append((str(pdf), org_dir.name))
+
+            # Fallback: also check org root for direct PDFs.
+            if not discovered_in_subdirs:
+                for pattern in ("*.pdf", "*.PDF"):
+                    for pdf in sorted(org_dir.glob(pattern)):
+                        key = str(pdf.resolve())
+                        if key in seen_paths:
+                            continue
+                        seen_paths.add(key)
+                        pdf_files.append((str(pdf), org_dir.name))
+
+        if not pdf_files:
+            for pdf in sorted(docs_dir.rglob("*")):
+                if not pdf.is_file() or pdf.suffix.lower() != ".pdf":
+                    continue
+                key = str(pdf.resolve())
+                if key in seen_paths:
+                    continue
+                seen_paths.add(key)
+                try:
+                    rel = pdf.relative_to(docs_dir)
+                    org_name = rel.parts[0] if len(rel.parts) > 1 else "Unknown"
+                except Exception:
+                    org_name = "Unknown"
+                pdf_files.append((str(pdf), org_name))
 
         if not pdf_files:
             print(f"\nNo PDFs found in '{docs_dir}' (checked subfolders and root).")

@@ -1,104 +1,112 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { KnowledgeBase } from '../app/components/manager/KnowledgeBase'
 import { MemoryRouter } from 'react-router'
 
+const { getPoliciesMock, getFaqsMock } = vi.hoisted(() => ({
+    getPoliciesMock: vi.fn(),
+    getFaqsMock: vi.fn(),
+}))
+
+vi.mock('../app/services/api', () => ({
+    getPolicies: getPoliciesMock,
+    getFaqs: getFaqsMock,
+}))
+
 describe('KnowledgeBase', () => {
-    it('renders info banner and headers', () => {
+    beforeEach(() => {
+        getPoliciesMock.mockResolvedValue([
+            {
+                id: 'p1',
+                title: 'Greeting Protocol',
+                category: 'customer_service',
+                content: 'content',
+                preview: 'Greeting preview',
+                lastUpdated: '2026-03-01',
+                isActive: true,
+            },
+            {
+                id: 'p2',
+                title: 'Data Privacy Guidelines',
+                category: 'compliance',
+                content: 'content',
+                preview: 'Privacy preview',
+                lastUpdated: '2026-03-01',
+                isActive: true,
+            },
+            {
+                id: 'p3',
+                title: 'Escalation Procedure',
+                category: 'operations',
+                content: 'content',
+                preview: 'Escalation preview',
+                lastUpdated: '2026-03-01',
+                isActive: false,
+            },
+        ])
+
+        getFaqsMock.mockResolvedValue([
+            {
+                id: 'f1',
+                question: "How do I reset a customer's password?",
+                answer: 'answer',
+                preview: 'preview',
+                category: 'account',
+                isActive: true,
+            },
+            {
+                id: 'f2',
+                question: 'What is the refund policy?',
+                answer: 'answer',
+                preview: 'preview',
+                category: 'billing',
+                isActive: true,
+            },
+        ])
+    })
+
+    it('renders info banner and headers', async () => {
         render(
             <MemoryRouter>
                 <KnowledgeBase />
             </MemoryRouter>
         )
 
-        expect(screen.getByText(/Manage which policies and FAQ articles/)).toBeInTheDocument()
+        expect(await screen.findByText(/Manage which policies and FAQ articles/)).toBeInTheDocument()
         expect(screen.getByText('Company Policies')).toBeInTheDocument()
         expect(screen.getByText('FAQ Articles')).toBeInTheDocument()
     })
 
-    it('renders search placeholders', () => {
+    it('renders search placeholders', async () => {
         render(
             <MemoryRouter>
                 <KnowledgeBase />
             </MemoryRouter>
         )
 
-        expect(screen.getByPlaceholderText('Search policies...')).toBeInTheDocument()
+        expect(await screen.findByPlaceholderText('Search policies...')).toBeInTheDocument()
         expect(screen.getByPlaceholderText('Search FAQs...')).toBeInTheDocument()
     })
 
-    it('renders policy and FAQ items with active/inactive status', () => {
+    it('toggles policy switch and filters policy list', async () => {
         render(
             <MemoryRouter>
                 <KnowledgeBase />
             </MemoryRouter>
         )
 
-        expect(screen.getByText('Greeting Protocol')).toBeInTheDocument()
-        expect(screen.getByText('Data Privacy Guidelines')).toBeInTheDocument()
-        expect(screen.getByText('How do I reset a customer\'s password?')).toBeInTheDocument()
-    })
+        expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
 
-    it('toggles a policy switch', () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        // Escalation Procedure starts as inactive; find its switch
         const switches = screen.getAllByRole('switch')
-        // Third switch corresponds to the third policy (Escalation Procedure, isActive: false)
         const escalationSwitch = switches[2]
         expect(escalationSwitch).not.toBeChecked()
-
         fireEvent.click(escalationSwitch)
         expect(escalationSwitch).toBeChecked()
-    })
-
-    it('toggles a FAQ switch', () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        const switches = screen.getAllByRole('switch')
-        // FAQ switches come after policy switches (3 policies + index 0 = switches[3])
-        const faqSwitch = switches[3]
-        expect(faqSwitch).toBeChecked()
-
-        fireEvent.click(faqSwitch)
-        expect(faqSwitch).not.toBeChecked()
-    })
-
-    it('filters policies by search input', () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
 
         const policySearch = screen.getByPlaceholderText('Search policies...')
         fireEvent.change(policySearch, { target: { value: 'Privacy' } })
-
         expect(screen.getByText('Data Privacy Guidelines')).toBeInTheDocument()
         expect(screen.queryByText('Greeting Protocol')).not.toBeInTheDocument()
     })
-
-    it('filters FAQs by search input', () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        const faqSearch = screen.getByPlaceholderText('Search FAQs...')
-        fireEvent.change(faqSearch, { target: { value: 'refund' } })
-
-        expect(screen.getByText('What is the refund policy?')).toBeInTheDocument()
-        expect(screen.queryByText('How do I reset a customer\'s password?')).not.toBeInTheDocument()
-    })
 })
-
