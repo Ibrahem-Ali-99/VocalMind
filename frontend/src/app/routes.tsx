@@ -10,28 +10,44 @@ import { AgentDashboard } from "./components/agent/AgentDashboard";
 import { AgentCallDetail } from "./components/agent/AgentCallDetail";
 import { LandingPage } from "./components/LandingPage";
 
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AuthProvider } from "./contexts/AuthContext";
+import { SettingsPage } from "./components/SettingsPage";
+import Login from "./pages/Login";
+
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <LandingPage />,
   },
   {
-    path: "/manager",
-    element: <ManagerLayout />,
-    children: [
-      { index: true, element: <ManagerDashboard /> },
-      { path: "inspector", element: <SessionInspector /> },
-      { path: "inspector/:id", element: <SessionDetail /> },
-      { path: "assistant", element: <ManagerAssistant /> },
-      { path: "knowledge", element: <KnowledgeBase /> },
-    ],
+    path: "/login",
+    element: <Login />,
   },
   {
-    path: "/agent",
-    element: <AgentLayout />,
+    element: <ProtectedRoute />,
     children: [
-      { index: true, element: <AgentDashboard /> },
-      { path: "calls/:id", element: <AgentCallDetail /> },
+      {
+        path: "/manager",
+        element: <ManagerLayout />,
+        children: [
+          { index: true, element: <ManagerDashboard /> },
+          { path: "inspector", element: <SessionInspector /> },
+          { path: "inspector/:id", element: <SessionDetail /> },
+          { path: "assistant", element: <ManagerAssistant /> },
+          { path: "knowledge", element: <KnowledgeBase /> },
+          { path: "settings", element: <SettingsPage /> },
+        ],
+      },
+      {
+        path: "/agent",
+        element: <AgentLayout />,
+        children: [
+          { index: true, element: <AgentDashboard /> },
+          { path: "calls/:id", element: <AgentCallDetail /> },
+          { path: "settings", element: <SettingsPage /> },
+        ],
+      },
     ],
   },
 ]);
