@@ -10,6 +10,7 @@ const { sendAssistantQueryMock } = vi.hoisted(() => ({
 
 vi.mock('../app/services/api', () => ({
     sendAssistantQuery: sendAssistantQueryMock,
+    getAssistantHistory: vi.fn(async () => []),
 }))
 
 describe('ManagerAssistant', () => {
@@ -53,10 +54,10 @@ describe('ManagerAssistant', () => {
             </MemoryRouter>
         )
 
-        expect(screen.getByText('Show top performing agents this week')).toBeInTheDocument()
-        expect(screen.getByText('List all policy violations today')).toBeInTheDocument()
-        expect(screen.getByText('Which agent has the lowest resolution rate?')).toBeInTheDocument()
-        expect(screen.getByText('Show emotion trends across all calls')).toBeInTheDocument()
+        expect(screen.getByText('Who are the top 5 agents by overall score?')).toBeInTheDocument()
+        expect(screen.getByText('List all policy violations')).toBeInTheDocument()
+        expect(screen.getByText('What are the most common customer emotions?')).toBeInTheDocument()
+        expect(screen.getByText('help')).toBeInTheDocument()
     })
 
     it('sends suggested query immediately when clicked', async () => {
@@ -66,10 +67,10 @@ describe('ManagerAssistant', () => {
             </MemoryRouter>
         )
 
-        const suggestedBtn = screen.getByText('Show top performing agents this week')
+        const suggestedBtn = screen.getByText('Who are the top 5 agents by overall score?')
         fireEvent.click(suggestedBtn)
 
-        expect(sendAssistantQueryMock).toHaveBeenCalledWith('Show top performing agents this week')
+        expect(sendAssistantQueryMock).toHaveBeenCalledWith('Who are the top 5 agents by overall score?')
         expect(await screen.findByText('Mocked assistant reply')).toBeInTheDocument()
     })
 

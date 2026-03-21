@@ -88,6 +88,11 @@ beforeEach(() => {
     body: mockAgentPersonalData
   }).as('getAgentProfile');
 
+  cy.intercept('GET', '**/api/v1/assistant/history', {
+    statusCode: 200,
+    body: []
+  }).as('getAssistantHistory');
+
   cy.intercept('POST', '**/api/v1/assistant/query', {
     statusCode: 200,
     body: {

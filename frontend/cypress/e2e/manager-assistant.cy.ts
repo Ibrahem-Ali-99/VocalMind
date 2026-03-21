@@ -14,15 +14,15 @@ describe("Manager Assistant", () => {
 
   it("shows suggested query buttons", () => {
     cy.contains("Suggested queries");
-    cy.contains("button", "Show top performing agents this week");
-    cy.contains("button", "List all policy violations today");
-    cy.contains("button", "Which agent has the lowest resolution rate?");
-    cy.contains("button", "Show emotion trends across all calls");
+    cy.contains("button", "Who are the top 5 agents by overall score?");
+    cy.contains("button", "List all policy violations");
+    cy.contains("button", "What are the most common customer emotions?");
+    cy.contains("button", "help");
   });
 
   it("sends a message when a suggested query is clicked", () => {
-    cy.contains("button", "Show top performing agents this week").click();
-    cy.contains("Show top performing agents this week");
+    cy.contains("button", "Who are the top 5 agents by overall score?").click();
+    cy.contains("Who are the top 5 agents by overall score?");
     cy.contains("I've analyzed your query.");
   });
 

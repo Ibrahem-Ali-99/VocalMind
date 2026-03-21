@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Google OAuth
+    # Google OAuth / AI
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    GOOGLE_API_KEY: str = ""
 
     # Database (Docker Postgres)
     DATABASE_URL: str = "postgresql+asyncpg://vocalmind:vocalmind_dev@localhost:5432/vocalmind"
@@ -60,6 +61,9 @@ class Settings(BaseSettings):
     # Text emotion model used in text+acoustic fusion
     TEXT_EMOTION_PROVIDER: str = "rule_based"  # rule_based | hf_transformers
     TEXT_EMOTION_MODEL: str = "j-hartmann/emotion-english-distilroberta-base"
+
+    # OpenAI API Key for Assistant
+    OPENAI_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 

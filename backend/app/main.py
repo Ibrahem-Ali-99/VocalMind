@@ -7,9 +7,14 @@ from app.core.database import create_db_and_tables
 from app.api.main import api_router
 
 
+from app.api.routes.dashboard import prewarm_dashboard_cache
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
+    # Pre-warm the dashboard cache so the first manager load is instantaneous
+    import asyncio
+    asyncio.create_task(prewarm_dashboard_cache())
     yield
 
 

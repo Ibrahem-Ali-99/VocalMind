@@ -329,6 +329,10 @@ export function sendAssistantQuery(text: string, mode: "chat" | "voice" = "chat"
   });
 }
 
+export function getAssistantHistory(): Promise<AssistantResponse[]> {
+  return apiFetch<AssistantResponse[]>("/assistant/history");
+}
+
 // ── RAG Service ──────────────────────────────────────────────────────────────
 
 export interface RAGQueryRequest {

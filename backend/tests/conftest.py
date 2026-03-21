@@ -12,8 +12,9 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, SQLModel
 
-# Mock database creation to avoid lifespan errors
-with patch("app.core.database.create_db_and_tables", return_value=None):
+# Mock database creation and cache pre-warm to avoid lifespan errors
+with patch("app.core.database.create_db_and_tables", return_value=None), \
+     patch("app.api.routes.dashboard.prewarm_dashboard_cache", return_value=None):
     from app.main import app
 from app.api.deps import get_session, get_supabase, get_db
 
@@ -22,9 +23,13 @@ from app.api.deps import get_session, get_supabase, get_db
 @pytest.fixture(name="session")
 def session_fixture() -> Generator[Session, None, None]:
     """Provides a functional SQLite in-memory Session for testing."""
+    # Import ALL models to ensure they are registered with SQLModel.metadata
+    # before create_all is called — otherwise tables won't be created.
+    import app.models  # noqa: F401 — triggers all sub-imports via __init__.py
+    
     engine = create_engine(
-        "sqlite:///:memory:", 
-        connect_args={"check_same_thread": False}
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
