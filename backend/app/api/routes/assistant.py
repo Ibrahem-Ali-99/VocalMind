@@ -109,9 +109,6 @@ class IntentResolver:
         # Pool of Gemini API keys to avoid 15 RPM free tier limits
         api_keys = [
             settings.GOOGLE_API_KEY,  # Original key
-            
-            
-            
         ]
         self._keys = [k for k in api_keys if k]
         # We don't initialize a single client here anymore

@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Google OAuth
+    # Google OAuth / AI
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    GOOGLE_API_KEY: str = ""
 
     # Database (Docker Postgres)
     DATABASE_URL: str = "postgresql+asyncpg://vocalmind:vocalmind_dev@localhost:5432/vocalmind"
@@ -38,6 +39,9 @@ class Settings(BaseSettings):
     # Supabase (for routes that use Supabase client directly)
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_KEY: str = ""
+
+    # OpenAI API Key for Assistant
+    OPENAI_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 

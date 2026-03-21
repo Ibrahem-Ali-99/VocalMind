@@ -8,6 +8,12 @@ export function SessionInspector() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState<"score" | "date" | "duration">("score");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   useEffect(() => {
     getInteractions()
       .then(setInteractions)
@@ -36,7 +42,47 @@ export function SessionInspector() {
     );
   }
 
-  const sortedInteractions = [...interactions].sort((a, b) => a.overallScore - b.overallScore);
+  const handleSort = (field: "score" | "date" | "duration") => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("desc");
+    }
+    setCurrentPage(1);
+  };
+
+  const filteredInteractions = interactions.filter((interaction) => {
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      interaction.agentName.toLowerCase().includes(searchLower) ||
+      interaction.id.toLowerCase().includes(searchLower) ||
+      interaction.date.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const sortedInteractions = [...filteredInteractions].sort((a, b) => {
+    let comparison = 0;
+    if (sortField === "score") {
+      comparison = a.overallScore - b.overallScore;
+    } else if (sortField === "date") {
+      const dateA = new Date(`${a.date}T${a.time}`).getTime();
+      const dateB = new Date(`${b.date}T${b.time}`).getTime();
+      comparison = dateA - dateB;
+    } else if (sortField === "duration") {
+      const [mA, sA] = a.duration.split(":").map(Number);
+      const [mB, sB] = b.duration.split(":").map(Number);
+      const durA = (mA || 0) * 60 + (sA || 0);
+      const durB = (mB || 0) * 60 + (sB || 0);
+      comparison = durA - durB;
+    }
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+
+  const totalItems = sortedInteractions.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedInteractions = sortedInteractions.slice(startIndex, startIndex + itemsPerPage);
 
   return (
     <div className="p-6">
@@ -47,7 +93,7 @@ export function SessionInspector() {
             Session Inspector
           </h2>
           <p className="text-[13px] text-[#6B7280]">
-            All interactions · sorted by score
+            {totalItems} interaction{totalItems !== 1 ? "s" : ""} · sorted by {sortField}
           </p>
         </div>
 
@@ -57,6 +103,11 @@ export function SessionInspector() {
             <input
               type="text"
               placeholder="Search agent, date, ID…"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1); // Reset page on search
+              }}
               className="w-[200px] h-10 pl-9 pr-3 bg-white border border-[#E5E7EB] rounded-[10px] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]"
             />
           </div>
@@ -67,14 +118,35 @@ export function SessionInspector() {
           </button>
 
           <div className="flex items-center border border-[#E5E7EB] rounded-[10px] overflow-hidden bg-white">
-            <button className="px-3 h-10 bg-[#3B82F6] text-white text-[11px] font-semibold">
-              Score ↑
+            <button
+              onClick={() => handleSort("score")}
+              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
+                sortField === "score"
+                  ? "bg-[#3B82F6] text-white"
+                  : "text-[#6B7280] hover:bg-[#F9FAFB]"
+              }`}
+            >
+              Score {sortField === "score" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
             </button>
-            <button className="px-3 h-10 text-[#6B7280] text-[11px] font-semibold hover:bg-[#F9FAFB]">
-              Date ↓
+            <button
+              onClick={() => handleSort("date")}
+              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
+                sortField === "date"
+                  ? "bg-[#3B82F6] text-white"
+                  : "text-[#6B7280] hover:bg-[#F9FAFB]"
+              }`}
+            >
+              Date {sortField === "date" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
             </button>
-            <button className="px-3 h-10 text-[#6B7280] text-[11px] font-semibold hover:bg-[#F9FAFB]">
-              Duration
+            <button
+              onClick={() => handleSort("duration")}
+              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
+                sortField === "duration"
+                  ? "bg-[#3B82F6] text-white"
+                  : "text-[#6B7280] hover:bg-[#F9FAFB]"
+              }`}
+            >
+              Duration {sortField === "duration" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
             </button>
           </div>
         </div>
@@ -115,11 +187,16 @@ export function SessionInspector() {
 
         {/* Rows */}
         <div className="divide-y divide-[#E5E7EB]">
-          {sortedInteractions.map((interaction) => (
-            <div
-              key={interaction.id}
-              className="grid grid-cols-12 gap-4 px-5 py-4 hover:bg-[#F9FAFB] transition-colors"
-            >
+          {paginatedInteractions.length === 0 ? (
+            <div className="px-5 py-8 text-center text-[#6B7280] text-[13px]">
+              No interactions found matching your criteria.
+            </div>
+          ) : (
+            paginatedInteractions.map((interaction) => (
+              <div
+                key={interaction.id}
+                className="grid grid-cols-12 gap-4 px-5 py-4 hover:bg-[#F9FAFB] transition-colors"
+              >
               {/* Agent */}
               <div className="col-span-2 flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-[#3B82F6] flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
@@ -196,19 +273,27 @@ export function SessionInspector() {
                 </Link>
               </div>
             </div>
-          ))}
+          )))}
         </div>
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-[#E5E7EB] flex items-center justify-between">
           <span className="text-[12px] text-[#6B7280]">
-            Showing 1–{sortedInteractions.length} of 342
+            Showing {totalItems === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems}
           </span>
           <div className="flex items-center gap-2">
-            <button className="px-3 h-8 text-[12px] text-[#6B7280] hover:text-[#111827] disabled:opacity-40" disabled>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 h-8 text-[12px] text-[#6B7280] hover:text-[#111827] disabled:opacity-40"
+            >
               ← Prev
             </button>
-            <button className="px-3 h-8 text-[12px] text-[#6B7280] hover:text-[#111827]">
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalItems === 0}
+              className="px-3 h-8 text-[12px] text-[#6B7280] hover:text-[#111827] disabled:opacity-40"
+            >
               Next →
             </button>
           </div>

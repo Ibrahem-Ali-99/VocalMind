@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MessageSquare, Mic, Send } from "lucide-react";
-import { sendAssistantQuery, AssistantResponse } from "../../services/api";
+import { sendAssistantQuery, getAssistantHistory, AssistantResponse } from "../../services/api";
 
 interface AssistantMessage extends Partial<AssistantResponse> {
   id: string;
@@ -14,6 +14,21 @@ export function ManagerAssistant() {
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getAssistantHistory()
+      .then((history) => {
+        if (history && history.length > 0) {
+          setMessages(history as AssistantMessage[]);
+        }
+      })
+      .catch((err) => console.error("Failed to load chat history:", err));
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const suggestedQueries = [
     "Who are the top 5 agents by overall score?",
@@ -192,6 +207,7 @@ export function ManagerAssistant() {
             )}
           </>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Suggested Queries */}

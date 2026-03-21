@@ -11,6 +11,7 @@ dependencies = [
     "google-auth>=2.48.0",
     "google-auth-oauthlib>=1.2.4",
     "httpx>=0.28.1",
+    "openai>=2.29.0",
     "pydantic-settings>=2.12.0",
     "pyjwt[crypto]>=2.8.0",
     "pytest>=9.0.2",
