@@ -191,6 +191,37 @@ class IntentResolver:
             logger.warning(f"Synthesis failed: {exc}")
             return f"I found {len(rows)} result(s)." if rows else "No results found for that query."
 
+@router.get("/history")
+async def get_assistant_history(session: SessionDep):
+    """Retrieve the recent chat history for the manager."""
+    async with engine.connect() as conn:
+        r = await conn.execute(
+            text("SELECT id, organization_id FROM users WHERE role = 'manager' LIMIT 1")
+        )
+        row = r.first()
+        if not row:
+            r = await conn.execute(text("SELECT id, organization_id FROM users LIMIT 1"))
+            row = r.first()
+        if not row:
+            return []
+            
+        manager_id, _ = row
+        
+        hist_r = await conn.execute(
+            text("SELECT id, query_text, response_text, created_at FROM assistant_queries WHERE user_id = :uid ORDER BY created_at ASC LIMIT 50"),
+            {"uid": str(manager_id)}
+        )
+        
+        history = []
+        for h in hist_r.all():
+            idx, q, r_text, _ = h
+            if not r_text:
+                continue
+            history.append({"id": f"q_{idx}", "type": "user", "content": q, "mode": "chat"})
+            history.append({"id": f"a_{idx}", "type": "ai", "content": r_text, "mode": "chat", "success": True})
+            
+        return history
+
 
 @router.post("/query")
 async def process_assistant_query(
