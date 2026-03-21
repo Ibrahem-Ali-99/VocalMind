@@ -8,6 +8,9 @@ from uuid import UUID
 import httpx
 import io
 import wave
+import asyncio
+from sqlmodel.ext.asyncio.session import AsyncSession
+from app.core.database import engine
 
 from app.api.deps import SessionDep
 from app.core.config import settings
@@ -92,110 +95,86 @@ async def list_interactions(session: SessionDep):
 
 
 @router.get("/{interaction_id}")
-async def get_interaction_detail(interaction_id: UUID, session: SessionDep):
-    """Get a single interaction with utterances, emotion events, and policy violations."""
+async def get_interaction_detail(interaction_id: UUID):
+    """Get a single interaction with utterances, emotion events, and policy violations concurrently."""
 
-    # ── Interaction + score ──
-    stmt = (
-        select(
-            Interaction.id,
-            Interaction.agent_id,
-            UserModel.name.label("agent_name"),
-            Interaction.interaction_date,
-            Interaction.duration_seconds,
-            Interaction.language_detected,
-            Interaction.has_overlap,
-            Interaction.processing_status,
-            Interaction.audio_file_path,
-            InteractionScore.overall_score,
-            InteractionScore.empathy_score,
-            InteractionScore.policy_score,
-            InteractionScore.resolution_score,
-            InteractionScore.was_resolved,
-            InteractionScore.avg_response_time_seconds,
-        )
-        .join(UserModel, UserModel.id == Interaction.agent_id)
-        .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
-        .where(Interaction.id == interaction_id)
+    async def _fetch_interaction():
+        async with AsyncSession(engine) as s:
+            stmt = (
+                select(
+                    Interaction.id,
+                    Interaction.agent_id,
+                    UserModel.name.label("agent_name"),
+                    Interaction.interaction_date,
+                    Interaction.duration_seconds,
+                    Interaction.language_detected,
+                    Interaction.has_overlap,
+                    Interaction.processing_status,
+                    Interaction.audio_file_path,
+                    InteractionScore.overall_score,
+                    InteractionScore.empathy_score,
+                    InteractionScore.policy_score,
+                    InteractionScore.resolution_score,
+                    InteractionScore.was_resolved,
+                    InteractionScore.avg_response_time_seconds,
+                )
+                .join(UserModel, UserModel.id == Interaction.agent_id)
+                .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
+                .where(Interaction.id == interaction_id)
+            )
+            return (await s.exec(stmt)).first()
+
+    async def _fetch_utterances():
+        async with AsyncSession(engine) as s:
+            stmt = (
+                select(Utterance)
+                .where(Utterance.interaction_id == interaction_id)
+                .order_by(Utterance.start_time_seconds)
+            )
+            return (await s.exec(stmt)).all()
+
+    async def _fetch_events():
+        async with AsyncSession(engine) as s:
+            stmt = (
+                select(EmotionEvent)
+                .where(EmotionEvent.interaction_id == interaction_id)
+                .order_by(EmotionEvent.jump_to_seconds)
+            )
+            return (await s.exec(stmt)).all()
+
+    async def _fetch_violations():
+        async with AsyncSession(engine) as s:
+            stmt = (
+                select(
+                    PolicyCompliance.id,
+                    PolicyCompliance.interaction_id,
+                    CompanyPolicy.policy_title,
+                    CompanyPolicy.policy_category,
+                    PolicyCompliance.llm_reasoning,
+                    PolicyCompliance.compliance_score,
+                    PolicyCompliance.evidence_text,
+                )
+                .join(CompanyPolicy, CompanyPolicy.id == PolicyCompliance.policy_id)
+                .where(
+                    PolicyCompliance.interaction_id == interaction_id,
+                    PolicyCompliance.is_compliant == False,  # noqa: E712
+                )
+            )
+            return (await s.exec(stmt)).all()
+
+    # Execute all 4 queries concurrently
+    row, utterances_rows, events_rows, viol_rows = await asyncio.gather(
+        _fetch_interaction(),
+        _fetch_utterances(),
+        _fetch_events(),
+        _fetch_violations()
     )
-    result = await session.exec(stmt)
-    row = result.first()
 
     if not row:
         raise HTTPException(status_code=404, detail="Interaction not found")
 
     mins = row.duration_seconds // 60
     secs = row.duration_seconds % 60
-
-    # ── Utterances ──
-    utt_result = await session.exec(
-        select(Utterance)
-        .where(Utterance.interaction_id == interaction_id)
-        .order_by(Utterance.start_time_seconds)
-    )
-    utterances_rows = utt_result.all()
-
-    utterances = [
-        {
-            "id": str(u.id),
-            "interactionId": str(u.interaction_id),
-            "speaker": u.speaker_role.value if u.speaker_role else "unknown",
-            "text": u.text or "",
-            "startTime": u.start_time_seconds,
-            "endTime": u.end_time_seconds,
-            "timestamp": f"{int(u.start_time_seconds) // 60:02d}:{int(u.start_time_seconds) % 60:02d}",
-            "emotion": u.emotion or "neutral",
-            "confidence": u.emotion_confidence or 0,
-        }
-        for u in utterances_rows
-    ]
-
-    # ── Emotion Events ──
-    event_result = await session.exec(
-        select(EmotionEvent)
-        .where(EmotionEvent.interaction_id == interaction_id)
-        .order_by(EmotionEvent.jump_to_seconds)
-    )
-    events_rows = event_result.all()
-
-    emotion_events = [
-        {
-            "id": str(e.id),
-            "interactionId": str(e.interaction_id),
-            "previousEmotion": e.previous_emotion or "neutral",
-            "newEmotion": e.new_emotion,
-            "fromEmotion": e.previous_emotion or "neutral",
-            "toEmotion": e.new_emotion,
-            "jumpToSeconds": e.jump_to_seconds,
-            "timestamp": f"{int(e.jump_to_seconds) // 60:02d}:{int(e.jump_to_seconds) % 60:02d}",
-            "confidenceScore": e.confidence_score or 0,
-            "delta": e.emotion_delta or 0,
-            "speaker": e.speaker_role.value if e.speaker_role else "customer",
-            "llmJustification": e.llm_justification or "",
-            "justification": e.llm_justification or "",
-        }
-        for e in events_rows
-    ]
-
-    # ── Policy Violations ──
-    viol_stmt = (
-        select(
-            PolicyCompliance.id,
-            PolicyCompliance.interaction_id,
-            CompanyPolicy.policy_title,
-            CompanyPolicy.policy_category,
-            PolicyCompliance.llm_reasoning,
-            PolicyCompliance.compliance_score,
-            PolicyCompliance.evidence_text,
-        )
-        .join(CompanyPolicy, CompanyPolicy.id == PolicyCompliance.policy_id)
-        .where(
-            PolicyCompliance.interaction_id == interaction_id,
-            PolicyCompliance.is_compliant == False,  # noqa: E712
-        )
-    )
-    viol_result = await session.exec(viol_stmt)
-    viol_rows = viol_result.all()
 
     policy_violations = [
         {
