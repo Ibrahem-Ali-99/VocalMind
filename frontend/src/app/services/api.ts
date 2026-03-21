@@ -6,9 +6,13 @@
 const API_BASE = "http://localhost:8000/api/v1";
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("vocalmind_token");
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...authHeader,
       ...options?.headers,
     },
     ...options,
@@ -175,6 +179,16 @@ export function getAgents(): Promise<AgentSummary[]> {
   return apiFetch<AgentSummary[]>("/agents");
 }
 
+export interface AgentPerformance {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export function getAgentPerformanceList(): Promise<AgentPerformance[]> {
+  return apiFetch<AgentPerformance[]>("/agents");
+}
+
 export interface AgentProfile {
   id: string;
   name: string;
@@ -233,3 +247,48 @@ export function sendAssistantQuery(text: string, mode: "chat" | "voice" = "chat"
 export function getAssistantHistory(): Promise<AssistantResponse[]> {
   return apiFetch<AssistantResponse[]>("/assistant/history");
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+const API_BASE_ROOT = "http://localhost:8000/api/v1";
+
+export async function loginWithEmail(email: string, password: string): Promise<{ access_token: string }> {
+  const formData = new URLSearchParams();
+  formData.append("username", email);
+  formData.append("password", password);
+
+  const res = await fetch(`${API_BASE_ROOT}/auth/login/access-token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error("Invalid email or password");
+  }
+
+  return res.json();
+}
+
+export async function loginWithGoogle(idToken: string): Promise<{ access_token: string }> {
+  return apiFetch<{ access_token: string }>(`/auth/google?token=${idToken}`, {
+    method: "POST",
+  });
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: "manager" | "agent";
+  agent_type?: "human" | "ai" | null;
+  organization_id: string;
+  is_active: boolean;
+}
+
+export async function getUserMe(): Promise<User> {
+  return apiFetch<User>("/users/me");
+}
+
