@@ -1,12 +1,16 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from app.llm_trigger.schemas import EmotionShiftAnalysis, ProcessAdherenceReport
 from app.llm_trigger.service import (
+    _build_rolling_windows,
     _detect_cross_modal_dissonance,
     _detect_topic,
+    _render_window_bundle,
     _trajectory_missing_steps,
+    _window_citations,
     analyze_emotion_shift,
     evaluate_process_adherence,
 )
@@ -48,11 +52,14 @@ async def test_analyze_emotion_shift_runs_llm_when_dissonance():
                 counterfactual_correction="If the agent had acknowledged frustration first, escalation may have dropped.",
             )
 
-    with patch("app.llm_trigger.service.build_emotion_shift_chain", return_value=_FakeEmotionChain()):
+    with (
+        patch("app.llm_trigger.service.infer_text_emotion_with_provider", return_value=("happy", 0.9)),
+        patch("app.llm_trigger.service.build_emotion_shift_chain", return_value=_FakeEmotionChain()),
+    ):
         result = await analyze_emotion_shift(
             agent_context="Agent context",
             customer_text="That is just perfect, thanks a lot.",
-            acoustic_emotion="anger",
+            acoustic_emotion="angry",
         )
 
     assert result.is_dissonance_detected is True
@@ -60,9 +67,14 @@ async def test_analyze_emotion_shift_runs_llm_when_dissonance():
 
 
 def test_detect_cross_modal_dissonance_heuristic():
-    assert _detect_cross_modal_dissonance("Everything is perfect, thanks.", "anger") is True
-    assert _detect_cross_modal_dissonance("This is unacceptable and terrible.", "happy") is True
-    assert _detect_cross_modal_dissonance("Thanks for solving that quickly.", "happy") is False
+    with patch("app.llm_trigger.service.infer_text_emotion_with_provider", return_value=("happy", 0.95)):
+        assert _detect_cross_modal_dissonance("Everything is perfect, thanks.", "angry") is True
+
+    with patch("app.llm_trigger.service.infer_text_emotion_with_provider", return_value=("angry", 0.92)):
+        assert _detect_cross_modal_dissonance("This is unacceptable and terrible.", "happy") is True
+
+    with patch("app.llm_trigger.service.infer_text_emotion_with_provider", return_value=("happy", 0.98)):
+        assert _detect_cross_modal_dissonance("Thanks for solving that quickly.", "happy") is False
 
 
 def test_topic_and_trajectory_mapping_helpers():
@@ -107,3 +119,31 @@ async def test_evaluate_process_adherence_merges_deterministic_and_llm_steps():
     assert result.detected_topic == "refund_request"
     assert 1 <= result.efficiency_score <= 10
     assert len(result.missing_sop_steps) >= 1
+    assert result.evidence_quotes
+    assert result.citations
+
+
+def test_build_rolling_windows_and_bundle_for_long_transcript():
+    utterances = [
+        SimpleNamespace(
+            speaker_role=SimpleNamespace(value="customer" if idx % 2 == 0 else "agent"),
+            text=f"turn {idx} text",
+            start_time_seconds=float(idx * 5),
+            end_time_seconds=float((idx * 5) + 4),
+        )
+        for idx in range(10)
+    ]
+
+    windows = _build_rolling_windows(utterances, window_turns=4, stride=2)
+
+    assert len(windows) == 4
+    assert windows[0].start_index == 0
+    assert windows[1].start_index == 2
+
+    bundle = _render_window_bundle(windows)
+    assert "[W0]" in bundle
+    assert "turns 0-3" in bundle
+
+    citations = _window_citations(windows)
+    assert citations
+    assert citations[0].source == "transcript"

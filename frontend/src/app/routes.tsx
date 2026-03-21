@@ -6,6 +6,7 @@ import { SessionInspector } from "./components/manager/SessionInspector";
 import { SessionDetail } from "./components/manager/SessionDetail";
 import { ManagerAssistant } from "./components/manager/ManagerAssistant";
 import { KnowledgeBase } from "./components/manager/KnowledgeBase";
+import { ManagerSettings } from "./components/manager/ManagerSettings";
 import { AgentDashboard } from "./components/agent/AgentDashboard";
 import { AgentCallDetail } from "./components/agent/AgentCallDetail";
 import { LandingPage } from "./components/LandingPage";
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
       { path: "inspector/:id", element: <SessionDetail /> },
       { path: "assistant", element: <ManagerAssistant /> },
       { path: "knowledge", element: <KnowledgeBase /> },
+      { path: "settings", element: <ManagerSettings /> },
     ],
   },
   {

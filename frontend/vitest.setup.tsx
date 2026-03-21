@@ -13,6 +13,7 @@ vi.mock('lucide-react', () => {
         'BookOpen', 'HelpCircle', 'Info', 'ChevronDown',
         'Mic', 'UserCircle', 'Shield', 'MessageSquare', 'Send', 'Activity',
         'LayoutDashboard', 'Settings', 'ChevronLeft', 'ChevronRight', 'Bell', 'Download',
+        'Loader2', 'Headphones', 'AlertCircle', 'ChevronUp', 'Quote',
     ]
     const mock: any = {}
     icons.forEach(icon => {

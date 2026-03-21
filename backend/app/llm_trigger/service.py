@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import re
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.emotion_fusion import EMOTION_NORMALIZATION, fuse_emotion_signals, infer_text_emotion_with_provider
 from app.llm_trigger.chains import (
     build_emotion_shift_chain,
     build_nli_policy_chain,
@@ -14,6 +16,7 @@ from app.llm_trigger.chains import (
 )
 from app.llm_trigger.retrieval import resolve_retrieved_sop
 from app.llm_trigger.schemas import (
+    EvidenceCitation,
     EmotionShiftAnalysis,
     InteractionLLMTriggerReport,
     NLIEvaluation,
@@ -24,35 +27,6 @@ from app.models.transcript import Transcript
 from app.models.utterance import Utterance
 from app.models.user import User
 
-
-POSITIVE_TEXT_WORDS = {
-    "good",
-    "great",
-    "perfect",
-    "excellent",
-    "thanks",
-    "thank",
-    "appreciate",
-    "happy",
-    "glad",
-    "awesome",
-}
-
-NEGATIVE_TEXT_WORDS = {
-    "bad",
-    "angry",
-    "upset",
-    "frustrated",
-    "terrible",
-    "awful",
-    "annoying",
-    "ridiculous",
-    "unacceptable",
-    "disappointed",
-}
-
-POSITIVE_ACOUSTIC = {"happy", "joy", "calm", "neutral", "satisfied"}
-NEGATIVE_ACOUSTIC = {"anger", "angry", "frustration", "frustrated", "disgust", "sad", "fear"}
 
 RESOLUTION_GRAPHS: dict[str, list[str]] = {
     "refund_request": [
@@ -86,33 +60,43 @@ RESOLUTION_GRAPHS: dict[str, list[str]] = {
 }
 
 
+ROLLING_WINDOW_TURNS = 8
+ROLLING_WINDOW_STRIDE = 4
+MAX_PROCESS_WINDOWS = 3
+
+
+@dataclass
+class TranscriptWindow:
+    window_id: str
+    start_index: int
+    end_index: int
+    start_seconds: float
+    end_seconds: float
+    text: str
+
+
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"[a-zA-Z]+", text.lower())
 
 
-def _text_sentiment_polarity(text: str) -> str:
-    tokens = _tokenize(text)
-    pos = sum(1 for token in tokens if token in POSITIVE_TEXT_WORDS)
-    neg = sum(1 for token in tokens if token in NEGATIVE_TEXT_WORDS)
-    if pos > neg:
-        return "positive"
-    if neg > pos:
-        return "negative"
-    return "neutral"
+def _normalize_acoustic_label(label: str) -> str:
+    base = (label or "neutral").strip().lower()
+    return EMOTION_NORMALIZATION.get(base, base or "neutral")
 
 
-def _acoustic_polarity(acoustic_emotion: str) -> str:
-    label = acoustic_emotion.strip().lower()
-    if label in POSITIVE_ACOUSTIC:
+def _emotion_polarity(label: str) -> str:
+    normalized = _normalize_acoustic_label(label)
+    if normalized in {"happy", "neutral"}:
         return "positive"
-    if label in NEGATIVE_ACOUSTIC:
+    if normalized in {"angry", "frustrated", "sad"}:
         return "negative"
     return "neutral"
 
 
 def _detect_cross_modal_dissonance(customer_text: str, acoustic_emotion: str) -> bool:
-    text_polarity = _text_sentiment_polarity(customer_text)
-    acoustic_polarity = _acoustic_polarity(acoustic_emotion)
+    text_emotion, _ = infer_text_emotion_with_provider(customer_text)
+    text_polarity = _emotion_polarity(text_emotion)
+    acoustic_polarity = _emotion_polarity(acoustic_emotion)
     if "!" in customer_text and acoustic_polarity == "negative" and text_polarity != "negative":
         return True
     return (text_polarity == "positive" and acoustic_polarity == "negative") or (
@@ -199,17 +183,183 @@ def _efficiency_score_heuristic(transcript_text: str, missing_steps: list[str], 
     return max(1, min(10, score))
 
 
+def _split_sentences(text: str) -> list[str]:
+    return [segment.strip() for segment in re.split(r"(?<=[.!?])\s+", text) if segment.strip()]
+
+
+def _quote_candidates(text: str, max_quotes: int = 3) -> list[str]:
+    if not text:
+        return []
+
+    sentences = _split_sentences(text)
+    quotes: list[str] = []
+    for sentence in sentences:
+        cleaned = sentence.strip().strip('"')
+        if len(cleaned.split()) < 4:
+            continue
+        quotes.append(cleaned)
+        if len(quotes) >= max_quotes:
+            break
+
+    if quotes:
+        return quotes
+
+    fallback = text.strip().replace("\n", " ")
+    return [fallback[:180]] if fallback else []
+
+
+def _format_timestamp(seconds: float) -> str:
+    seconds_int = max(0, int(seconds))
+    return f"{seconds_int // 60:02d}:{seconds_int % 60:02d}"
+
+
+def _window_text(utterances: list[Utterance]) -> str:
+    lines: list[str] = []
+    for utterance in utterances:
+        if not utterance.text:
+            continue
+        role = utterance.speaker_role.value if utterance.speaker_role else "unknown"
+        lines.append(f"{role}: {utterance.text}")
+    return "\n".join(lines)
+
+
+def _build_rolling_windows(
+    utterances: list[Utterance],
+    window_turns: int = ROLLING_WINDOW_TURNS,
+    stride: int = ROLLING_WINDOW_STRIDE,
+) -> list[TranscriptWindow]:
+    if not utterances:
+        return []
+
+    window_turns = max(1, window_turns)
+    stride = max(1, stride)
+    windows: list[TranscriptWindow] = []
+    index = 0
+
+    for start in range(0, len(utterances), stride):
+        end = min(start + window_turns, len(utterances))
+        chunk = utterances[start:end]
+        text = _window_text(chunk)
+        if not text.strip():
+            if end == len(utterances):
+                break
+            continue
+
+        first = chunk[0]
+        last = chunk[-1]
+        windows.append(
+            TranscriptWindow(
+                window_id=f"W{index}",
+                start_index=start,
+                end_index=end - 1,
+                start_seconds=first.start_time_seconds or 0.0,
+                end_seconds=last.end_time_seconds or last.start_time_seconds or 0.0,
+                text=text,
+            )
+        )
+        index += 1
+
+        if end >= len(utterances):
+            break
+
+    return windows
+
+
+def _count_role_lines(window_text: str, role: str) -> int:
+    prefix = f"{role.lower()}:"
+    return sum(1 for line in window_text.splitlines() if line.lower().startswith(prefix))
+
+
+def _emotion_window_score(window: TranscriptWindow) -> tuple[int, int, int]:
+    customer_lines = [
+        line.split(":", 1)[1].strip()
+        for line in window.text.splitlines()
+        if line.lower().startswith("customer:") and ":" in line
+    ]
+    joined_customer = " ".join(customer_lines)
+    text_emotion, text_confidence = infer_text_emotion_with_provider(joined_customer)
+    polarity_conflict_markers = int(round(text_confidence * 10))
+    if _emotion_polarity(text_emotion) == "negative":
+        polarity_conflict_markers += 2
+    if "!" in joined_customer:
+        polarity_conflict_markers += 1
+    return (
+        polarity_conflict_markers,
+        _count_role_lines(window.text, "customer"),
+        window.end_index,
+    )
+
+
+def _select_emotion_window(windows: list[TranscriptWindow]) -> TranscriptWindow | None:
+    if not windows:
+        return None
+    return max(windows, key=_emotion_window_score)
+
+
+def _select_process_windows(windows: list[TranscriptWindow], max_windows: int = MAX_PROCESS_WINDOWS) -> list[TranscriptWindow]:
+    if len(windows) <= max_windows:
+        return windows
+
+    selected_indices: list[int] = [0, len(windows) - 1]
+    if max_windows >= 3:
+        selected_indices.insert(1, len(windows) // 2)
+
+    selected = sorted(set(selected_indices))[:max_windows]
+    return [windows[idx] for idx in selected]
+
+
+def _render_window_bundle(windows: list[TranscriptWindow]) -> str:
+    if not windows:
+        return ""
+
+    blocks: list[str] = []
+    for window in windows:
+        blocks.append(
+            f"[{window.window_id}] turns {window.start_index}-{window.end_index} "
+            f"({_format_timestamp(window.start_seconds)}-{_format_timestamp(window.end_seconds)})\n"
+            f"{window.text}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _window_citations(windows: list[TranscriptWindow]) -> list[EvidenceCitation]:
+    citations: list[EvidenceCitation] = []
+    for window in windows:
+        snippet = window.text.splitlines()[0].strip() if window.text.splitlines() else ""
+        if not snippet:
+            continue
+        citations.append(
+            EvidenceCitation(
+                source="transcript",
+                speaker="unknown",
+                utterance_index=window.start_index,
+                quote=snippet[:220],
+            )
+        )
+    return citations
+
+
 async def analyze_emotion_shift(
     agent_context: str,
     customer_text: str,
     acoustic_emotion: str,
 ) -> EmotionShiftAnalysis:
     if not _detect_cross_modal_dissonance(customer_text, acoustic_emotion):
+        quotes = _quote_candidates(customer_text, max_quotes=2)
         return EmotionShiftAnalysis(
             is_dissonance_detected=False,
             dissonance_type="None",
             root_cause="No strong contradiction detected between text sentiment and acoustic emotion.",
             counterfactual_correction="If the agent had continued the same supportive approach, the interaction likely would have remained stable.",
+            evidence_quotes=quotes,
+            citations=[
+                EvidenceCitation(
+                    source="transcript",
+                    speaker="customer",
+                    quote=quote,
+                )
+                for quote in quotes
+            ],
         )
 
     chain = build_emotion_shift_chain()
@@ -223,6 +373,13 @@ async def analyze_emotion_shift(
     result.is_dissonance_detected = True
     if result.dissonance_type.strip().lower() == "none":
         result.dissonance_type = "Sarcasm"
+    if not result.evidence_quotes:
+        result.evidence_quotes = _quote_candidates(customer_text, max_quotes=3)
+    if not result.citations:
+        result.citations = [
+            EvidenceCitation(source="transcript", speaker="customer", quote=quote)
+            for quote in result.evidence_quotes
+        ]
     return result
 
 
@@ -276,6 +433,18 @@ async def evaluate_process_adherence(
         min(10, int(round((result.efficiency_score + deterministic_efficiency) / 2))),
     )
     result.is_resolved = result.is_resolved and deterministic_resolved
+    if not result.evidence_quotes:
+        result.evidence_quotes = _quote_candidates(transcript_text, max_quotes=3)
+    if not result.citations:
+        result.citations = [
+            EvidenceCitation(source="transcript", speaker="unknown", quote=quote)
+            for quote in result.evidence_quotes
+        ]
+        sop_quote = _quote_candidates(retrieved_sop, max_quotes=1)
+        if sop_quote:
+            result.citations.append(
+                EvidenceCitation(source="sop", speaker="system", quote=sop_quote[0])
+            )
     return result
 
 
@@ -284,12 +453,31 @@ async def run_nli_policy_check(
     ground_truth_policy: str,
 ) -> NLIEvaluation:
     chain = build_nli_policy_chain()
-    return await chain.ainvoke(
+    result = await chain.ainvoke(
         {
             "agent_statement": agent_statement,
             "ground_truth_policy": ground_truth_policy,
         }
     )
+    if not result.evidence_quotes:
+        result.evidence_quotes = _quote_candidates(
+            f"{agent_statement}\n{ground_truth_policy}",
+            max_quotes=3,
+        )
+    if not result.citations:
+        citations: list[EvidenceCitation] = []
+        statement_quote = _quote_candidates(agent_statement, max_quotes=1)
+        if statement_quote:
+            citations.append(
+                EvidenceCitation(source="transcript", speaker="agent", quote=statement_quote[0])
+            )
+        policy_quote = _quote_candidates(ground_truth_policy, max_quotes=1)
+        if policy_quote:
+            citations.append(
+                EvidenceCitation(source="policy", speaker="system", quote=policy_quote[0])
+            )
+        result.citations = citations
+    return result
 
 
 def _reconstruct_transcript(utterances: list[Utterance]) -> str:
@@ -306,7 +494,7 @@ def _derive_llm_inputs(
     utterances: list[Utterance],
     transcript_text: str,
     agent_name: str | None,
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str, str, str]:
     customer_text = ""
     acoustic_emotion = "neutral"
     agent_statement = ""
@@ -335,7 +523,11 @@ def _derive_llm_inputs(
         f"Agent name: {agent_label}. "
         "Analyze behavior in a customer-service quality assurance setting."
     )
-    return agent_context, customer_text, acoustic_emotion, agent_statement
+    fused = fuse_emotion_signals(
+        text=customer_text,
+        acoustic_emotion=acoustic_emotion,
+    )
+    return agent_context, customer_text, acoustic_emotion, fused.emotion, agent_statement
 
 
 async def evaluate_interaction_triggers(
@@ -374,11 +566,26 @@ async def evaluate_interaction_triggers(
     if not transcript_text:
         raise ValueError("No transcript text available for this interaction.")
 
-    agent_context, customer_text, acoustic_emotion, agent_statement = _derive_llm_inputs(
+    rolling_windows = _build_rolling_windows(utterances)
+    selected_emotion_window = _select_emotion_window(rolling_windows)
+    process_windows = _select_process_windows(rolling_windows)
+
+    emotion_context_text = selected_emotion_window.text if selected_emotion_window else transcript_text
+    process_context_text = _render_window_bundle(process_windows) or transcript_text
+
+    agent_context, customer_text, acoustic_emotion, fused_emotion, agent_statement = _derive_llm_inputs(
         utterances=utterances,
-        transcript_text=transcript_text,
+        transcript_text=emotion_context_text,
         agent_name=agent.name if agent else None,
     )
+
+    if selected_emotion_window:
+        agent_context += (
+            f" Focus window: {selected_emotion_window.window_id} "
+            f"(turns {selected_emotion_window.start_index}-{selected_emotion_window.end_index}, "
+            f"time {_format_timestamp(selected_emotion_window.start_seconds)}-"
+            f"{_format_timestamp(selected_emotion_window.end_seconds)})."
+        )
 
     try:
         sop_context = resolve_retrieved_sop(
@@ -398,10 +605,10 @@ async def evaluate_interaction_triggers(
     emotion_task = analyze_emotion_shift(
         agent_context=agent_context,
         customer_text=customer_text,
-        acoustic_emotion=acoustic_emotion,
+        acoustic_emotion=fused_emotion,
     )
     process_task = evaluate_process_adherence(
-        transcript_text=transcript_text,
+        transcript_text=process_context_text,
         retrieved_sop_from_pinecone=sop_context,
         org_filter=org_filter,
     )
@@ -416,6 +623,24 @@ async def evaluate_interaction_triggers(
         nli_task,
     )
 
+    window_citations = _window_citations(process_windows)
+    if window_citations:
+        if not process_adherence.citations:
+            process_adherence.citations = []
+        process_adherence.citations.extend(window_citations)
+
+    if selected_emotion_window:
+        emotion_window_quote = _quote_candidates(selected_emotion_window.text, max_quotes=1)
+        if emotion_window_quote:
+            emotion_shift.citations.append(
+                EvidenceCitation(
+                    source="transcript",
+                    speaker="unknown",
+                    utterance_index=selected_emotion_window.start_index,
+                    quote=emotion_window_quote[0],
+                )
+            )
+
     return InteractionLLMTriggerReport(
         interaction_id=interaction_id,
         emotion_shift=emotion_shift,
@@ -423,5 +648,6 @@ async def evaluate_interaction_triggers(
         nli_policy=nli_policy,
         derived_customer_text=customer_text,
         derived_acoustic_emotion=acoustic_emotion,
+        derived_fused_emotion=fused_emotion,
         derived_agent_statement=agent_statement,
     )

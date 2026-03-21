@@ -81,6 +81,8 @@ class DocumentIngestionPipeline:
         for name in [
             settings.qdrant.collection_parents,
             settings.qdrant.collection_children,
+            settings.qdrant.collection_sop_parents,
+            settings.qdrant.collection_sop_children,
         ]:
             if name in existing:
                 # Check existing dimension
@@ -345,7 +347,7 @@ class DocumentIngestionPipeline:
     def _process_file(self, pdf_path: str, org_name: str) -> dict | None:
         """Full 8-step pipeline for a single PDF file."""
         base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        output_dir = str(settings.PARSED_DIR)
+        output_dir = str(Path(settings.PARSED_DIR) / org_name / "parsed-docs")
         os.makedirs(output_dir, exist_ok=True)
 
         print(f"\n{'='*70}")
@@ -437,18 +439,27 @@ class DocumentIngestionPipeline:
         print(f"  Saved → {val_path}")
 
         # Step 8 — Upload to Qdrant
-        print("\n[Step 8] Uploading to Qdrant...")
-        n_parents = self._upload_chunks(
-            parent_chunks, settings.qdrant.collection_parents, "parent"
-        )
-        n_children = self._upload_chunks(
-            child_chunks, settings.qdrant.collection_children, "child"
-        )
+        if "sop-procedures" in str(pdf_path):
+            print("\n[Step 8] SOP Document detected. Uploading to SOP vector collections...")
+            n_parents = self._upload_chunks(
+                parent_chunks, settings.qdrant.collection_sop_parents, "parent"
+            )
+            n_children = self._upload_chunks(
+                child_chunks, settings.qdrant.collection_sop_children, "child"
+            )
+        else:
+            print("\n[Step 8] Uploading Policy to Qdrant...")
+            n_parents = self._upload_chunks(
+                parent_chunks, settings.qdrant.collection_parents, "parent"
+            )
+            n_children = self._upload_chunks(
+                child_chunks, settings.qdrant.collection_children, "child"
+            )
 
         print(f"\n{'─'*50}")
         print(f"  DONE: {base_name}")
-        print(f"  Parents  : {n_parents} → {settings.qdrant.collection_parents}")
-        print(f"  Children : {n_children} → {settings.qdrant.collection_children}")
+        print(f"  Parents  : {n_parents} → {'SOP Parents' if 'sop-procedures' in str(pdf_path) else 'Policy Parents'}")
+        print(f"  Children : {n_children} → {'SOP Children' if 'sop-procedures' in str(pdf_path) else 'Policy Children'}")
         print(f"  Warnings : {len(all_warnings)}")
         print(f"{'─'*50}")
 
@@ -462,8 +473,12 @@ class DocumentIngestionPipeline:
 
         Args:
             docs_dir: Override path to documents directory.
-                      Expected structure: docs_dir/org1/*.pdf, docs_dir/org2/*.pdf, ...
-                      Or flat: docs_dir/*.pdf (org set to folder name).
+                      Expected structure:
+                      - docs_dir/org1/policy-docs/*.pdf
+                      - docs_dir/org1/sop-procedures/*.pdf
+                      - docs_dir/org2/policy-docs/*.pdf
+                      - docs_dir/org2/sop-procedures/*.pdf
+                      Fallback (legacy): docs_dir/org1/*.pdf
             force:    If True, delete existing collections and re-create them.
 
         Returns:
@@ -476,6 +491,8 @@ class DocumentIngestionPipeline:
             for name in [
                 settings.qdrant.collection_parents,
                 settings.qdrant.collection_children,
+                settings.qdrant.collection_sop_parents,
+                settings.qdrant.collection_sop_children,
             ]:
                 try:
                     self.qdrant.delete_collection(name)
@@ -484,18 +501,24 @@ class DocumentIngestionPipeline:
                     pass
             self._ensure_collections()
 
-        # Discover PDFs — support org-based subfolders and flat layout
+        # Discover PDFs from org policy and SOP folders.
         pdf_files: list[tuple[str, str]] = []  # (pdf_path, org_name)
 
-        # Check subfolders first (org1/, org2/, etc.)
+        # Discover PDFs exclusively from org policy folders for RAG.
         for org_dir in sorted(docs_dir.iterdir()):
             if org_dir.is_dir():
-                for pdf in sorted(org_dir.glob("*.pdf")):
-                    pdf_files.append((str(pdf), org_dir.name))
+                folder_candidates = [org_dir / "policy-docs", org_dir / "sop-procedures"]
+                discovered_in_subdirs = False
+                for candidate in folder_candidates:
+                    if candidate.exists() and candidate.is_dir():
+                        discovered_in_subdirs = True
+                        for pdf in sorted(candidate.glob("*.pdf")):
+                            pdf_files.append((str(pdf), org_dir.name))
 
-        # Also check root-level PDFs (flat layout)
-        for pdf in sorted(docs_dir.glob("*.pdf")):
-            pdf_files.append((str(pdf), docs_dir.name))
+                # Fallback: also check org root for direct PDFs.
+                if not discovered_in_subdirs:
+                    for pdf in sorted(org_dir.glob("*.pdf")):
+                        pdf_files.append((str(pdf), org_dir.name))
 
         if not pdf_files:
             print(f"\nNo PDFs found in '{docs_dir}' (checked subfolders and root).")
@@ -523,7 +546,7 @@ class DocumentIngestionPipeline:
             "summaries": summaries,
         }
         os.makedirs(str(settings.PARSED_DIR), exist_ok=True)
-        report_path = settings.PARSED_DIR / "_pipeline_report.json"
+        report_path = Path(settings.PARSED_DIR) / "_pipeline_report.json"
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2)
 
