@@ -134,7 +134,7 @@ def _build_evidence_payload(
     }
 
 
-def _map_llm_trigger_report(report) -> dict:
+def _map_emotion_trigger_report(report) -> dict:
     def _citation_to_dict(citation) -> dict:
         return {
             "source": citation.source,
@@ -150,10 +150,34 @@ def _map_llm_trigger_report(report) -> dict:
             "isDissonanceDetected": report.emotion_shift.is_dissonance_detected,
             "dissonanceType": report.emotion_shift.dissonance_type,
             "rootCause": report.emotion_shift.root_cause,
+            "currentCustomerEmotion": report.emotion_shift.current_customer_emotion,
+            "currentEmotionReasoning": report.emotion_shift.current_emotion_reasoning,
             "counterfactualCorrection": report.emotion_shift.counterfactual_correction,
             "evidenceQuotes": report.emotion_shift.evidence_quotes,
             "citations": [_citation_to_dict(c) for c in report.emotion_shift.citations],
+            "insufficientEvidence": report.emotion_shift.insufficient_evidence,
         },
+        "derived": {
+            "customerText": report.derived_customer_text,
+            "acousticEmotion": report.derived_acoustic_emotion,
+            "fusedEmotion": report.derived_fused_emotion,
+            "agentStatement": report.derived_agent_statement,
+        },
+    }
+
+
+def _map_rag_compliance_report(report) -> dict:
+    def _citation_to_dict(citation) -> dict:
+        return {
+            "source": citation.source,
+            "speaker": citation.speaker,
+            "quote": citation.quote,
+            "utteranceIndex": citation.utterance_index,
+        }
+
+    return {
+        "available": True,
+        "interactionId": str(report.interaction_id),
         "processAdherence": {
             "detectedTopic": report.process_adherence.detected_topic,
             "isResolved": report.process_adherence.is_resolved,
@@ -162,19 +186,33 @@ def _map_llm_trigger_report(report) -> dict:
             "missingSopSteps": report.process_adherence.missing_sop_steps,
             "evidenceQuotes": report.process_adherence.evidence_quotes,
             "citations": [_citation_to_dict(c) for c in report.process_adherence.citations],
+            "insufficientEvidence": report.process_adherence.insufficient_evidence,
         },
         "nliPolicy": {
             "nliCategory": report.nli_policy.nli_category,
             "justification": report.nli_policy.justification,
             "evidenceQuotes": report.nli_policy.evidence_quotes,
             "citations": [_citation_to_dict(c) for c in report.nli_policy.citations],
+            "policyVersion": report.nli_policy.policy_version,
+            "policyEffectiveAt": report.nli_policy.policy_effective_at,
+            "policyCategory": report.nli_policy.policy_category,
+            "conflictResolutionApplied": report.nli_policy.conflict_resolution_applied,
+            "insufficientEvidence": report.nli_policy.insufficient_evidence,
         },
-        "derived": {
-            "customerText": report.derived_customer_text,
-            "acousticEmotion": report.derived_acoustic_emotion,
-            "fusedEmotion": report.derived_fused_emotion,
-            "agentStatement": report.derived_agent_statement,
-        },
+    }
+
+
+def _map_llm_trigger_report(report) -> dict:
+    # Backward-compatible envelope kept for existing frontend consumers.
+    emotion_payload = _map_emotion_trigger_report(report)
+    rag_payload = _map_rag_compliance_report(report)
+    return {
+        "available": True,
+        "interactionId": emotion_payload["interactionId"],
+        "emotionShift": emotion_payload["emotionShift"],
+        "processAdherence": rag_payload["processAdherence"],
+        "nliPolicy": rag_payload["nliPolicy"],
+        "derived": emotion_payload["derived"],
     }
 
 
@@ -414,6 +452,8 @@ async def get_interaction_detail(
     )
 
     llm_triggers = None
+    emotion_triggers = None
+    rag_compliance = None
     if include_llm_triggers:
         try:
             resolved_org_filter = await _resolve_llm_org_filter(
@@ -426,10 +466,25 @@ async def get_interaction_detail(
                 interaction_id=interaction_id,
                 org_filter=resolved_org_filter,
             )
+            emotion_triggers = _map_emotion_trigger_report(report)
+            rag_compliance = _map_rag_compliance_report(report)
+            emotion_triggers["orgFilter"] = resolved_org_filter
+            emotion_triggers["forcedRerun"] = llm_force_rerun
+            rag_compliance["orgFilter"] = resolved_org_filter
+            rag_compliance["forcedRerun"] = llm_force_rerun
+            rag_compliance["policyViolations"] = policy_violations
             llm_triggers = _map_llm_trigger_report(report)
             llm_triggers["orgFilter"] = resolved_org_filter
             llm_triggers["forcedRerun"] = llm_force_rerun
         except Exception as exc:
+            emotion_triggers = {
+                "available": False,
+                "error": str(exc),
+            }
+            rag_compliance = {
+                "available": False,
+                "error": str(exc),
+            }
             llm_triggers = {
                 "available": False,
                 "error": str(exc),
@@ -457,6 +512,8 @@ async def get_interaction_detail(
         },
         "utterances": utterances,
         "emotionComparison": emotion_comparison,
+        "ragCompliance": rag_compliance,
+        "emotionTriggers": emotion_triggers,
         "llmTriggers": llm_triggers,
         "emotionEvents": emotion_events,
         "policyViolations": policy_violations,

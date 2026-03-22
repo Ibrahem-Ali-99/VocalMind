@@ -85,6 +85,11 @@ export interface UtteranceData {
   timestamp: string;
   emotion: string;
   confidence: number;
+  textEmotion?: string;
+  textConfidence?: number;
+  fusedEmotion?: string;
+  fusedConfidence?: number;
+  fusionModel?: string;
 }
 
 export interface EmotionEventData {
@@ -164,9 +169,12 @@ export interface LLMEmotionShift {
   isDissonanceDetected: boolean;
   dissonanceType: string;
   rootCause: string;
+  currentCustomerEmotion?: string;
+  currentEmotionReasoning?: string;
   counterfactualCorrection: string;
   evidenceQuotes: string[];
   citations: LLMEvidenceCitation[];
+  insufficientEvidence?: boolean;
 }
 
 export interface LLMProcessAdherence {
@@ -177,6 +185,7 @@ export interface LLMProcessAdherence {
   missingSopSteps: string[];
   evidenceQuotes: string[];
   citations: LLMEvidenceCitation[];
+  insufficientEvidence?: boolean;
 }
 
 export interface LLMNliPolicy {
@@ -184,6 +193,11 @@ export interface LLMNliPolicy {
   justification: string;
   evidenceQuotes: string[];
   citations: LLMEvidenceCitation[];
+  policyVersion?: string | null;
+  policyEffectiveAt?: string | null;
+  policyCategory?: string | null;
+  conflictResolutionApplied?: boolean;
+  insufficientEvidence?: boolean;
 }
 
 export interface LLMTriggerReport {
@@ -203,12 +217,40 @@ export interface LLMTriggerReport {
   };
 }
 
+export interface EmotionTriggerReport {
+  available: boolean;
+  error?: string;
+  orgFilter?: string | null;
+  forcedRerun?: boolean;
+  interactionId?: string;
+  emotionShift?: LLMEmotionShift;
+  derived?: {
+    customerText: string;
+    acousticEmotion: string;
+    fusedEmotion: string;
+    agentStatement: string;
+  };
+}
+
+export interface RagComplianceReport {
+  available: boolean;
+  error?: string;
+  orgFilter?: string | null;
+  forcedRerun?: boolean;
+  interactionId?: string;
+  processAdherence?: LLMProcessAdherence;
+  nliPolicy?: LLMNliPolicy;
+  policyViolations?: PolicyViolationData[];
+}
+
 export interface InteractionDetail {
   interaction: InteractionDetailInfo;
   utterances: UtteranceData[];
   emotionEvents: EmotionEventData[];
   policyViolations: PolicyViolationData[];
   emotionComparison?: EmotionComparison;
+  ragCompliance?: RagComplianceReport | null;
+  emotionTriggers?: EmotionTriggerReport | null;
   llmTriggers?: LLMTriggerReport | null;
 }
 

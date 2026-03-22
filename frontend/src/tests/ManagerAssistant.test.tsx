@@ -33,8 +33,8 @@ describe('ManagerAssistant', () => {
             </MemoryRouter>
         )
 
-        expect(screen.getByText('Manager Assistant')).toBeInTheDocument()
-        expect(screen.getByText('Ask anything about your call centre · voice or text')).toBeInTheDocument()
+        expect(screen.getAllByText('Manager Assistant').length).toBeGreaterThan(0)
+        expect(screen.getByText('Enterprise Voice & Text Analysis')).toBeInTheDocument()
     })
 
     it('renders the initial assistant message', () => {

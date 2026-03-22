@@ -40,38 +40,38 @@
 }
 
 .dark {
-  --background: #0B0E14;
+  --background: #090B10;
   --foreground: #F9FAFB;
-  --card: #161B22;
+  --card: #10151E;
   --card-foreground: #F9FAFB;
-  --popover: #161B22;
+  --popover: #10151E;
   --popover-foreground: #F9FAFB;
   --primary: hsl(220, 90%, 56%);
   --primary-foreground: #FFFFFF;
-  --secondary: #1F2937;
+  --secondary: #171C26;
   --secondary-foreground: #F9FAFB;
-  --muted: #1F2937;
+  --muted: #171C26;
   --muted-foreground: #9CA3AF;
-  --accent: #1F2937;
+  --accent: #1B2230;
   --accent-foreground: #F9FAFB;
   --destructive: #991B1B;
   --destructive-foreground: #FFFFFF;
   --success: #065F46;
   --success-foreground: #FFFFFF;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: #0B0E14;
-  --input-background: #0B0E14;
+  --border: rgba(255, 255, 255, 0.14);
+  --input: #0F141D;
+  --input-background: #0F141D;
   --input-foreground: #F9FAFB;
   --ring: hsl(220, 90%, 56%);
   --label-foreground: #9CA3AF;
   --label-foreground: #9CA3AF;
-  --sidebar: #111827;
+  --sidebar: #0D1118;
   --sidebar-foreground: #F9FAFB;
   --sidebar-primary: hsl(220, 90%, 56%);
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #1F2937;
+  --sidebar-accent: #182132;
   --sidebar-accent-foreground: #F9FAFB;
-  --sidebar-border: #374151;
+  --sidebar-border: #2A3344;
 }
 
 @theme inline {

@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 from typing import Annotated
 import jwt
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import select
 from app.core.database import get_session
 from app.core.config import settings

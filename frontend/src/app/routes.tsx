@@ -14,23 +14,28 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./contexts/AuthContext";
 import { SettingsPage } from "./components/SettingsPage";
 import { UnderDevelopment } from "./components/ui/UnderDevelopment";
+import RouteErrorBoundary from "./components/ui/RouteErrorBoundary";
 import Login from "./pages/Login";
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <LandingPage />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: "/login",
     element: <Login />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         path: "/manager",
         element: <ManagerLayout />,
+        errorElement: <RouteErrorBoundary />,
         children: [
           { index: true, element: <ManagerDashboard /> },
           { path: "inspector", element: <SessionInspector /> },
@@ -44,6 +49,7 @@ export const router = createBrowserRouter([
       {
         path: "/agent",
         element: <AgentLayout />,
+        errorElement: <RouteErrorBoundary />,
         children: [
           { index: true, element: <AgentDashboard /> },
           { path: "calls", element: <UnderDevelopment /> },
@@ -57,5 +63,6 @@ export const router = createBrowserRouter([
   {
     path: "*",
     element: <UnderDevelopment />,
+    errorElement: <RouteErrorBoundary />,
   },
 ]);

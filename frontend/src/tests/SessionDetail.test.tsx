@@ -61,6 +61,14 @@ const detail = {
     },
     llmTriggers: {
         available: true,
+        emotionShift: {
+            isDissonanceDetected: true,
+            dissonanceType: 'Sarcasm',
+            rootCause: 'insufficient evidence',
+            counterfactualCorrection: 'If the agent had acknowledged frustration first, escalation might have reduced.',
+            evidenceQuotes: [],
+            citations: [],
+        },
         processAdherence: {
             detectedTopic: 'billing_issue',
             isResolved: false,
@@ -101,10 +109,11 @@ describe('SessionDetail', () => {
         getInteractionDetailMock.mockResolvedValue(detail)
         renderWithId()
 
-        expect(await screen.findByText('Automated Evaluation')).toBeInTheDocument()
-        expect(screen.getByText('Process Adherence')).toBeInTheDocument()
-        expect(screen.getByText('Policy Inference')).toBeInTheDocument()
-        expect(screen.getByText('billing_issue')).toBeInTheDocument()
-        expect(screen.getByText('Contradiction')).toBeInTheDocument()
+        expect(await screen.findByText('Emotion Trigger Reasoning')).toBeInTheDocument()
+        expect(screen.getByText('Automated Evaluation')).toBeInTheDocument()
+        expect(screen.getByText(/Process Adherence/)).toBeInTheDocument()
+        expect(screen.getByText(/Policy Inference/)).toBeInTheDocument()
+        expect(screen.getByText(/billing_issue/)).toBeInTheDocument()
+        expect(screen.getByText(/Contradiction/)).toBeInTheDocument()
     })
 })
