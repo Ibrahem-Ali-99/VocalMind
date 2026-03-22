@@ -123,15 +123,114 @@ export interface InteractionDetailInfo extends InteractionSummary {
   audioFilePath?: string | null;
 }
 
+export interface EmotionDistribution {
+  emotion: string;
+  count: number;
+  pct: number;
+}
+
+export interface EmotionComparison {
+  interactionId?: string;
+  totalUtterances: number;
+  distributions: {
+    acoustic: EmotionDistribution[];
+    text: EmotionDistribution[];
+    fused: EmotionDistribution[];
+  };
+  quality: {
+    acousticTextAgreementRate: number;
+    fusedMatchesAcousticRate: number;
+    fusedMatchesTextRate: number;
+    disagreementCount: number;
+  };
+  evidence?: {
+    emotionShiftQuotes?: string[];
+    processAdherenceQuotes?: string[];
+    nliPolicyQuotes?: string[];
+    citations?: Array<{
+      source: "acoustic" | "text" | "fused";
+      speaker?: string;
+      quote: string;
+      utteranceIndex?: number;
+    }>;
+  };
+}
+
+export interface LLMEvidenceCitation {
+  source: "transcript" | "policy" | "sop" | "acoustic";
+  speaker?: "customer" | "agent" | "system" | "unknown";
+  quote: string;
+  utteranceIndex?: number | null;
+}
+
+export interface LLMEmotionShift {
+  isDissonanceDetected: boolean;
+  dissonanceType: string;
+  rootCause: string;
+  counterfactualCorrection: string;
+  evidenceQuotes: string[];
+  citations: LLMEvidenceCitation[];
+}
+
+export interface LLMProcessAdherence {
+  detectedTopic: string;
+  isResolved: boolean;
+  efficiencyScore: number;
+  justification: string;
+  missingSopSteps: string[];
+  evidenceQuotes: string[];
+  citations: LLMEvidenceCitation[];
+}
+
+export interface LLMNliPolicy {
+  nliCategory: "Entailment" | "Benign Deviation" | "Contradiction" | "Policy Hallucination";
+  justification: string;
+  evidenceQuotes: string[];
+  citations: LLMEvidenceCitation[];
+}
+
+export interface LLMTriggerReport {
+  available: boolean;
+  error?: string;
+  orgFilter?: string | null;
+  forcedRerun?: boolean;
+  interactionId?: string;
+  emotionShift?: LLMEmotionShift;
+  processAdherence?: LLMProcessAdherence;
+  nliPolicy?: LLMNliPolicy;
+  derived?: {
+    customerText: string;
+    acousticEmotion: string;
+    fusedEmotion: string;
+    agentStatement: string;
+  };
+}
+
 export interface InteractionDetail {
   interaction: InteractionDetailInfo;
   utterances: UtteranceData[];
   emotionEvents: EmotionEventData[];
   policyViolations: PolicyViolationData[];
+  emotionComparison?: EmotionComparison;
+  llmTriggers?: LLMTriggerReport | null;
 }
 
-export function getInteractionDetail(id: string): Promise<InteractionDetail> {
-  return apiFetch<InteractionDetail>(`/interactions/${id}`);
+export function getInteractionDetail(
+  id: string,
+  options?: { includeLLMTriggers?: boolean; llmOrgFilter?: string; llmForceRerun?: boolean },
+): Promise<InteractionDetail> {
+  const params = new URLSearchParams();
+  if (options?.includeLLMTriggers) {
+    params.set("include_llm_triggers", "true");
+  }
+  if (options?.llmOrgFilter) {
+    params.set("llm_org_filter", options.llmOrgFilter);
+  }
+  if (options?.llmForceRerun) {
+    params.set("llm_force_rerun", "true");
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<InteractionDetail>(`/interactions/${id}${suffix}`);
 }
 
 export function getAudioUrl(interactionId: string): string {

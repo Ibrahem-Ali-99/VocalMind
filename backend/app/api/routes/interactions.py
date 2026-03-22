@@ -1,6 +1,7 @@
 # Interactions endpoints — list and detail views for the Session Inspector.
 # Performance: violation flags via LEFT JOIN subquery (no N+1 loops).
 
+from collections import Counter
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlmodel import select, func
@@ -8,20 +9,191 @@ from uuid import UUID
 import httpx
 import io
 import wave
-import asyncio
-from sqlmodel.ext.asyncio.session import AsyncSession
-from app.core.database import engine
 
 from app.api.deps import SessionDep
 from app.core.config import settings
+from app.core.emotion_fusion import fuse_emotion_signals
+from app.llm_trigger.service import evaluate_interaction_triggers
 from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
+from app.models.organization import Organization
 from app.models.utterance import Utterance
 from app.models.emotion_event import EmotionEvent
 from app.models.policy import CompanyPolicy, PolicyCompliance
 from app.models.user import User as UserModel
 
 router = APIRouter()
+
+
+def _compact_distribution(labels: list[str]) -> list[dict[str, float | int | str]]:
+    if not labels:
+        return []
+
+    counts = Counter(labels)
+    total = len(labels)
+    rows = [
+        {
+            "emotion": emotion,
+            "count": count,
+            "pct": round((count / total) * 100, 2),
+        }
+        for emotion, count in counts.items()
+    ]
+    rows.sort(key=lambda item: (-int(item["count"]), str(item["emotion"])))
+    return rows
+
+
+def _build_emotion_comparison_payload(utterances_rows: list[Utterance]) -> dict:
+    acoustic_labels: list[str] = []
+    text_labels: list[str] = []
+    fused_labels: list[str] = []
+
+    acoustic_text_agreements = 0
+    fused_acoustic_agreements = 0
+    fused_text_agreements = 0
+
+    for u in utterances_rows:
+        acoustic_emotion = u.emotion or "neutral"
+        acoustic_confidence = u.emotion_confidence or 0.0
+        fused = fuse_emotion_signals(
+            text=u.text or "",
+            acoustic_emotion=acoustic_emotion,
+            acoustic_confidence=acoustic_confidence,
+        )
+
+        acoustic_labels.append(acoustic_emotion)
+        text_labels.append(fused.text_emotion)
+        fused_labels.append(fused.emotion)
+
+        if fused.text_emotion == acoustic_emotion:
+            acoustic_text_agreements += 1
+        if fused.emotion == acoustic_emotion:
+            fused_acoustic_agreements += 1
+        if fused.emotion == fused.text_emotion:
+            fused_text_agreements += 1
+
+    total = len(utterances_rows)
+    if total == 0:
+        return {
+            "totalUtterances": 0,
+            "distributions": {
+                "acoustic": [],
+                "text": [],
+                "fused": [],
+            },
+            "quality": {
+                "acousticTextAgreementRate": 0.0,
+                "fusedMatchesAcousticRate": 0.0,
+                "fusedMatchesTextRate": 0.0,
+                "disagreementCount": 0,
+            },
+        }
+
+    disagreement_count = total - acoustic_text_agreements
+    return {
+        "totalUtterances": total,
+        "distributions": {
+            "acoustic": _compact_distribution(acoustic_labels),
+            "text": _compact_distribution(text_labels),
+            "fused": _compact_distribution(fused_labels),
+        },
+        "quality": {
+            "acousticTextAgreementRate": round((acoustic_text_agreements / total) * 100, 2),
+            "fusedMatchesAcousticRate": round((fused_acoustic_agreements / total) * 100, 2),
+            "fusedMatchesTextRate": round((fused_text_agreements / total) * 100, 2),
+            "disagreementCount": disagreement_count,
+        },
+    }
+
+
+def _trim_quote(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if len(text) <= 220:
+        return text
+    return text[:217].rstrip() + "..."
+
+
+def _build_evidence_payload(
+    utterances_rows: list[Utterance],
+    events_rows: list[EmotionEvent],
+    viol_rows: list,
+) -> dict:
+    """
+    Deprecated: Verbatim quotes and raw citations are now replaced by
+    narrative reasoning in the LLM Trigger evaluation cards.
+    """
+    return {
+        "emotionShiftQuotes": [],
+        "processAdherenceQuotes": [],
+        "nliPolicyQuotes": [],
+        "citations": [],
+    }
+
+
+def _map_llm_trigger_report(report) -> dict:
+    def _citation_to_dict(citation) -> dict:
+        return {
+            "source": citation.source,
+            "speaker": citation.speaker,
+            "quote": citation.quote,
+            "utteranceIndex": citation.utterance_index,
+        }
+
+    return {
+        "available": True,
+        "interactionId": str(report.interaction_id),
+        "emotionShift": {
+            "isDissonanceDetected": report.emotion_shift.is_dissonance_detected,
+            "dissonanceType": report.emotion_shift.dissonance_type,
+            "rootCause": report.emotion_shift.root_cause,
+            "counterfactualCorrection": report.emotion_shift.counterfactual_correction,
+            "evidenceQuotes": report.emotion_shift.evidence_quotes,
+            "citations": [_citation_to_dict(c) for c in report.emotion_shift.citations],
+        },
+        "processAdherence": {
+            "detectedTopic": report.process_adherence.detected_topic,
+            "isResolved": report.process_adherence.is_resolved,
+            "efficiencyScore": report.process_adherence.efficiency_score,
+            "justification": report.process_adherence.justification,
+            "missingSopSteps": report.process_adherence.missing_sop_steps,
+            "evidenceQuotes": report.process_adherence.evidence_quotes,
+            "citations": [_citation_to_dict(c) for c in report.process_adherence.citations],
+        },
+        "nliPolicy": {
+            "nliCategory": report.nli_policy.nli_category,
+            "justification": report.nli_policy.justification,
+            "evidenceQuotes": report.nli_policy.evidence_quotes,
+            "citations": [_citation_to_dict(c) for c in report.nli_policy.citations],
+        },
+        "derived": {
+            "customerText": report.derived_customer_text,
+            "acousticEmotion": report.derived_acoustic_emotion,
+            "fusedEmotion": report.derived_fused_emotion,
+            "agentStatement": report.derived_agent_statement,
+        },
+    }
+
+
+async def _resolve_llm_org_filter(
+    session: SessionDep,
+    interaction_id: UUID,
+    llm_org_filter: str | None,
+) -> str | None:
+    if llm_org_filter and llm_org_filter.strip():
+        return llm_org_filter.strip()
+
+    stmt = (
+        select(Organization.slug)
+        .join(Interaction, Interaction.organization_id == Organization.id)
+        .where(Interaction.id == interaction_id)
+    )
+    result = await session.exec(stmt)
+    org_slug = result.first()
+    return org_slug.strip() if isinstance(org_slug, str) and org_slug.strip() else None
 
 
 @router.get("")
@@ -95,80 +267,40 @@ async def list_interactions(session: SessionDep):
 
 
 @router.get("/{interaction_id}")
-async def get_interaction_detail(interaction_id: UUID):
-    """Get a single interaction with utterances, emotion events, and policy violations concurrently."""
+async def get_interaction_detail(
+    interaction_id: UUID,
+    session: SessionDep,
+    include_llm_triggers: bool = False,
+    llm_org_filter: str | None = None,
+    llm_force_rerun: bool = False,
+):
+    """Get a single interaction with utterances, emotion events, and policy violations."""
 
-    async def _fetch_interaction():
-        async with AsyncSession(engine) as s:
-            stmt = (
-                select(
-                    Interaction.id,
-                    Interaction.agent_id,
-                    UserModel.name.label("agent_name"),
-                    Interaction.interaction_date,
-                    Interaction.duration_seconds,
-                    Interaction.language_detected,
-                    Interaction.has_overlap,
-                    Interaction.processing_status,
-                    Interaction.audio_file_path,
-                    InteractionScore.overall_score,
-                    InteractionScore.empathy_score,
-                    InteractionScore.policy_score,
-                    InteractionScore.resolution_score,
-                    InteractionScore.was_resolved,
-                    InteractionScore.avg_response_time_seconds,
-                )
-                .join(UserModel, UserModel.id == Interaction.agent_id)
-                .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
-                .where(Interaction.id == interaction_id)
-            )
-            return (await s.exec(stmt)).first()
-
-    async def _fetch_utterances():
-        async with AsyncSession(engine) as s:
-            stmt = (
-                select(Utterance)
-                .where(Utterance.interaction_id == interaction_id)
-                .order_by(Utterance.start_time_seconds)
-            )
-            return (await s.exec(stmt)).all()
-
-    async def _fetch_events():
-        async with AsyncSession(engine) as s:
-            stmt = (
-                select(EmotionEvent)
-                .where(EmotionEvent.interaction_id == interaction_id)
-                .order_by(EmotionEvent.jump_to_seconds)
-            )
-            return (await s.exec(stmt)).all()
-
-    async def _fetch_violations():
-        async with AsyncSession(engine) as s:
-            stmt = (
-                select(
-                    PolicyCompliance.id,
-                    PolicyCompliance.interaction_id,
-                    CompanyPolicy.policy_title,
-                    CompanyPolicy.policy_category,
-                    PolicyCompliance.llm_reasoning,
-                    PolicyCompliance.compliance_score,
-                    PolicyCompliance.evidence_text,
-                )
-                .join(CompanyPolicy, CompanyPolicy.id == PolicyCompliance.policy_id)
-                .where(
-                    PolicyCompliance.interaction_id == interaction_id,
-                    PolicyCompliance.is_compliant == False,  # noqa: E712
-                )
-            )
-            return (await s.exec(stmt)).all()
-
-    # Execute all 4 queries concurrently
-    row, utterances_rows, events_rows, viol_rows = await asyncio.gather(
-        _fetch_interaction(),
-        _fetch_utterances(),
-        _fetch_events(),
-        _fetch_violations()
+    # ── Interaction + score ──
+    stmt = (
+        select(
+            Interaction.id,
+            Interaction.agent_id,
+            UserModel.name.label("agent_name"),
+            Interaction.interaction_date,
+            Interaction.duration_seconds,
+            Interaction.language_detected,
+            Interaction.has_overlap,
+            Interaction.processing_status,
+            Interaction.audio_file_path,
+            InteractionScore.overall_score,
+            InteractionScore.empathy_score,
+            InteractionScore.policy_score,
+            InteractionScore.resolution_score,
+            InteractionScore.was_resolved,
+            InteractionScore.avg_response_time_seconds,
+        )
+        .join(UserModel, UserModel.id == Interaction.agent_id)
+        .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
+        .where(Interaction.id == interaction_id)
     )
+    result = await session.exec(stmt)
+    row = result.first()
 
     if not row:
         raise HTTPException(status_code=404, detail="Interaction not found")
@@ -176,20 +308,49 @@ async def get_interaction_detail(interaction_id: UUID):
     mins = row.duration_seconds // 60
     secs = row.duration_seconds % 60
 
-    utterances = [
-        {
-            "id": str(u.id),
-            "interactionId": str(u.interaction_id),
-            "speaker": u.speaker_role.value if u.speaker_role else "unknown",
-            "text": u.text or "",
-            "startTime": u.start_time_seconds,
-            "endTime": u.end_time_seconds,
-            "timestamp": f"{int(u.start_time_seconds) // 60:02d}:{int(u.start_time_seconds) % 60:02d}",
-            "emotion": u.emotion or "neutral",
-            "confidence": u.emotion_confidence or 0,
-        }
-        for u in utterances_rows
-    ]
+    # ── Utterances ──
+    utt_result = await session.exec(
+        select(Utterance)
+        .where(Utterance.interaction_id == interaction_id)
+        .order_by(Utterance.start_time_seconds)
+    )
+    utterances_rows = utt_result.all()
+
+    utterances = []
+    for u in utterances_rows:
+        acoustic_emotion = u.emotion or "neutral"
+        acoustic_confidence = u.emotion_confidence or 0.0
+        fused = fuse_emotion_signals(
+            text=u.text or "",
+            acoustic_emotion=acoustic_emotion,
+            acoustic_confidence=acoustic_confidence,
+        )
+        utterances.append(
+            {
+                "id": str(u.id),
+                "interactionId": str(u.interaction_id),
+                "speaker": u.speaker_role.value if u.speaker_role else "unknown",
+                "text": u.text or "",
+                "startTime": u.start_time_seconds,
+                "endTime": u.end_time_seconds,
+                "timestamp": f"{int(u.start_time_seconds) // 60:02d}:{int(u.start_time_seconds) % 60:02d}",
+                "emotion": acoustic_emotion,
+                "confidence": acoustic_confidence,
+                "textEmotion": fused.text_emotion,
+                "textConfidence": fused.text_confidence,
+                "fusedEmotion": fused.emotion,
+                "fusedConfidence": fused.confidence,
+                "fusionModel": fused.model,
+            }
+        )
+
+    # ── Emotion Events ──
+    event_result = await session.exec(
+        select(EmotionEvent)
+        .where(EmotionEvent.interaction_id == interaction_id)
+        .order_by(EmotionEvent.jump_to_seconds)
+    )
+    events_rows = event_result.all()
 
     emotion_events = [
         {
@@ -210,6 +371,26 @@ async def get_interaction_detail(interaction_id: UUID):
         for e in events_rows
     ]
 
+    # ── Policy Violations ──
+    viol_stmt = (
+        select(
+            PolicyCompliance.id,
+            PolicyCompliance.interaction_id,
+            CompanyPolicy.policy_title,
+            CompanyPolicy.policy_category,
+            PolicyCompliance.llm_reasoning,
+            PolicyCompliance.compliance_score,
+            PolicyCompliance.evidence_text,
+        )
+        .join(CompanyPolicy, CompanyPolicy.id == PolicyCompliance.policy_id)
+        .where(
+            PolicyCompliance.interaction_id == interaction_id,
+            PolicyCompliance.is_compliant == False,  # noqa: E712
+        )
+    )
+    viol_result = await session.exec(viol_stmt)
+    viol_rows = viol_result.all()
+
     policy_violations = [
         {
             "id": str(v.id),
@@ -224,6 +405,35 @@ async def get_interaction_detail(interaction_id: UUID):
         }
         for v in viol_rows
     ]
+
+    emotion_comparison = _build_emotion_comparison_payload(utterances_rows)
+    emotion_comparison["evidence"] = _build_evidence_payload(
+        utterances_rows=utterances_rows,
+        events_rows=events_rows,
+        viol_rows=viol_rows,
+    )
+
+    llm_triggers = None
+    if include_llm_triggers:
+        try:
+            resolved_org_filter = await _resolve_llm_org_filter(
+                session=session,
+                interaction_id=interaction_id,
+                llm_org_filter=llm_org_filter,
+            )
+            report = await evaluate_interaction_triggers(
+                session=session,
+                interaction_id=interaction_id,
+                org_filter=resolved_org_filter,
+            )
+            llm_triggers = _map_llm_trigger_report(report)
+            llm_triggers["orgFilter"] = resolved_org_filter
+            llm_triggers["forcedRerun"] = llm_force_rerun
+        except Exception as exc:
+            llm_triggers = {
+                "available": False,
+                "error": str(exc),
+            }
 
     return {
         "interaction": {
@@ -246,9 +456,32 @@ async def get_interaction_detail(interaction_id: UUID):
             "audioFilePath": row.audio_file_path or None,
         },
         "utterances": utterances,
+        "emotionComparison": emotion_comparison,
+        "llmTriggers": llm_triggers,
         "emotionEvents": emotion_events,
         "policyViolations": policy_violations,
     }
+
+
+@router.get("/{interaction_id}/emotion-comparison")
+async def get_interaction_emotion_comparison(interaction_id: UUID, session: SessionDep):
+    """Return compact acoustic vs text vs fused emotion comparison for manager panel."""
+    interaction_result = await session.exec(
+        select(Interaction.id).where(Interaction.id == interaction_id)
+    )
+    if not interaction_result.first():
+        raise HTTPException(status_code=404, detail="Interaction not found")
+
+    utt_result = await session.exec(
+        select(Utterance)
+        .where(Utterance.interaction_id == interaction_id)
+        .order_by(Utterance.start_time_seconds)
+    )
+    utterances_rows = utt_result.all()
+
+    payload = _build_emotion_comparison_payload(utterances_rows)
+    payload["interactionId"] = str(interaction_id)
+    return payload
 
 
 def generate_dummy_wav(duration_seconds: int) -> bytes:

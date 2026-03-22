@@ -40,6 +40,27 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_KEY: str = ""
 
+    # LLM trigger (Groq + LangChain)
+    GROQ_API_KEY: str = ""
+    LLM_MODEL: str = "llama-3.3-70b-versatile"
+    LLM_TEMPERATURE: float = 0.0
+    LLM_MAX_TOKENS: int = 1024
+
+    # Qdrant / Embeddings retrieval for SOP context
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_COLLECTION_PARENTS: str = "vocalmind_parents"
+    QDRANT_COLLECTION_SOP_PARENTS: str = "vocalmind_sop_parents"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    EMBEDDING_MODEL: str = "snowflake-arctic-embed2"
+    EMBEDDING_TIMEOUT_SECONDS: float = 60.0
+    SOP_RETRIEVAL_TOP_K: int = 4
+    SOP_DOCS_ROOT: str = "sop-standards"
+    SOP_PARSED_DOCS_ROOT: str = "sop-standards"
+
+    # Text emotion model used in text+acoustic fusion
+    TEXT_EMOTION_PROVIDER: str = "rule_based"  # rule_based | hf_transformers
+    TEXT_EMOTION_MODEL: str = "j-hartmann/emotion-english-distilroberta-base"
+
     # OpenAI API Key for Assistant
     OPENAI_API_KEY: str = ""
 
