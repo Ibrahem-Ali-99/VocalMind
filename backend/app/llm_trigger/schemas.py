@@ -59,6 +59,18 @@ class EmotionShiftAnalysis(BaseModel):
         default_factory=list,
         description="Structured evidence citations supporting the analysis.",
     )
+    current_customer_emotion: str = Field(
+        default="neutral",
+        description="Current dominant customer emotion label inferred for this interaction slice.",
+    )
+    current_emotion_reasoning: str = Field(
+        default="insufficient evidence",
+        description="Reasoning for why the customer appears in the current emotional state.",
+    )
+    insufficient_evidence: bool = Field(
+        default=False,
+        description="True when the analysis had to be downgraded due to missing or unmapped evidence.",
+    )
 
     @field_validator("counterfactual_correction", mode="before")
     @classmethod
@@ -74,6 +86,12 @@ class EmotionShiftAnalysis(BaseModel):
     @classmethod
     def normalize_emotion_evidence_quotes(cls, value: list[str] | str | None) -> list[str]:
         return _normalize_quote_list(value)
+
+    @field_validator("root_cause", mode="before")
+    @classmethod
+    def enforce_root_cause_fallback(cls, value: str | None) -> str:
+        text = (value or "").strip()
+        return text or "insufficient evidence"
 
 
 class ProcessAdherenceReport(BaseModel):
@@ -98,6 +116,10 @@ class ProcessAdherenceReport(BaseModel):
     citations: list[EvidenceCitation] = Field(
         default_factory=list,
         description="Structured citations mapped to transcript and SOP evidence.",
+    )
+    insufficient_evidence: bool = Field(
+        default=False,
+        description="True when process verdict could not be grounded to transcript evidence.",
     )
 
     @field_validator("evidence_quotes", mode="before")
@@ -124,6 +146,26 @@ class NLIEvaluation(BaseModel):
     citations: list[EvidenceCitation] = Field(
         default_factory=list,
         description="Structured policy and transcript citations used for the NLI decision.",
+    )
+    policy_version: str | None = Field(
+        default=None,
+        description="Version token for the policy used during evaluation.",
+    )
+    policy_effective_at: str | None = Field(
+        default=None,
+        description="Effective timestamp metadata for the selected policy version.",
+    )
+    policy_category: str | None = Field(
+        default=None,
+        description="Category of the selected policy document.",
+    )
+    conflict_resolution_applied: bool = Field(
+        default=False,
+        description="True when policy conflict resolution rules were applied.",
+    )
+    insufficient_evidence: bool = Field(
+        default=False,
+        description="True when NLI verdict had insufficient policy-grounded evidence.",
     )
 
     @field_validator("evidence_quotes", mode="before")

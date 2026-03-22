@@ -42,6 +42,14 @@ vi.mock("../app/services/api", () => {
     },
     llmTriggers: {
       available: true,
+      emotionShift: {
+        isDissonanceDetected: true,
+        dissonanceType: "Sarcasm",
+        rootCause: "insufficient evidence",
+        counterfactualCorrection: "If the agent had acknowledged the customer concern first, escalation might have dropped.",
+        evidenceQuotes: [],
+        citations: [],
+      },
       processAdherence: {
         detectedTopic: "billing_issue",
         isResolved: false,
@@ -76,9 +84,9 @@ describe("LLM trigger sections", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Automated Evaluation")).toBeInTheDocument();
-    expect(screen.getByText("billing_issue")).toBeInTheDocument();
-    expect(screen.getByText("Contradiction")).toBeInTheDocument();
+    expect(await screen.findByText("Emotion Trigger Reasoning")).toBeInTheDocument();
+    expect(screen.getByText(/billing_issue/)).toBeInTheDocument();
+    expect(screen.getByText(/Contradiction/)).toBeInTheDocument();
   });
 
   it("renders agent llm coaching section", async () => {

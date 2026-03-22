@@ -64,7 +64,14 @@ def build_emotion_shift_prompt() -> ChatPromptTemplate:
                 "Detect cross-modal contradictions between text and acoustic emotion. "
                 "Ground all claims in the provided text and keep output valid JSON only. "
                 "Every claim must cite verbatim evidence in double quotes. "
-                "Always populate both evidence_quotes and citations fields.\n"
+                "Always populate both evidence_quotes and citations fields.\n\n"
+                "DOCUMENT GOVERNANCE:\n"
+                "- Policy documents define mandatory rules and compliance.\n"
+                "- SOPs define operational procedures.\n"
+                "- When policy and SOP appear to conflict, policy always takes precedence.\n"
+                "- Do NOT treat policy or SOP as free-form knowledge.\n"
+                "- Use them ONLY as supporting context when the transcript clearly shows a procedural issue explaining an emotion shift.\n"
+                "- If evidence is insufficient to explain a shift, return 'insufficient evidence' in root_cause.\n"
                 "{format_instructions}",
             ),
             (
@@ -76,7 +83,7 @@ def build_emotion_shift_prompt() -> ChatPromptTemplate:
                 "Task:\n"
                 "1) Detect if text sentiment and acoustic emotion are dissonant.\n"
                 "2) If dissonant, classify type (e.g., Sarcasm, Passive-Aggression).\n"
-                "3) Explain root cause grounded in transcript text.\n"
+                "3) Explain root cause grounded in transcript text. If no clear cause, return 'insufficient evidence'.\n"
                 "4) Provide a correction sentence that starts exactly with 'If the agent had...'.\n"
                 "5) Include evidence_quotes as verbatim excerpts from customer text.\n"
                 "6) Include citations with source, speaker, quote, and utterance_index when known.",
@@ -94,7 +101,13 @@ def build_process_adherence_prompt() -> ChatPromptTemplate:
                 "Map a transcript to the SOP and score process adherence quality, not just outcome. "
                 "All justifications must include verbatim quote-grounded evidence. "
                 "Always populate evidence_quotes and citations. "
-                "Return strict JSON only.\n{format_instructions}",
+                "Return strict JSON only.\n\n"
+                "DOCUMENT GOVERNANCE:\n"
+                "- SOP documents define the operational procedure.\n"
+                "- Policy constraints override SOP when both are present.\n"
+                "- Evaluate process adherence, escalation flow, and verification steps based on SOP.\n"
+                "- If evidence is insufficient to verify a step, mark as missing or return 'insufficient evidence' in justification.\n"
+                "{format_instructions}",
             ),
             (
                 "human",
@@ -126,7 +139,11 @@ def build_nli_policy_prompt() -> ChatPromptTemplate:
                 "- Entailment: fully supported by policy.\n"
                 "- Benign Deviation: empathy/small talk not in policy and not conflicting.\n"
                 "- Contradiction: statement violates policy.\n"
-                "- Policy Hallucination: invented rule not present in policy.\n"
+                "- Policy Hallucination: invented rule not present in policy.\n\n"
+                "DOCUMENT GOVERNANCE:\n"
+                "- Policy documents define mandatory rules and compliance requirements.\n"
+                "- Policy documents are the PRIMARY source of truth.\n"
+                "- If evidence is insufficient to confirm a match or violation, return 'insufficient evidence' in justification.\n"
                 "Justification must be quote-grounded with exact excerpts. "
                 "Always include evidence_quotes and citations.\n"
                 "Return strict JSON only.\n{format_instructions}",
