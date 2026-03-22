@@ -11,7 +11,7 @@ describe("Session Inspector", () => {
 
   it("displays search input and filter controls", () => {
     cy.get('input[placeholder="Search agent, date, ID…"]').should("exist");
-    cy.get("select").should("contain", "All Agents");
+    cy.get("select").find("option").contains("All Agents");
     cy.contains("button", "Score ↓");
     cy.contains("button", "Date");
     cy.contains("button", "Duration");
