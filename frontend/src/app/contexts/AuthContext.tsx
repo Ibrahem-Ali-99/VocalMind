@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { loginWithEmail, loginWithGoogle, getUserMe, User } from "../services/api";
+import { loginWithEmail, loginWithGoogle, getUserMe, logoutUser, User } from "../services/api";
 
 interface AuthContextType {
   token: string | null;
@@ -19,64 +19,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUser = async (storedToken: string) => {
+    const fetchUser = async () => {
       try {
-        const payload = JSON.parse(atob(storedToken.split(".")[1]));
-        const isExpired = payload.exp ? Date.now() >= payload.exp * 1000 : false;
-        
-        if (isExpired) {
-          localStorage.removeItem("vocalmind_token");
-          setToken(null);
-          setUser(null);
-        } else {
-          setToken(storedToken);
-          // Fetch full user profile since we have a valid token
-          try {
-            const userData = await getUserMe();
-            setUser(userData);
-          } catch (e) {
-            // Fallback if API fails
-            setUser({ email: payload.sub || "user@vocalmind.ai" } as any);
-          }
-        }
+        const userData = await getUserMe();
+        setUser(userData);
+        setToken("cookie-based");
       } catch (e) {
-        console.error("Auth initialization error:", e);
+        setUser(null);
+        setToken(null);
       } finally {
         setIsLoading(false);
       }
     };
-
-    const storedToken = localStorage.getItem("vocalmind_token");
-    if (storedToken && storedToken !== "null" && storedToken !== "undefined") {
-      fetchUser(storedToken);
-    } else {
-      setIsLoading(false);
-    }
+    fetchUser();
   }, []);
 
   const login = async (email: string, pass: string) => {
-    const { access_token } = await loginWithEmail(email, pass);
-    localStorage.setItem("vocalmind_token", access_token);
-    setToken(access_token);
-    
-    // Fetch full user profile after login
+    await loginWithEmail(email, pass);
     const userData = await getUserMe();
     setUser(userData);
+    setToken("cookie-based");
   };
 
   const googleLogin = async (idToken: string) => {
-    const { access_token } = await loginWithGoogle(idToken);
-    localStorage.setItem("vocalmind_token", access_token);
-    setToken(access_token);
-    
+    await loginWithGoogle(idToken);
     const userData = await getUserMe();
     setUser(userData);
+    setToken("cookie-based");
   };
 
-  const logout = () => {
-    localStorage.removeItem("vocalmind_token");
+  const logout = async () => {
+    try {
+      await logoutUser();
+    } catch (e) {
+      console.error("Logout error:", e);
+    }
     setToken(null);
     setUser(null);
+    window.location.href = "/login";
   };
 
   return (

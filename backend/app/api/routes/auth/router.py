@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import select
@@ -68,6 +68,7 @@ def _create_token(user_id: Any) -> dict:
 
 @router.post("/login/access-token", response_model=Token)
 async def login_access_token(
+    response: Response,
     session: SessionDep,
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Any:
@@ -86,13 +87,22 @@ async def login_access_token(
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
-    return _create_token(user.id)
+    token_data = _create_token(user.id)
+    response.set_cookie(
+        key="vocalmind_token",
+        value=token_data["access_token"],
+        httponly=True,
+        secure=False,  # Set to True in production with HTTPS
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+    return token_data
 
 
 # ---------- Google OAuth (direct ID-token from frontend) ----------
 
 @router.post("/google", response_model=Token)
-async def google_auth(token: str, session: SessionDep) -> Any:
+async def google_auth(token: str, response: Response, session: SessionDep) -> Any:
     """Google Login: Verify Google ID token and return access token."""
     google_user = verify_google_token(token)
     if not google_user:
@@ -102,7 +112,16 @@ async def google_auth(token: str, session: SessionDep) -> Any:
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
-    return _create_token(user.id)
+    token_data = _create_token(user.id)
+    response.set_cookie(
+        key="vocalmind_token",
+        value=token_data["access_token"],
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+    return token_data
 
 
 # ---------- Google OAuth (redirect flow) ----------
@@ -157,4 +176,19 @@ async def google_callback(code: str, state: str, session: SessionDep):
     token = security.create_access_token(
         user.id, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    return RedirectResponse(url=f"{settings.FRONTEND_URL}/login/success?token={token}")
+    response = RedirectResponse(url=f"{settings.FRONTEND_URL}/login/success")
+    response.set_cookie(
+        key="vocalmind_token",
+        value=token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+    return response
+
+@router.post("/logout")
+async def logout(response: Response):
+    """Log out by clearing the HttpOnly cookie."""
+    response.delete_cookie(key="vocalmind_token", httponly=True, samesite="lax")
+    return {"message": "Logged out successfully"}

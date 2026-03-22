@@ -6,13 +6,10 @@
 const API_BASE = "http://localhost:8000/api/v1";
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("vocalmind_token");
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
-
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...authHeader,
       ...options?.headers,
     },
     ...options,
@@ -358,6 +355,7 @@ export async function loginWithEmail(email: string, password: string): Promise<{
 
   const res = await fetch(`${API_BASE_ROOT}/auth/login/access-token`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
@@ -389,5 +387,9 @@ export interface User {
 
 export async function getUserMe(): Promise<User> {
   return apiFetch<User>("/users/me");
+}
+
+export async function logoutUser(): Promise<void> {
+  await apiFetch("/auth/logout", { method: "POST" });
 }
 

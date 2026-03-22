@@ -27,11 +27,22 @@ def get_supabase() -> Client:
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
 
-reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/auth/login/access-token"
-)
+from fastapi import Request
 
-TokenDep = Annotated[str, Depends(reusable_oauth2)]
+def get_token(request: Request) -> str:
+    token = request.cookies.get("vocalmind_token")
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    return token
+
+TokenDep = Annotated[str, Depends(get_token)]
 
 async def get_current_user(session: SessionDep, token: TokenDep) -> User:
     try:

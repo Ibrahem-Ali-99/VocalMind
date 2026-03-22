@@ -1,6 +1,8 @@
 import React from "react";
+import { useAuth } from "../contexts/AuthContext";
 
 export function SettingsPage() {
+  const { user } = useAuth();
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="mb-8">
@@ -15,13 +17,13 @@ export function SettingsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Full Name</label>
               <div className="p-2.5 bg-background border border-border rounded-lg text-foreground">
-                Ibrahem Ali
+                {user?.name || "Loading..."}
               </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Email Address</label>
               <div className="p-2.5 bg-background border border-border rounded-lg text-foreground">
-                ibrahem@vocalmind.ai
+                {user?.email || "Loading..."}
               </div>
             </div>
           </div>

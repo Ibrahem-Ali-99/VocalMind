@@ -151,13 +151,13 @@ export function AgentDashboard() {
         {/* Calls Today */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
-            <h2 className="text-[13px] font-bold text-muted-foreground">Calls Today</h2>
+            <h2 className="text-[13px] font-bold text-muted-foreground">Total Calls</h2>
             <div className="w-9 h-9 bg-success/10 rounded-xl flex items-center justify-center">
               <Phone className="w-[18px] h-[18px] text-success" />
             </div>
           </div>
           <div className="text-[40px] leading-none text-success mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
-            8
+            {data.totalCalls}
           </div>
           <div className="text-[12px] text-muted-foreground">
             processed calls
