@@ -6,7 +6,7 @@ Test strategy:
 2. Unit tests for IntentResolver — mock Gemini directly, no HTTP or DB needed
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 
@@ -43,14 +43,12 @@ async def test_resolve_sql_returns_none_for_unknown():
     from app.api.routes.assistant import IntentResolver
 
     resolver = IntentResolver()
-    mock_response = MagicMock()
-    mock_response.text = "UNKNOWN"
 
     with patch.object(
-        resolver._client.aio.models,
-        "generate_content",
+        resolver,
+        "_generate_content_with_fallback",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value="UNKNOWN",
     ):
         result = await resolver.resolve_sql("What is the weather?", UUID("00000000-0000-0000-0000-000000000001"))
         assert result is None
@@ -62,14 +60,12 @@ async def test_resolve_sql_strips_markdown_fences():
     from app.api.routes.assistant import IntentResolver
 
     resolver = IntentResolver()
-    mock_response = MagicMock()
-    mock_response.text = "```sql\nSELECT 1\n```"
 
     with patch.object(
-        resolver._client.aio.models,
-        "generate_content",
+        resolver,
+        "_generate_content_with_fallback",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value="```sql\nSELECT 1\n```",
     ):
         result = await resolver.resolve_sql("Simple query", UUID("00000000-0000-0000-0000-000000000001"))
         assert result == "SELECT 1"
@@ -88,14 +84,11 @@ async def test_resolve_sql_rejects_unsafe_statements():
         "UPDATE users SET role='admin'",
         "INSERT INTO users VALUES (1, 'hacker')",
     ]:
-        mock_response = MagicMock()
-        mock_response.text = unsafe_sql
-
         with patch.object(
-            resolver._client.aio.models,
-            "generate_content",
+            resolver,
+            "_generate_content_with_fallback",
             new_callable=AsyncMock,
-            return_value=mock_response,
+            return_value=unsafe_sql,
         ):
             result = await resolver.resolve_sql("bad intent", UUID("00000000-0000-0000-0000-000000000001"))
             assert result is None, f"Should have rejected: {unsafe_sql}"
@@ -108,14 +101,12 @@ async def test_resolve_sql_returns_valid_select():
 
     resolver = IntentResolver()
     valid_sql = "SELECT name FROM users WHERE role = 'agent' LIMIT 5"
-    mock_response = MagicMock()
-    mock_response.text = valid_sql
 
     with patch.object(
-        resolver._client.aio.models,
-        "generate_content",
+        resolver,
+        "_generate_content_with_fallback",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value=valid_sql,
     ):
         result = await resolver.resolve_sql("List agents", UUID("00000000-0000-0000-0000-000000000001"))
         assert result == valid_sql
@@ -128,14 +119,12 @@ async def test_synthesize_answer_returns_string():
 
     resolver = IntentResolver()
     expected_answer = "There are 3 top agents: Alice, Bob, and Carol."
-    mock_response = MagicMock()
-    mock_response.text = expected_answer
 
     with patch.object(
-        resolver._client.aio.models,
-        "generate_content",
+        resolver,
+        "_generate_content_with_fallback",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value=expected_answer,
     ):
         result = await resolver.synthesize_answer(
             "Who are the top agents?",
@@ -153,8 +142,8 @@ async def test_synthesize_answer_fallback_on_exception():
     resolver = IntentResolver()
 
     with patch.object(
-        resolver._client.aio.models,
-        "generate_content",
+        resolver,
+        "_generate_content_with_fallback",
         new_callable=AsyncMock,
         side_effect=Exception("API error"),
     ):
@@ -173,8 +162,8 @@ async def test_synthesize_answer_fallback_on_empty_rows():
     resolver = IntentResolver()
 
     with patch.object(
-        resolver._client.aio.models,
-        "generate_content",
+        resolver,
+        "_generate_content_with_fallback",
         new_callable=AsyncMock,
         side_effect=Exception("API error"),
     ):

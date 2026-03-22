@@ -24,6 +24,13 @@ A robust Retrieval-Augmented Generation (RAG) system for policy document analysi
 - **Detailed Logging**: All queries and evaluations are logged as JSON in `logs/`
 - **Evaluation Suite**: Automated scoring and reporting for compliance and answer accuracy
 
+## Documentation
+
+Team-facing RAG documentation is maintained in:
+
+1. `docs/rag/RAG_OVERVIEW.md`
+2. `docs/rag/INGESTION_PIPELINE.md`
+
 ---
 
 ## Setup
@@ -42,19 +49,18 @@ A robust Retrieval-Augmented Generation (RAG) system for policy document analysi
 		 - `QDRANT_URL` (Qdrant vector DB, default: `http://localhost:6333`)
 		 - `OLLAMA_BASE_URL` (Ollama embeddings, default: `http://localhost:11434`)
 
-3. **Prepare Policy Documents**
-	 - Place PDFs in `docs/`:
+3. **Prepare Policy/SOP Documents**
+	 - Place PDFs under `sop-standards/`:
 		 ```
-		 docs/
-		 ├── org1/           # one sub-folder per organization
-		 │   ├── policy_a.pdf
-		 │   └── policy_b.pdf
-		 ├── org2/
-		 │   └── handbook.pdf
-		 └── ...
+		 sop-standards/
+		 └── org1/
+			 ├── policy-docs/
+			 │   ├── policy_a.pdf
+			 │   └── policy_b.pdf
+			 └── sop-procedures/
+				 └── sop_a.pdf
 		 ```
-	 - PDFs in subfolders are tagged with the folder name as `organization` metadata.
-	 - PDFs directly in `docs/` are tagged as `organization = "default"`.
+	 - Parsed markdown outputs are written to `sop-standards/{org}/parsed-docs/`.
 
 4. **Start Services**
 	 - Ensure Qdrant and Ollama are running (see their docs for Docker or local start).
@@ -114,7 +120,7 @@ python main.py --check-answer --question "Refund window?" --answer "30 days" --o
 
 ## Notes
 
-- The ingestion pipeline discovers PDFs recursively in `docs/`.
+- The ingestion pipeline discovers PDFs in `sop-standards/{org}/policy-docs` and `sop-standards/{org}/sop-procedures`.
 - Per-organization filtering is enabled via the `--org` flag.
 - For compliance and answer checks, replace the quoted text with your own queries or transcripts.
 

@@ -47,6 +47,7 @@ class QdrantConfig(BaseSettings):
     url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
     collection_parents: str = "vocalmind_parents"
     collection_children: str = "vocalmind_children"
+    collection_sop_parents: str = "vocalmind_sop_parents"
 
 
 class ParentChunkingConfig(BaseSettings):
@@ -82,13 +83,13 @@ class Settings(BaseSettings):
     )
 
     # Paths
-    BASE_DIR: Path = Path(__file__).parent
+    BASE_DIR: Path = Path(__file__).resolve().parent
     DOCS_DIR: Path = Field(
-        default_factory=lambda: Path(__file__).parent / "docs",
+        default_factory=lambda: Path(__file__).resolve().parent.parent.parent / "sop-standards",
         alias="DOCS_DIR",
     )
     PARSED_DIR: Path = Field(
-        default_factory=lambda: Path(__file__).parent / "parsed_docs",
+        default_factory=lambda: Path(__file__).resolve().parent.parent.parent / "sop-standards",
         alias="PARSED_DIR",
     )
 

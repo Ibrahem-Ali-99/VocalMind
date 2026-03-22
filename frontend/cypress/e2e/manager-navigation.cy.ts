@@ -35,14 +35,14 @@ describe("Manager Portal Navigation", () => {
     // Sidebar starts expanded — nav labels visible
     cy.contains("span", "Dashboard").should("be.visible");
 
-    // Click collapse button (chevron-left)
-    cy.get("button").find("svg.lucide-chevron-left").click();
+    // Click collapse button (Menu icon)
+    cy.get('button[title="Collapse sidebar"]').click();
 
     // After collapse, nav labels should be hidden
     cy.contains("span", "Dashboard").should("not.exist");
 
-    // Click expand button (chevron-right)
-    cy.get("button").find("svg.lucide-chevron-right").click();
+    // Click expand button
+    cy.get('button[title="Expand sidebar"]').click();
 
     // Labels restored
     cy.contains("span", "Dashboard").should("be.visible");

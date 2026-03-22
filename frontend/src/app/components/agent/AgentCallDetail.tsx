@@ -2,11 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Target, Play, Headphones, Loader2, AlertTriangle } from "lucide-react";
 import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
+import { EmotionComparisonPanel } from "../manager/EmotionComparisonPanel.tsx";
 
 export function AgentCallDetail() {
   const { id } = useParams();
   const [data, setData] = useState<InteractionDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshingLLM, setRefreshingLLM] = useState(false);
+  const [llmRefreshTick, setLlmRefreshTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -19,11 +22,17 @@ export function AgentCallDetail() {
 
   useEffect(() => {
     if (!id) return;
-    getInteractionDetail(id)
+    getInteractionDetail(id, {
+      includeLLMTriggers: true,
+      llmForceRerun: llmRefreshTick > 0,
+    })
       .then(setData)
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [id]);
+      .finally(() => {
+        setLoading(false);
+        setRefreshingLLM(false);
+      });
+  }, [id, llmRefreshTick]);
 
   if (loading) {
     return (
@@ -50,6 +59,7 @@ export function AgentCallDetail() {
   const utterances = data.utterances;
   const emotionEvents = data.emotionEvents;
   const policyViolations = data.policyViolations;
+  const llmTriggers = data.llmTriggers;
 
   const callData = {
     date: interaction.date,
@@ -224,6 +234,72 @@ export function AgentCallDetail() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Emotion Comparison Panel */}
+      {data.emotionComparison && (
+        <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm">
+          <EmotionComparisonPanel data={data.emotionComparison} />
+        </div>
+      )}
+
+      {llmTriggers && (
+        <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm space-y-4">
+          <div>
+            <h3 className="text-[16px] font-semibold text-[#111827] mb-1">LLM Coaching Insights</h3>
+            <p className="text-[11px] italic text-[#9CA3AF]">Process and policy consistency checks</p>
+            <button
+              onClick={() => {
+                setRefreshingLLM(true);
+                setLlmRefreshTick((v) => v + 1);
+              }}
+              className="mt-2 px-3 py-1.5 border border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8] rounded text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors"
+            >
+              {refreshingLLM ? "Refreshing..." : "Refresh LLM"}
+            </button>
+          </div>
+
+          {!llmTriggers.available ? (
+            <div className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] p-3 text-[12px] text-[#991B1B]">
+              LLM coaching insights unavailable.
+              {llmTriggers.error ? ` ${llmTriggers.error}` : ""}
+            </div>
+          ) : (
+            <>
+              {llmTriggers.processAdherence && (
+                <div className="rounded-lg border border-[#E5E7EB] p-4 text-[12px] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#111827]">Process Status</span>
+                    <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${llmTriggers.processAdherence.isResolved ? "bg-[#ECFDF5] text-[#065F46]" : "bg-[#FEF2F2] text-[#991B1B]"}`}>
+                      {llmTriggers.processAdherence.isResolved ? "Resolved" : "Needs follow-up"}
+                    </span>
+                  </div>
+                  <p className="text-[#374151]"><span className="text-[#6B7280]">Topic:</span> {llmTriggers.processAdherence.detectedTopic}</p>
+                  <p className="text-[#374151]"><span className="text-[#6B7280]">Efficiency:</span> {llmTriggers.processAdherence.efficiencyScore}/10</p>
+                  {llmTriggers.processAdherence.missingSopSteps.length > 0 && (
+                    <ul className="list-disc ml-5 text-[#374151] space-y-1">
+                      {llmTriggers.processAdherence.missingSopSteps.map((step, idx) => (
+                        <li key={`agent-missing-step-${idx}`}>{step}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {llmTriggers.nliPolicy && (
+                <div className="rounded-lg border border-[#E5E7EB] p-4 text-[12px] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#111827]">Policy Consistency</span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-[#EFF6FF] text-[#1D4ED8]">
+                      {llmTriggers.nliPolicy.nliCategory}
+                    </span>
+                  </div>
+                  <p className="text-[#374151]">{llmTriggers.nliPolicy.justification}</p>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

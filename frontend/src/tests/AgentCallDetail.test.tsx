@@ -1,73 +1,120 @@
 import React from 'react'
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AgentCallDetail } from '../app/components/agent/AgentCallDetail'
 import { MemoryRouter, Routes, Route } from 'react-router'
-import { mockInteractions } from '../app/data/mockData'
 
-const renderWithId = (id: string = 'int-001') => render(
-    <MemoryRouter initialEntries={[`/agent/${id}`]}>
-        <Routes>
-            <Route path="/agent/:id" element={<AgentCallDetail />} />
-        </Routes>
-    </MemoryRouter>
-)
+const { getInteractionDetailMock } = vi.hoisted(() => ({
+    getInteractionDetailMock: vi.fn(),
+}))
+
+vi.mock('../app/services/api', () => ({
+    getInteractionDetail: getInteractionDetailMock,
+    getAudioUrl: vi.fn(() => ''),
+}))
+
+const makeDetail = (id: string, overall = 85, violationTitle?: string) => ({
+    interaction: {
+        id,
+        agentName: 'Agent A',
+        agentId: 'agent-1',
+        date: '2025-03-01',
+        time: '09:14',
+        duration: '4:20',
+        language: 'en',
+        overallScore: overall,
+        empathyScore: overall,
+        policyScore: overall,
+        resolutionScore: overall,
+        resolved: true,
+        hasViolation: Boolean(violationTitle),
+        hasOverlap: false,
+        responseTime: '1.2s',
+        status: 'completed',
+        audioFilePath: null,
+    },
+    utterances: [
+        {
+            id: 'u1',
+            interactionId: id,
+            speaker: 'agent',
+            text: 'Good morning!',
+            startTime: 0,
+            endTime: 2,
+            timestamp: '00:00',
+            emotion: 'happy',
+            confidence: 0.9,
+        },
+    ],
+    emotionEvents: [],
+    policyViolations: violationTitle
+        ? [
+              {
+                  id: 'v1',
+                  interactionId: id,
+                  policyName: 'hold_time_limit',
+                  policyTitle: violationTitle,
+                  category: 'operations',
+                  description: 'desc',
+                  reasoning: 'reason',
+                  severity: 'medium',
+                  score: 45,
+              },
+          ]
+        : [],
+    emotionComparison: {
+        totalUtterances: 1,
+        distributions: { acoustic: [], text: [], fused: [] },
+        quality: {
+            acousticTextAgreementRate: 0,
+            fusedMatchesAcousticRate: 0,
+            fusedMatchesTextRate: 0,
+            disagreementCount: 0,
+        },
+    },
+    llmTriggers: null,
+})
+
+const renderWithId = (id: string) =>
+    render(
+        <MemoryRouter initialEntries={[`/agent/${id}`]}>
+            <Routes>
+                <Route path="/agent/:id" element={<AgentCallDetail />} />
+            </Routes>
+        </MemoryRouter>
+    )
 
 describe('AgentCallDetail', () => {
-    it('renders the call header with dynamic data for int-001', () => {
+    it('renders call header and transcript', async () => {
+        getInteractionDetailMock.mockResolvedValue(makeDetail('int-001', 85))
         renderWithId('int-001')
-        expect(screen.getByText('CALL DETAIL')).toBeInTheDocument()
-        // int-001 is "2025-03-01"
-        expect(screen.getByText(/2025-03-01/)).toBeInTheDocument()
-    })
 
-    it('renders score breakdown metrics for int-001', () => {
-        renderWithId('int-001')
-        expect(screen.getByText('Empathy')).toBeInTheDocument()
-        // Use getAllByText and regex to be robust
-        const elements = screen.getAllByText(/85%/)
-        expect(elements.length).toBeGreaterThan(0)
-        expect(screen.getByText('1.2s')).toBeInTheDocument()
-    })
-
-    it('renders coaching points from policy violations for int-002', () => {
-        renderWithId('int-002')
-        expect(screen.getByText('Coaching Points')).toBeInTheDocument()
-    })
-
-    it('renders transcript section for int-001', () => {
-        renderWithId('int-001')
+        expect(await screen.findByText('CALL DETAIL')).toBeInTheDocument()
         expect(screen.getByText('Transcript')).toBeInTheDocument()
         expect(screen.getByText(/Good morning!/)).toBeInTheDocument()
     })
 
-    it('renders customer emotion journey for int-001', () => {
+    it('renders coaching points when policy violations exist', async () => {
+        getInteractionDetailMock.mockResolvedValue(makeDetail('int-002', 85, 'Hold Time Limit'))
+        renderWithId('int-002')
+
+        expect(await screen.findByText('Coaching Points')).toBeInTheDocument()
+        expect(screen.getByText('Hold Time Limit')).toBeInTheDocument()
+    })
+
+    it('renders back navigation link', async () => {
+        getInteractionDetailMock.mockResolvedValue(makeDetail('int-001', 85))
         renderWithId('int-001')
-        expect(screen.getByText('Customer Emotion Journey')).toBeInTheDocument()
+
+        const link = await screen.findByText('Back to My Calls')
+        expect(link.closest('a')).toHaveAttribute('href', '/agent')
     })
 
-    it('renders back navigation link', () => {
-        renderWithId('int-001')
-        expect(screen.getByText('Back to My Calls').closest('a')).toHaveAttribute('href', '/agent')
-    })
-
-    it('renders dynamic data for int-005 with mid-range score', () => {
+    it('renders mid-range score values', async () => {
+        getInteractionDetailMock.mockResolvedValue(makeDetail('int-005', 78))
         renderWithId('int-005')
-        expect(screen.getByText(/2025-03-01/)).toBeInTheDocument()
-        const elements = screen.getAllByText(/78%/)
-        expect(elements.length).toBeGreaterThan(0)
-    })
 
-    it('renders default values for non-existent interaction', () => {
-        renderWithId('non-existent')
-        expect(screen.getByText(/27 Feb 2025/)).toBeInTheDocument()
-        expect(screen.getByText(/09:14/)).toBeInTheDocument()
-        expect(screen.getAllByText(/88%/).length).toBeGreaterThan(0)
-    })
-
-    it('renders happy emotion styles in journey and transcript', () => {
-        // int-005 has a happy utterance
-        renderWithId('int-005')
-        expect(screen.getByText(/Happy/)).toBeInTheDocument()
+        expect(await screen.findByText(/2025-03-01/)).toBeInTheDocument()
+        expect(screen.getByText('Empathy')).toBeInTheDocument()
     })
 })

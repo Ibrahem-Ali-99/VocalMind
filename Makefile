@@ -1,4 +1,4 @@
-.PHONY: help up down build logs be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install seed migrate clean test-all
+.PHONY: help up down build logs be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install llm-trigger-test seed migrate clean test-all
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -70,6 +70,11 @@ rag-test: ## Run RAG tests
 
 rag-install: ## Install RAG dependencies
 	cd services/rag && uv sync
+
+llm-trigger-test: ## Run full LLM-trigger validation (backend + RAG + frontend)
+	cd backend && uv run pytest tests/test_llm_trigger_service.py tests/test_interactions_llm_triggers.py tests/test_sop_retrieval.py -q
+	cd services/rag && uv run pytest tests/test_ingest.py -q
+	cd frontend && npm run test -- --run src/tests/LLMTriggerSections.test.tsx
 
 # ── CI/CD ─────────────────────────────────────────────────────────────────
 
