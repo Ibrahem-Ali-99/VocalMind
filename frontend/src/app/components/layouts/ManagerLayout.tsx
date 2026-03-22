@@ -14,6 +14,14 @@ import {
   Bell,
   Download,
 } from "lucide-react";
+import logoSrc from "../../../assets/logo/logo.svg";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 export function ManagerLayout() {
   const { user } = useAuth();
@@ -53,16 +61,14 @@ export function ManagerLayout() {
       >
         {/* Logo Area */}
         <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center flex-shrink-0">
-              <Mic className="w-[18px] h-[18px] text-primary-foreground" />
-            </div>
+          <Link to="/manager" className="flex items-center gap-3 w-full">
+            <img src={logoSrc} alt="VocalMind" className="w-[32px] h-[32px] object-contain flex-shrink-0" />
             {!collapsed && (
               <span className="text-sidebar-foreground font-bold text-lg" style={{ fontFamily: 'var(--font-sans)' }}>
                 VocalMind
               </span>
             )}
-          </div>
+          </Link>
         </div>
 
         {/* Navigation & Content Area (Flex Grow) */}
@@ -130,28 +136,13 @@ export function ManagerLayout() {
             )}
           </button>
 
-          {!collapsed && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[11px] font-bold ring-2 ring-white/10">
-                {getInitials(user?.name || "Manager")}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sidebar-foreground text-[13px] font-semibold truncate leading-tight">
-                  {user?.name || "Manager King"}
-                </div>
-                <div className="text-sidebar-foreground/60 text-[11px] font-medium capitalize mt-0.5">
-                  {user?.role || "Manager"}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <div className="h-14 bg-card border-b border-border px-6 flex items-center justify-between">
+        <div className="h-16 bg-card border-b border-border px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-[16px] font-bold text-foreground">
               {getPageTitle()}
@@ -166,9 +157,20 @@ export function ManagerLayout() {
               <Download className="w-3.5 h-3.5" />
               Export
             </button>
-            <button className="w-8 h-8 flex items-center justify-center bg-accent/30 border border-border rounded-lg hover:bg-accent transition-colors">
-              <Bell className="w-4 h-4 text-muted-foreground" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-8 h-8 flex items-center justify-center bg-accent/30 border border-border rounded-lg hover:bg-accent transition-colors">
+                  <Bell className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-64 bg-card border-border shadow-lg" align="end">
+                <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  No new notifications
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <UserNav />
           </div>
         </div>

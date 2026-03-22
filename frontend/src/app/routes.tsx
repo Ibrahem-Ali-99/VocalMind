@@ -13,6 +13,7 @@ import { LandingPage } from "./components/LandingPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./contexts/AuthContext";
 import { SettingsPage } from "./components/SettingsPage";
+import { UnderDevelopment } from "./components/ui/UnderDevelopment";
 import Login from "./pages/Login";
 
 export const router = createBrowserRouter([
@@ -37,6 +38,7 @@ export const router = createBrowserRouter([
           { path: "assistant", element: <ManagerAssistant /> },
           { path: "knowledge", element: <KnowledgeBase /> },
           { path: "settings", element: <SettingsPage /> },
+          { path: "*", element: <UnderDevelopment /> },
         ],
       },
       {
@@ -44,10 +46,16 @@ export const router = createBrowserRouter([
         element: <AgentLayout />,
         children: [
           { index: true, element: <AgentDashboard /> },
+          { path: "calls", element: <UnderDevelopment /> },
           { path: "calls/:id", element: <AgentCallDetail /> },
           { path: "settings", element: <SettingsPage /> },
+          { path: "*", element: <UnderDevelopment /> },
         ],
       },
     ],
+  },
+  {
+    path: "*",
+    element: <UnderDevelopment />,
   },
 ]);

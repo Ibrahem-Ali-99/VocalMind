@@ -30,13 +30,13 @@
   --ring: hsl(220, 90%, 56%);
   --label-foreground: #6B7280;
   --radius: 0.625rem;
-  --sidebar: #FFFFFF;
+  --sidebar: #F8FAFC;
   --sidebar-foreground: #111827;
   --sidebar-primary: hsl(220, 90%, 56%);
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F9FAFB;
+  --sidebar-accent: #EFF6FF;
   --sidebar-accent-foreground: #111827;
-  --sidebar-border: #E5E7EB;
+  --sidebar-border: #E2E8F0;
 }
 
 .dark {
@@ -64,13 +64,14 @@
   --input-foreground: #F9FAFB;
   --ring: hsl(220, 90%, 56%);
   --label-foreground: #9CA3AF;
-  --sidebar: #0B0E14;
+  --label-foreground: #9CA3AF;
+  --sidebar: #111827;
   --sidebar-foreground: #F9FAFB;
   --sidebar-primary: hsl(220, 90%, 56%);
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #1F2937;
   --sidebar-accent-foreground: #F9FAFB;
-  --sidebar-border: #30363D;
+  --sidebar-border: #374151;
 }
 
 @theme inline {
@@ -178,6 +179,14 @@
     background-color: var(--input-background);
     color: var(--input-foreground);
     border: 1px solid var(--border);
+  }
+
+  button, a {
+    cursor: pointer;
+  }
+  
+  [role="button"] {
+    cursor: pointer;
   }
 
   /* Utility for labels */

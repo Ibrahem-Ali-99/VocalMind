@@ -9,6 +9,7 @@ export function SessionInspector() {
   const [error, setError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState("All Agents");
   const [sortField, setSortField] = useState<"score" | "date" | "duration">("score");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -52,13 +53,15 @@ export function SessionInspector() {
     );
   }
 
+  const uniqueAgents = Array.from(new Set(interactions.map(i => i.agentName))).sort();
+
   const filteredInteractions = interactions.filter((interaction) => {
     const searchLower = searchQuery.toLowerCase();
-    return (
-      interaction.agentName.toLowerCase().includes(searchLower) ||
-      interaction.id.toLowerCase().includes(searchLower) ||
-      interaction.date.toLowerCase().includes(searchLower)
-    );
+    const matchesSearch = interaction.agentName.toLowerCase().includes(searchLower) ||
+                          interaction.id.toLowerCase().includes(searchLower) ||
+                          interaction.date.toLowerCase().includes(searchLower);
+    const matchesAgent = selectedAgent === "All Agents" || interaction.agentName === selectedAgent;
+    return matchesSearch && matchesAgent;
   });
 
   const sortedInteractions = [...filteredInteractions].sort((a, b) => {
@@ -110,10 +113,22 @@ export function SessionInspector() {
             />
           </div>
 
-          <button className="flex items-center gap-2 h-10 px-4 bg-card border border-border rounded-[10px] text-[13px] hover:bg-muted transition-colors">
-            All Agents
-            <ChevronDown className="w-4 h-4" />
-          </button>
+          <div className="relative">
+            <select
+              value={selectedAgent}
+              onChange={(e) => {
+                setSelectedAgent(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="appearance-none flex items-center gap-2 h-10 pl-4 pr-10 bg-card border border-border rounded-[10px] text-[13px] hover:bg-muted transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40 cursor-pointer"
+            >
+              <option value="All Agents">All Agents</option>
+              {uniqueAgents.map(agent => (
+                <option key={agent} value={agent}>{agent}</option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+          </div>
 
           <div className="flex items-center border border-border rounded-[10px] overflow-hidden bg-card">
             <button
@@ -155,7 +170,17 @@ export function SessionInspector() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {paginatedInteractions.map((row) => (
+            {paginatedInteractions.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="px-6 py-16 text-center text-muted-foreground">
+                  <div className="flex flex-col items-center justify-center">
+                    <Search className="w-10 h-10 opacity-20 mb-3" />
+                    <p className="text-[14px] font-medium text-foreground">No interactions found</p>
+                    <p className="text-[12px] opacity-70 mt-1">Try adjusting your filters or search query.</p>
+                  </div>
+                </td>
+              </tr>
+            ) : paginatedInteractions.map((row) => (
               <tr key={row.id} className="hover:bg-muted/5 transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
