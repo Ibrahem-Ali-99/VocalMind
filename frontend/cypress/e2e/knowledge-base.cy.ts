@@ -35,9 +35,8 @@ describe("Knowledge Base", () => {
   });
 
   it("shows active/inactive status labels for policies", () => {
-    // Two active, one inactive in mock data
-    cy.contains("Active");
-    cy.contains("Inactive");
+    cy.contains("ACTIVE");
+    cy.contains("INACTIVE");
   });
 
   it("has toggle switches for policies", () => {

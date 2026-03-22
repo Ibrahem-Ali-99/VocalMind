@@ -21,27 +21,6 @@ export function SessionInspector() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 text-[#3B82F6] animate-spin" />
-        <span className="ml-3 text-[#6B7280] text-sm">Loading interactions...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <AlertTriangle className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
-          <p className="text-[#6B7280] text-sm">Failed to load interactions</p>
-          <p className="text-muted-foreground/80 text-xs mt-1">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
   const handleSort = (field: "score" | "date" | "duration") => {
     if (sortField === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -51,6 +30,27 @@ export function SessionInspector() {
     }
     setCurrentPage(1);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        <span className="ml-3 text-muted-foreground text-sm">Loading interactions...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
+          <p className="text-foreground text-sm">Failed to load interactions</p>
+          <p className="text-muted-foreground/80 text-xs mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   const filteredInteractions = interactions.filter((interaction) => {
     const searchLower = searchQuery.toLowerCase();
@@ -89,210 +89,139 @@ export function SessionInspector() {
       {/* Top Controls */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-            <div className="text-label mb-2">
-              SESSION INSPECTOR
-            </div>
-          <p className="text-[13px] text-[#6B7280]">
-            {totalItems} interaction{totalItems !== 1 ? "s" : ""} · sorted by {sortField}
+          <h2 className="text-[20px] font-bold text-foreground mb-2">Session Inspector</h2>
+          <p className="text-[13px] text-muted-foreground">
+            {totalItems} interaction{totalItems !== 1 ? "s" : ""} · sorted by score
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-label-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search agent, date, ID…"
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCurrentPage(1); // Reset page on search
+                setCurrentPage(1);
               }}
-              className="w-[200px] h-10 pl-9 pr-3 bg-input border border-border rounded-[10px] text-[13px] focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all shadow-inner"
+              className="w-[200px] h-10 pl-9 pr-3 bg-muted/20 border border-border rounded-[10px] text-[13px] focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
           </div>
 
-          <button className="flex items-center gap-2 h-10 px-4 bg-card border border-border rounded-[10px] text-[13px] text-foreground hover:bg-muted transition-colors">
+          <button className="flex items-center gap-2 h-10 px-4 bg-card border border-border rounded-[10px] text-[13px] hover:bg-muted transition-colors">
             All Agents
             <ChevronDown className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center border border-border rounded-[10px] overflow-hidden bg-card shadow-inner">
+          <div className="flex items-center border border-border rounded-[10px] overflow-hidden bg-card">
             <button
               onClick={() => handleSort("score")}
-              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
-                sortField === "score"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted"
-              }`}
+              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${sortField === "score" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
             >
-              Score {sortField === "score" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+              Score ↓
             </button>
             <button
               onClick={() => handleSort("date")}
-              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
-                sortField === "date"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted"
-              }`}
+              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${sortField === "date" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
             >
-              Date {sortField === "date" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+              Date
             </button>
             <button
               onClick={() => handleSort("duration")}
-              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${
-                sortField === "duration"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted"
-              }`}
+              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${sortField === "duration" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
             >
-              Duration {sortField === "duration" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+              Duration
             </button>
           </div>
         </div>
       </div>
 
-      {/* Interaction Table */}
-      <div className="bg-card rounded-[14px] border border-border transition-all overflow-hidden">
-        {/* Header */}
-        <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-border bg-background/50">
-          <div className="col-span-2 text-label">
-            Agent
-          </div>
-          <div className="col-span-2 text-label">
-            Date & Time
-          </div>
-          <div className="col-span-1 text-label">
-            Duration
-          </div>
-          <div className="col-span-1 text-label">
-            Score
-          </div>
-          <div className="col-span-1 text-label">
-            Empathy
-          </div>
-          <div className="col-span-1 text-label">
-            Policy
-          </div>
-          <div className="col-span-1 text-label">
-            Resolution
-          </div>
-          <div className="col-span-2 text-label">
-            Status
-          </div>
-          <div className="col-span-1 text-label">
-            Actions
-          </div>
-        </div>
-
-        {/* Rows */}
-        <div className="divide-y divide-border">
-          {paginatedInteractions.length === 0 ? (
-            <div className="px-5 py-8 text-center text-[#6B7280] text-[13px]">
-              No interactions found matching your criteria.
-            </div>
-          ) : (
-            paginatedInteractions.map((interaction) => (
-              <div
-                key={interaction.id}
-                className="grid grid-cols-12 gap-4 px-5 py-4 hover:bg-muted/40 transition-colors border-b last:border-0 border-border"
-              >
-              {/* Agent */}
-              <div className="col-span-2 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
-                  {interaction.agentName.split(" ").map((n) => n[0]).join("")}
-                </div>
-                <span className="text-[13px] font-semibold text-foreground">
-                  {interaction.agentName}
-                </span>
-              </div>
-
-              {/* Date & Time */}
-              <div className="col-span-2 flex items-center text-[13px] text-foreground">
-                {interaction.date} · {interaction.time}
-              </div>
-
-              {/* Duration */}
-              <div className="col-span-1 flex items-center text-[13px] text-[#6B7280]">
-                {interaction.duration}
-              </div>
-
-              {/* Score */}
-              <div className="col-span-1 flex items-center">
-                <span
-                  className={`px-2.5 py-1 rounded-full text-[13px] font-semibold ${
-                    interaction.overallScore >= 85
-                      ? "bg-success/10 text-success"
-                      : interaction.overallScore >= 75
-                      ? "bg-primary/10 text-primary"
-                      : "bg-destructive/10 text-destructive"
-                  }`}
-                >
-                  {interaction.overallScore}%
-                </span>
-              </div>
-
-              {/* Empathy */}
-              <div className="col-span-1 flex items-center text-[12px] text-[#374151]">
-                {interaction.empathyScore}
-              </div>
-
-              {/* Policy */}
-              <div className="col-span-1 flex items-center text-[12px] text-[#374151]">
-                {interaction.policyScore}
-              </div>
-
-              {/* Resolution */}
-              <div className="col-span-1 flex items-center text-[12px] text-muted-foreground">
-                {interaction.resolutionScore}
-              </div>
-
-              {/* Status */}
-              <div className="col-span-2 flex items-center gap-2">
-                <span
-                  className={`text-[12px] font-semibold ${
-                    interaction.resolved ? "text-success" : "text-destructive"
-                  }`}
-                >
-                  {interaction.resolved ? "✓ Resolved" : "✗ Unresolved"}
-                </span>
-                {interaction.hasViolation && (
-                  <span className="px-2 py-0.5 bg-[#FEF3C7] text-[#92400E] rounded-full text-[11px] font-medium">
-                    ⚠ Violation
+      {/* Table Card */}
+      <div className="bg-card rounded-[14px] border border-border overflow-hidden">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-muted/10 border-b border-border">
+              <th className="px-6 py-4 text-left text-label">Agent</th>
+              <th className="px-6 py-4 text-left text-label">Date & Time</th>
+              <th className="px-6 py-4 text-left text-label">Duration</th>
+              <th className="px-6 py-4 text-left text-label">Score</th>
+              <th className="px-6 py-4 text-left text-label">Empathy</th>
+              <th className="px-6 py-4 text-left text-label">Policy</th>
+              <th className="px-6 py-4 text-left text-label">Resolution</th>
+              <th className="px-6 py-4 text-left text-label">Status</th>
+              <th className="px-6 py-4 text-left text-label">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {paginatedInteractions.map((row) => (
+              <tr key={row.id} className="hover:bg-muted/5 transition-colors">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-semibold text-foreground">{row.agentName}</span>
+                    {row.hasViolation && (
+                      <span className="px-2 py-0.5 bg-destructive/10 text-destructive rounded-full text-[11px] font-medium">
+                        ⚠ Violation
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-muted-foreground">
+                  {row.date} · {row.time}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-muted-foreground">
+                  {row.duration}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div
+                    className="text-[18px] font-bold"
+                    style={{
+                      fontFamily: "var(--font-serif)",
+                      color: row.overallScore >= 85 ? "var(--success)" : row.overallScore >= 75 ? "var(--primary)" : "var(--destructive)",
+                    }}
+                  >
+                    {row.overallScore}%
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-foreground">{row.empathyScore}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-foreground">{row.policyScore}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-foreground">{row.resolutionScore}</td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${row.resolved ? "bg-success/5 text-success border-success/20" : "bg-destructive/5 text-destructive border-destructive/20"}`}>
+                    {row.resolved ? "✓ Resolved" : "✗ Unresolved"}
                   </span>
-                )}
-              </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <Link
+                    to={`/manager/inspector/${row.id}`}
+                    className="text-primary hover:text-primary/80 font-semibold text-[13px] transition-colors"
+                  >
+                    Inspect →
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
-              {/* Actions */}
-              <div className="col-span-1 flex items-center">
-                <Link
-                  to={`/manager/inspector/${interaction.id}`}
-                  className="text-[12px] text-primary font-bold hover:underline"
-                >
-                  Inspect →
-                </Link>
-              </div>
-            </div>
-          )))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-border flex items-center justify-between bg-muted/20">
-          <span className="text-[12px] text-muted-foreground">
-            Showing {totalItems === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems}
-          </span>
+        {/* Pagination */}
+        <div className="px-6 py-4 bg-muted/5 border-t border-border flex items-center justify-between">
+          <div className="text-[13px] text-muted-foreground font-medium">
+            Showing {startIndex + 1}–{Math.min(startIndex + itemsPerPage, totalItems)} of {totalItems}
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="px-3 h-8 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors font-medium"
+              className="h-9 px-4 rounded-xl border border-border bg-background text-[13px] font-semibold text-foreground hover:bg-muted disabled:opacity-40 transition-all flex items-center gap-2"
             >
               ← Prev
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages || totalItems === 0}
-              className="px-3 h-8 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors font-medium"
+              className="h-9 px-4 rounded-xl border border-border bg-background text-[13px] font-semibold text-foreground hover:bg-muted disabled:opacity-40 transition-all flex items-center gap-2"
             >
               Next →
             </button>

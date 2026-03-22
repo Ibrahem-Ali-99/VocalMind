@@ -31,7 +31,7 @@ export function SessionDetail() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 text-[#3B82F6] animate-spin" />
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
         <span className="ml-3 text-muted-foreground text-sm">Loading session...</span>
       </div>
     );
@@ -41,8 +41,8 @@ export function SessionDetail() {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <AlertTriangleIcon className="w-10 h-10 text-[#F59E0B] mx-auto mb-3" />
-          <p className="text-muted-foreground text-sm">Failed to load session</p>
+          <AlertTriangleIcon className="w-10 h-10 text-warning mx-auto mb-3" />
+          <p className="text-foreground text-sm">Failed to load session</p>
           <p className="text-muted-foreground/80 text-xs mt-1">{error}</p>
         </div>
       </div>
@@ -64,11 +64,11 @@ export function SessionDetail() {
       case "neutral":
         return { bg: "var(--muted)", text: "var(--muted-foreground)", label: "Neutral" };
       case "happy":
-        return { bg: "rgba(6, 95, 70, 0.1)", text: "var(--success)", label: "Happy" };
+        return { bg: "rgba(16, 185, 129, 0.1)", text: "var(--success)", label: "Happy" };
       case "angry":
-        return { bg: "rgba(153, 27, 27, 0.1)", text: "var(--destructive)", label: "Angry" };
+        return { bg: "rgba(239, 68, 68, 0.1)", text: "var(--destructive)", label: "Angry" };
       case "frustrated":
-        return { bg: "#FFFBEB", text: "#92400E", label: "Frustrated" };
+        return { bg: "rgba(245, 158, 11, 0.1)", text: "var(--warning)", label: "Frustrated" };
       default:
         return { bg: "var(--muted)", text: "var(--muted-foreground)", label: "Neutral" };
     }
@@ -79,7 +79,7 @@ export function SessionDetail() {
       {/* Back Button */}
       <Link
         to="/manager/inspector"
-        className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#3B82F6] hover:underline"
+        className="inline-flex items-center gap-2 text-[13px] font-semibold text-primary hover:underline"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Session Inspector
@@ -88,39 +88,20 @@ export function SessionDetail() {
       {/* Call Header Card */}
       <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
         <div className="flex items-start justify-between mb-6">
-          {/* Left: Info */}
           <div>
-            <div className="text-label mb-2">
-              SESSION INSPECTOR
-            </div>
+            <div className="text-label mb-2">SESSION INSPECTOR</div>
             <h2 className="text-[22px] font-bold text-foreground mb-2">
               {interaction.agentName}
             </h2>
             <div className="text-[13px] text-muted-foreground mb-2">
-              {interaction.date} 2025 · {interaction.time} · {interaction.duration} · {interaction.language}
-            </div>
-            {interaction.hasOverlap && (
-              <span className="inline-block px-2.5 py-1 bg-warning/10 text-warning border border-warning/20 rounded-full text-[11px] font-medium">
-                ⚠ Overlap detected
-              </span>
-            )}
-            <div className="text-label-foreground text-[11px] mt-2" style={{ fontFamily: 'var(--font-mono)' }}>
-              {interaction.id} · completed
+              {interaction.date} · {interaction.time} · {interaction.duration} · {interaction.language}
             </div>
           </div>
 
-          {/* Right: Score Ring */}
           <div className="flex flex-col items-center">
             <div className="relative w-[90px] h-[90px]">
               <svg className="w-full h-full -rotate-90">
-                <circle
-                  cx="45"
-                  cy="45"
-                  r="38"
-                  fill="none"
-                  stroke="var(--border)"
-                  strokeWidth="7"
-                />
+                <circle cx="45" cy="45" r="38" fill="none" stroke="var(--border)" strokeWidth="7" />
                 <circle
                   cx="45"
                   cy="45"
@@ -133,7 +114,7 @@ export function SessionDetail() {
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[20px] font-normal" style={{ fontFamily: 'var(--font-serif)', color: `var(--${interaction.overallScore >= 85 ? 'success' : interaction.overallScore >= 75 ? 'primary' : 'destructive'})` }}>
+                <span className="text-[20px] font-bold" style={{ fontFamily: "var(--font-serif)", color: getScoreColor(interaction.overallScore) }}>
                   {interaction.overallScore}%
                 </span>
               </div>
@@ -141,339 +122,135 @@ export function SessionDetail() {
           </div>
         </div>
 
-        {/* Divider */}
-        <div className="h-px bg-[#E5E7EB] mb-4" />
+        <div className="h-px bg-border mb-6" />
 
-        {/* Audio Player (if available) */}
-      {interaction.audioFilePath && (
-        <div className="bg-muted/30 border border-border rounded-2xl p-4 flex items-center gap-4">
-          <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
-            <Headphones className="w-5 h-5" />
-          </div>
-          <div className="flex-1">
-            <p className="text-[14px] font-semibold text-foreground mb-2">Session Recording</p>
-            <audio 
-              ref={audioRef}
-              controls 
-              className="w-full h-8" 
-              src={getAudioUrl(interaction.id)}
-              preload="metadata"
-            >
-              Your browser does not support the audio element.
-            </audio>
-          </div>
-        </div>
-      )}
-
-      {/* Score Grid */}
+        {/* Score Grid */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="bg-primary/10 rounded-lg p-3 text-center">
-            <div className="text-[11px] text-muted-foreground mb-1">Empathy</div>
-            <div className="text-[18px] font-semibold text-primary">
-              {interaction.empathyScore}%
-            </div>
-          </div>
-          <div className="bg-success/10 rounded-lg p-3 text-center">
-            <div className="text-[11px] text-muted-foreground mb-1">Policy</div>
-            <div className="text-[18px] font-semibold text-success">
-              {interaction.policyScore}%
-            </div>
-          </div>
-          <div className="bg-accent/10 rounded-lg p-3 text-center">
-            <div className="text-[11px] text-muted-foreground mb-1">Resolution</div>
-            <div className="text-[18px] font-semibold text-foreground">
-              {interaction.resolutionScore}%
-            </div>
-          </div>
-          <div className="bg-muted/30 rounded-lg p-3 text-center">
-            <div className="text-[11px] text-muted-foreground mb-1">Resp. Time</div>
-            <div className="text-[18px] font-semibold text-foreground">
-              {interaction.responseTime}s
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Transcript Card */}
-      <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
-        <h3 className="text-[16px] font-semibold text-foreground mb-1">
-          Transcript
-        </h3>
-        <p className="text-[11px] italic text-muted-foreground mb-4">
-          utterances ordered by sequence_index
-        </p>
-
-        <div className="space-y-4 max-h-[280px] overflow-y-auto">
-          {utterances.map((utterance) => {
-            const isAgent = utterance.speaker === "agent";
-            const emotionStyle = getEmotionStyle(utterance.emotion);
-
-            return (
-              <div
-                key={utterance.id}
-                className={`flex gap-3 ${isAgent ? "" : "flex-row-reverse"}`}
-              >
-                {/* Avatar */}
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${
-                    isAgent ? "bg-[#2563EB]" : "bg-[#059669]"
-                  }`}
-                >
-                  {isAgent ? "A" : "C"}
-                </div>
-
-                {/* Bubble */}
-                  <div
-                    className={`flex-1 max-w-[80%] p-3 ${
-                      isAgent
-                        ? "bg-primary/10 rounded-[0_12px_12px_12px]"
-                        : "bg-success/10 rounded-[12px_0_12px_12px]"
-                    }`}
-                    dir="rtl"
-                  >
-                  {/* Header */}
-                  <div className={`flex items-center gap-2 mb-1 ${isAgent ? "" : "flex-row-reverse"}`}>
-                    <span className="text-[13px] font-semibold text-muted-foreground">
-                      {isAgent ? interaction.agentName : "Customer"}
-                    </span>
-                    <span className="text-[12px] text-label-foreground">
-                      {utterance.timestamp}
-                    </span>
-                    <span
-                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                      style={{ backgroundColor: emotionStyle.bg, color: emotionStyle.text }}
-                    >
-                      {emotionStyle.label} {Math.round(utterance.confidence * 100)}%
-                    </span>
-                  </div>
-
-                  {/* Text */}
-                  <p className="text-[14px] text-foreground font-medium leading-relaxed">
-                    {utterance.text}
-                  </p>
-                </div>
+          {[
+            { label: "Empathy", score: interaction.empathyScore, color: "var(--primary)" },
+            { label: "Policy", score: interaction.policyScore, color: "var(--success)" },
+            { label: "Resolution", score: interaction.resolutionScore, color: "var(--primary)" },
+            { label: "Resp. Time", score: interaction.responseTime, color: "var(--success)", suffix: "s" },
+          ].map((s) => (
+            <div key={s.label} className="bg-muted/10 rounded-xl p-3 text-center border border-border/50">
+              <div className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wider font-bold">{s.label}</div>
+              <div className="text-[18px] font-bold" style={{ color: s.color }}>
+                {s.score}{s.suffix || "%"}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Emotion Events Card */}
-      <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
-        <h3 className="text-[16px] font-semibold text-foreground mb-1">
-          Emotion Events
-        </h3>
-        <p className="text-[11px] italic text-muted-foreground mb-4">
-          emotion_events — AI-detected emotional shifts with LLM justification
-        </p>
-
-        <div className="space-y-4">
-          {emotionEvents.map((event) => {
-            const isFlagged = flaggedEvents.includes(event.id);
-            const hasSubmitted = feedbackSubmitted.includes(event.id);
-            const fromStyle = getEmotionStyle(event.fromEmotion);
-            const toStyle = getEmotionStyle(event.toEmotion);
-
-            return (
-              <div key={event.id} className="border border-border rounded-xl p-4 space-y-3 bg-muted/10">
-                {/* Row 1: Emotion Change + Jump Button */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="px-2.5 py-1 rounded-full text-[11px] font-bold"
-                      style={{ fontFamily: 'var(--font-mono)', backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' }}
-                    >
-                      {event.timestamp}
-                    </span>
-                    <span
-                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                      style={{ backgroundColor: fromStyle.bg, color: fromStyle.text }}
-                    >
-                      {fromStyle.label}
-                    </span>
-                    <span className="text-muted-foreground/60">→</span>
-                    <span
-                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                      style={{ backgroundColor: toStyle.bg, color: toStyle.text }}
-                    >
-                      {toStyle.label}
-                    </span>
-                    <span className="text-[12px] text-muted-foreground/80 font-medium">Δ {event.delta}</span>
-                    <span className="px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[11px] font-bold uppercase tracking-wider">
-                      {event.speaker}
-                    </span>
-                  </div>
-
-                  <button 
-                    onClick={() => handleJumpTo(event.jumpToSeconds)}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/30 rounded-lg text-[12px] font-bold hover:bg-primary/20 transition-all shadow-sm"
-                  >
-                    <Play className="w-3 h-3 fill-current" />
-                    Jump to {event.timestamp}
-                  </button>
-                </div>
-
-                {/* Row 2: Justification */}
-                <div className="bg-background border-l-4 border-primary rounded p-3 shadow-inner">
-                  <p className="text-[12px] italic text-muted-foreground leading-relaxed">
-                    {event.justification}
-                  </p>
-                </div>
-
-                {/* RLHF Feedback */}
-                <div className="pt-3 border-t border-border">
-                  {!hasSubmitted ? (
-                    <>
-                      {!isFlagged ? (
-                        <button
-                          onClick={() => setFlaggedEvents([...flaggedEvents, event.id])}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 text-muted-foreground border border-border rounded text-[12px] hover:bg-muted font-medium transition-colors"
-                        >
-                          <Flag className="w-3.5 h-3.5" />
-                          Flag as incorrect
-                        </button>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="text-[11px] text-[#9CA3AF] mb-2">
-                            Was this detection accurate?
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setFeedbackSubmitted([...feedbackSubmitted, event.id])}
-                              className="flex items-center gap-2 px-3 py-2 bg-[#ECFDF5] text-[#065F46] rounded-lg text-[12px] font-medium hover:bg-[#D1FAE5] transition-colors"
-                            >
-                              <ThumbsUp className="w-3.5 h-3.5" />
-                              Accurate
-                            </button>
-                            <button
-                              onClick={() => setFeedbackSubmitted([...feedbackSubmitted, event.id])}
-                              className="flex items-center gap-2 px-3 py-2 bg-[#FEF2F2] text-[#991B1B] rounded-lg text-[12px] font-medium hover:bg-[#FEE2E2] transition-colors"
-                            >
-                              <ThumbsDown className="w-3.5 h-3.5" />
-                              Incorrect
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="text-[13px] text-success font-semibold flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Feedback recorded — queued for retraining
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Policy Violations Card */}
-      <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
-        <h3 className="text-[16px] font-semibold text-foreground mb-1">
-          Policy Violations
-        </h3>
-        <p className="text-[11px] italic text-muted-foreground mb-4">
-          policy_compliance WHERE is_compliant = FALSE — only violated policies are shown here
-        </p>
-
-        {data.policyViolations.length > 0 ? (
-          <div className="space-y-4">
-            {data.policyViolations.map((violation) => {
-              const isFlagged = flaggedViolations.includes(violation.id);
-              const hasSubmitted = feedbackSubmitted.includes(violation.id);
-
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Transcript Card */}
+        <div className="bg-card rounded-[14px] border border-border p-6">
+          <h3 className="text-[16px] font-bold text-foreground mb-1">Transcript</h3>
+          <p className="text-[11px] italic text-muted-foreground mb-4">utterances ordered by sequence_index</p>
+          <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+            {utterances.map((u) => {
+              const isAgent = u.speaker === "agent";
               return (
-                <div key={violation.id} className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-3">
-                  {/* Header */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-2 flex-1">
-                      <XCircle className="w-[15px] h-[15px] text-[#EF4444] flex-shrink-0 mt-0.5" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[14px] font-bold text-foreground">
-                            {violation.policyTitle}
-                          </span>
-                          <span className="px-2 py-0.5 bg-destructive/10 text-destructive border border-destructive/20 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                            {violation.category}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="flex-1 h-2 bg-muted/30 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#FCA5A5] rounded-full"
-                              style={{ width: `${violation.score}%` }}
-                            />
-                          </div>
-                          <span className="text-[12px] font-bold text-destructive">
-                            {violation.score}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                <div key={u.id} className={`flex gap-3 ${isAgent ? "" : "flex-row-reverse"}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${isAgent ? "bg-primary/20 text-primary" : "bg-success/20 text-success"}`}>
+                    {isAgent ? "A" : "C"}
                   </div>
-
-                  {/* LLM Reasoning */}
-                  <p className="text-[12px] text-muted-foreground/80 leading-relaxed">
-                    {violation.reasoning}
-                  </p>
-
-                  {/* RLHF Feedback */}
-                  <div className="pt-3 border-t border-[#FDE68A]">
-                    {!hasSubmitted ? (
-                      <>
-                        {!isFlagged ? (
-                          <button
-                            onClick={() => setFlaggedViolations([...flaggedViolations, violation.id])}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-card text-muted-foreground border border-border rounded text-[12px] hover:bg-muted transition-colors"
-                          >
-                            <Flag className="w-3.5 h-3.5" />
-                            Flag as incorrect
-                          </button>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="text-[11px] text-[#9CA3AF] mb-2">
-                              Was this verdict correct?
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setFeedbackSubmitted([...feedbackSubmitted, violation.id])}
-                                className="flex items-center gap-2 px-3 py-2 bg-[#ECFDF5] text-[#065F46] rounded-lg text-[12px] font-medium hover:bg-[#D1FAE5] transition-colors"
-                              >
-                                <ThumbsUp className="w-3.5 h-3.5" />
-                                Correct
-                              </button>
-                              <button
-                                onClick={() => setFeedbackSubmitted([...feedbackSubmitted, violation.id])}
-                                className="flex items-center gap-2 px-3 py-2 bg-[#FEF2F2] text-[#991B1B] rounded-lg text-[12px] font-medium hover:bg-[#FEE2E2] transition-colors"
-                              >
-                                <ThumbsDown className="w-3.5 h-3.5" />
-                                Incorrect
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="text-[13px] text-[#059669] flex items-center gap-2">
-                        <CheckCircle className="w-4 h-4" />
-                        Feedback recorded — queued for model retraining
-                      </div>
-                    )}
+                  <div className={`flex-1 p-3 rounded-2xl text-[13px] ${isAgent ? "bg-primary/5 rounded-tl-none" : "bg-success/5 rounded-tr-none"}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-foreground/80">{isAgent ? interaction.agentName : "Customer"}</span>
+                      <span className="text-[10px] text-muted-foreground">{u.timestamp}</span>
+                    </div>
+                    <p className="text-foreground leading-relaxed">{u.text}</p>
                   </div>
                 </div>
               );
             })}
           </div>
-        ) : (
-          <div className="flex items-center gap-2 text-[#10B981] py-4">
-            <CheckCircle className="w-5 h-5" />
-            <span className="text-[14px] font-medium">
-              All policies passed for this call
-            </span>
+        </div>
+
+        <div className="space-y-6">
+          {/* Emotion Events */}
+          <div className="bg-card rounded-[14px] border border-border p-6">
+            <h3 className="text-[16px] font-bold text-foreground mb-1">Emotion Events</h3>
+            <p className="text-[11px] italic text-muted-foreground mb-4">emotion_events — AI-detected emotional shifts</p>
+            <div className="space-y-4">
+              {emotionEvents.map((e) => (
+                <div key={e.id} className="p-4 border border-border rounded-xl bg-muted/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-bold text-foreground capitalize">{e.fromEmotion} → {e.toEmotion}</span>
+                      <span className="text-[11px] text-muted-foreground">Δ {e.delta}</span>
+                      <span className="px-1.5 py-0.5 bg-muted/30 rounded text-[10px] font-bold uppercase">{e.speaker}</span>
+                    </div>
+                    <button 
+                      onClick={() => handleJumpTo(e.jumpToSeconds)}
+                      className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      Jump to {e.timestamp}
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-muted-foreground italic leading-relaxed">"{e.justification}"</p>
+                  {flaggedEvents.includes(e.id) ? (
+                    feedbackSubmitted.includes(e.id) ? (
+                      <div className="text-[11px] text-success font-bold mt-2 pt-2 border-t border-border/50">
+                        Feedback recorded — queued for model retraining
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+                        <span className="text-[11px] text-muted-foreground">Was this detection accurate?</span>
+                        <button onClick={() => setFeedbackSubmitted(prev => [...prev, e.id])} className="text-[11px] font-bold text-success hover:underline">Accurate</button>
+                        <button onClick={() => setFeedbackSubmitted(prev => [...prev, e.id])} className="text-[11px] font-bold text-destructive hover:underline">Incorrect</button>
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex items-center justify-end pt-2 border-t border-border/50">
+                      <button onClick={() => setFlaggedEvents(prev => [...prev, e.id])} className="text-[11px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1">
+                        <Flag className="w-3 h-3" /> Flag as incorrect
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        )}
+
+          {/* Policy Violations */}
+          <div className="bg-card rounded-[14px] border border-border p-6">
+            <h3 className="text-[16px] font-bold text-foreground mb-1">Policy Violations</h3>
+            <p className="text-[11px] italic text-muted-foreground mb-4">policy_compliance WHERE is_compliant = FALSE</p>
+            <div className="space-y-4">
+              {data.policyViolations.map((v) => (
+                <div key={v.id} className="p-4 bg-destructive/5 border border-destructive/10 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[14px] font-bold text-foreground">{v.policyTitle}</span>
+                    <span className="text-[12px] font-bold text-destructive">{v.score}%</span>
+                  </div>
+                  <p className="text-[12px] text-muted-foreground leading-relaxed">{v.reasoning}</p>
+                  {flaggedViolations.includes(v.id) ? (
+                    feedbackSubmitted.includes(v.id) ? (
+                      <div className="text-[11px] text-success font-bold mt-2 pt-2 border-t border-destructive/10">
+                        Feedback recorded — queued for model retraining
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3 pt-2 border-t border-destructive/10">
+                        <span className="text-[11px] text-muted-foreground">Was this verdict correct?</span>
+                        <button onClick={() => setFeedbackSubmitted(prev => [...prev, v.id])} className="text-[11px] font-bold text-success hover:underline">Correct</button>
+                        <button onClick={() => setFeedbackSubmitted(prev => [...prev, v.id])} className="text-[11px] font-bold text-destructive hover:underline">Incorrect</button>
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex items-center justify-end pt-2 border-t border-destructive/10">
+                      <button onClick={() => setFlaggedViolations(prev => [...prev, v.id])} className="text-[11px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1">
+                        <Flag className="w-3 h-3" /> Flag as incorrect
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -75,15 +75,15 @@ export function ManagerAssistant() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="h-[64px] px-6 flex items-center justify-between bg-card border-b-2 border-primary/40 shadow-sm">
+      <div className="h-[64px] px-6 flex items-center justify-between bg-card border-b border-border shadow-sm">
         <div className="flex items-center gap-4">
           <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
             <MessageSquare className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-[15px] font-bold text-foreground">
+            <span className="text-[15px] font-bold text-foreground block">
               Manager Assistant
-            </h2>
+            </span>
             <p className="text-[11px] text-muted-foreground font-medium">
               Enterprise Voice & Text Analysis
             </p>
@@ -109,10 +109,13 @@ export function ManagerAssistant() {
             <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
               <MessageSquare className="w-7 h-7 text-primary" />
             </div>
-            <h3 className="text-[18px] font-bold text-foreground mb-2">
+            <h2 className="text-[24px] font-bold text-foreground mb-1">
+              Manager Assistant
+            </h2>
+            <p className="text-[14px] text-muted-foreground font-medium mb-4">
               Ask anything about your call centre
-            </h3>
-            <p className="text-[13px] text-muted-foreground font-medium">
+            </p>
+            <p className="text-[13px] text-muted-foreground/60 font-medium">
               Voice or text — queries are logged to assistant_queries
             </p>
           </div>

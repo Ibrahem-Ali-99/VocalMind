@@ -33,9 +33,9 @@ describe("Session Detail", () => {
   it("renders emotion events section", () => {
     cy.contains("h3", "Emotion Events");
     cy.contains("emotion_events — AI-detected emotional shifts");
-    // Verify emotion transitions from mock data
-    cy.contains("Neutral");
-    cy.contains("Frustrated");
+    // Verify emotion transitions from mock data (case-insensitive due to CSS capitalize)
+    cy.contains(/neutral/i);
+    cy.contains(/frustrated/i);
   });
 
   it("shows Jump-to buttons for emotion events", () => {
@@ -67,7 +67,7 @@ describe("Session Detail", () => {
 
   it("supports RLHF feedback on violations", () => {
     // Find a violation flag button and click it
-    cy.get('[class*="FEF2F2"]').first().within(() => {
+    cy.get('[class*="bg-destructive/5"]').first().within(() => {
       cy.contains("button", "Flag as incorrect").click();
     });
     cy.contains("Was this verdict correct?");

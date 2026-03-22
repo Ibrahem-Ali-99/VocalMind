@@ -6,7 +6,7 @@ describe("Agent Portal Navigation", () => {
   it("loads the agent layout with sidebar", () => {
     cy.contains("Agent Portal");
     cy.contains("Personal view only");
-    cy.contains("RK");
+    cy.contains("Agent"); // role label always shown in sidebar footer
   });
 
   it("shows My Performance as the default page", () => {

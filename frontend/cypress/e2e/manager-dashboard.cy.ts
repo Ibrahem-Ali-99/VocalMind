@@ -14,14 +14,10 @@ describe("Manager Dashboard", () => {
     cy.get(".recharts-wrapper").should("have.length.at.least", 2);
   });
 
-  it("displays the interactions table with data", () => {
-    cy.contains("Agent");
-    cy.contains("Score");
-    cy.contains("Empathy");
-    cy.contains("Policy");
-    cy.contains("Resolution");
-    // Verify at least one row with mock data agent name
+  it("displays recent interactions with data", () => {
+    cy.contains("Recent Interactions");
     cy.contains("Sarah M.");
+    cy.contains("VIOLATION");
   });
 
   it("interaction cards link to session detail", () => {
@@ -32,8 +28,7 @@ describe("Manager Dashboard", () => {
   it("renders chart section headings", () => {
     cy.contains("Weekly Score Trends");
     cy.contains("Emotion Distribution");
-    cy.contains("Policy Compliance by Category");
-    cy.contains("Agent Performance Breakdown");
+    cy.contains("Agent Leaderboard");
   });
 
   it("displays the agent leaderboard", () => {

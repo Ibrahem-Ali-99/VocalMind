@@ -68,7 +68,7 @@ export function AgentLayout() {
                     Agent Portal
                   </div>
                   <div className="text-[12px] text-foreground font-semibold leading-tight">
-                    Personal Performance
+                    Personal view only
                   </div>
                 </div>
               </div>
@@ -128,7 +128,7 @@ export function AgentLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sidebar-foreground text-[13px] font-semibold truncate leading-tight">
-                  {user?.name || "Agent User"}
+                  {user?.name || "Robert King"}
                 </div>
                 <div className="text-sidebar-foreground/60 text-[11px]">
                   Agent

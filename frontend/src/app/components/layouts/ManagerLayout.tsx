@@ -76,7 +76,7 @@ export function ManagerLayout() {
                     Manager Portal
                   </div>
                   <div className="text-[12px] text-foreground font-semibold leading-tight">
-                    Full Organization
+                    Full org access
                   </div>
                 </div>
               </div>
@@ -136,7 +136,7 @@ export function ManagerLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sidebar-foreground text-[13px] font-semibold truncate leading-tight">
-                  {user?.name || "Manager User"}
+                  {user?.name || "Manager King"}
                 </div>
                 <div className="text-sidebar-foreground/60 text-[11px] font-medium capitalize mt-0.5">
                   {user?.role || "Manager"}

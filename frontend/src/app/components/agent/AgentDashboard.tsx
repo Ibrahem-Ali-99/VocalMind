@@ -135,9 +135,7 @@ export function AgentDashboard() {
         {/* Avg Score */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Overall Score
-            </span>
+            <h2 className="text-[13px] font-bold text-muted-foreground">Overall Score</h2>
             <div className="w-9 h-9 bg-success/10 rounded-xl flex items-center justify-center">
               <Star className="w-[18px] h-[18px] text-success" />
             </div>
@@ -153,9 +151,7 @@ export function AgentDashboard() {
         {/* Calls Today */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Calls Today
-            </span>
+            <h2 className="text-[13px] font-bold text-muted-foreground">Calls Today</h2>
             <div className="w-9 h-9 bg-success/10 rounded-xl flex items-center justify-center">
               <Phone className="w-[18px] h-[18px] text-success" />
             </div>
@@ -171,9 +167,7 @@ export function AgentDashboard() {
         {/* Resolution */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Resolution Rate
-            </span>
+            <h2 className="text-[13px] font-bold text-muted-foreground">Resolution Rate</h2>
             <div className="w-9 h-9 bg-[#F5F3FF] rounded-xl flex items-center justify-center">
               <Target className="w-[18px] h-[18px] text-[#8B5CF6]" />
             </div>
@@ -189,9 +183,7 @@ export function AgentDashboard() {
         {/* Avg Response */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Avg Response
-            </span>
+            <h2 className="text-[13px] font-bold text-muted-foreground">Avg Response</h2>
             <div className="w-9 h-9 bg-[#FFFBEB] rounded-xl flex items-center justify-center">
               <Zap className="w-[18px] h-[18px] text-[#F59E0B]" />
             </div>
@@ -209,9 +201,7 @@ export function AgentDashboard() {
       <div className="grid grid-cols-2 gap-6">
         {/* My Score Breakdown */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
-          <h3 className="text-[16px] font-semibold text-foreground mb-1">
-            My Score Breakdown
-          </h3>
+          <h2 className="text-[15px] font-bold text-foreground mb-1">My Score Breakdown</h2>
           <p className="text-[11px] italic text-muted-foreground mb-5">
             averaged for my calls — empathy, policy, resolution
           </p>
@@ -263,9 +253,7 @@ export function AgentDashboard() {
 
         {/* My Weekly Trend */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
-          <h3 className="text-[16px] font-semibold text-foreground mb-1">
-            My Weekly Trend
-          </h3>
+          <h2 className="text-[15px] font-bold text-foreground mb-1">My Weekly Trend</h2>
           <p className="text-[11px] italic text-muted-foreground mb-4">
             interaction_scores for my calls this week — overall score trend
           </p>
@@ -290,9 +278,7 @@ export function AgentDashboard() {
 
       {/* My Recent Calls */}
       <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
-        <h3 className="text-[16px] font-semibold text-foreground mb-1">
-          My Recent Calls
-        </h3>
+        <h2 className="text-[15px] font-bold text-foreground mb-1">My Recent Calls</h2>
         <p className="text-[11px] italic text-muted-foreground mb-4">
           personal calls only, sorted by date desc
         </p>
