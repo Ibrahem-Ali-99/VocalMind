@@ -1,8 +1,7 @@
 from typing import AsyncGenerator
 from typing import Annotated
 import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import select
 from app.core.database import get_session
 from app.core.config import settings
@@ -26,8 +25,6 @@ def get_supabase() -> Client:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
-
-from fastapi import Request
 
 def get_token(request: Request) -> str:
     token = request.cookies.get("vocalmind_token")

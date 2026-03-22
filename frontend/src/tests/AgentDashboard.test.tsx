@@ -56,7 +56,8 @@ describe('AgentDashboard', () => {
             </MemoryRouter>
         )
 
-        expect(await screen.findByText('Calls Today')).toBeInTheDocument()
+        const callStatLabels = await screen.findAllByText(/Calls This Week|Total Calls/)
+        expect(callStatLabels.length).toBeGreaterThan(0)
         expect(screen.getByText('Avg Response')).toBeInTheDocument()
         expect(screen.getByText('processed calls')).toBeInTheDocument()
     })

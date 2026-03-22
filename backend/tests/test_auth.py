@@ -140,7 +140,8 @@ def test_google_callback_success(mock_verify, mock_post, client: TestClient, moc
     
     response = client.get("/api/v1/auth/google/callback?code=xyz&state=good-state", follow_redirects=False)
     assert response.status_code == 307
-    assert "/login/success?token=" in response.headers["location"]
+    assert "/login/success" in response.headers["location"]
+    assert "vocalmind_token" in response.cookies
 
 
 def test_token_validation_no_auth(client: TestClient):

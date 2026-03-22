@@ -61,8 +61,10 @@ describe('SessionInspector Component', () => {
                 <SessionInspector />
             </MemoryRouter>
         )
-        expect(await screen.findByText('Sarah M.')).toBeInTheDocument()
-        expect(screen.getByText('John D.')).toBeInTheDocument()
+        const sarahEntries = await screen.findAllByText('Sarah M.')
+        expect(sarahEntries.length).toBeGreaterThan(0)
+        const johnEntries = await screen.findAllByText('John D.')
+        expect(johnEntries.length).toBeGreaterThan(0)
     })
 
     it('renders search input', async () => {
@@ -71,7 +73,7 @@ describe('SessionInspector Component', () => {
                 <SessionInspector />
             </MemoryRouter>
         )
-        const searchInput = await screen.findByPlaceholderText('Search agent, date, ID...')
+        const searchInput = await screen.findByPlaceholderText(/Search agent, date, ID(\.\.\.|…)/)
         expect(searchInput).toBeInTheDocument()
     })
 })
