@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 @patch("app.api.routes.emotion.router.emotion_client.analyze_audio", new_callable=AsyncMock)
 def test_analyze_upload_success(mock_analyze, client: TestClient):
     mock_analyze.return_value = {
-        "emotion": "happy",
-        "confidence": 0.95,
-        "raw_result": {"labels": ["happy", "neutral"], "scores": [0.95, 0.05]},
+        "top_emotion": "happy",
+        "top_score": 0.95,
+        "emotions": [{"label": "happy", "score": 0.95}],
     }
     response = client.post(
         "/api/v1/emotion/analyze",
@@ -24,14 +24,14 @@ def test_analyze_upload_success(mock_analyze, client: TestClient):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["emotion"] == "happy"
-    assert data["confidence"] == 0.95
+    assert data["top_emotion"] == "happy"
+    assert data["top_score"] == 0.95
 
 
 @patch("app.api.routes.emotion.router.emotion_client.analyze_audio", new_callable=AsyncMock)
 def test_analyze_mp3_accepted(mock_analyze, client: TestClient):
     """MP3 files should pass the extension check."""
-    mock_analyze.return_value = {"emotion": "neutral", "confidence": 0.7}
+    mock_analyze.return_value = {"top_emotion": "neutral", "top_score": 0.7, "emotions": []}
     response = client.post(
         "/api/v1/emotion/analyze",
         files={"file": ("recording.mp3", b"fake mp3", "audio/mpeg")},
@@ -56,7 +56,6 @@ def test_analyze_local_success(mock_analyze, client: TestClient):
         "top_emotion": "happy",
         "top_score": 0.95,
         "emotions": [{"label": "happy", "score": 0.95}, {"label": "neutral", "score": 0.05}],
-        "filename": "sample.wav"
     }
 
     response = client.post(
