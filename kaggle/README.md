@@ -1,46 +1,58 @@
-# VocalMind Inference API
+# VocalMind Kaggle Inference API
 
-The Kaggle Ngrok Server exposes 4 endpoints. All accept `multipart/form-data` with an audio `file`.
+High-performance AI inference server hosted on Kaggle, exposed via Ngrok. This server provides Speech-to-Text (Whisper), Emotion Recognition, and Speaker Diarization (Pyannote).
 
-**Base URL:** `https://etta-cleistogamous-untangentially.ngrok-free.dev`
-**Header:** `ngrok-skip-browser-warning: true` (Required)
+**Base URL:** `https://etta-cleistogamous-untangentially.ngrok-free.dev`  
+**Required Header:** `ngrok-skip-browser-warning: true` (Bypasses the ngrok interstitial page)
 
 ---
 
-### Endpoints & Examples
+## Endpoints
 
-#### 1. Transcription (`/transcribe`)
-Returns Whisper-transcribed text, language, and timestamped segments.
+### 1. Health Check (`GET /health`)
+Verify the server is running and reachable. Returns `{"status": "ok"}`.
 
-```bash
-curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/transcribe \
-  -H "ngrok-skip-browser-warning: true" \
-  -F "file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077589677/2077589677_final_stereo.wav"
+### 2. Transcription (`POST /transcribe`)
+Converts audio to text using OpenAI Whisper. Returns full text, detected language, and timestamped segments.
+
+**Example Response:**
+```json
+{
+  "text": "Hello, thank you for calling support...",
+  "language": "en",
+  "segments": [{"start": 0.0, "end": 4.72, "text": " Hello, thank you..."}]
+}
 ```
 
-#### 2. Emotion (`/emotion`)
-Returns the dominant emotion and probabilities.
+### 3. Emotion Recognition (`POST /emotion`)
+Identifies the primary emotion in the audio. Returns the top emotion and a full probability distribution.
+
+### 4. Speaker Diarization (`POST /diarize`)
+Identifies unique speakers and their corresponding time ranges using Pyannote.
+
+**Note:** If the audio has complex background noise or overlaps, it may return empty segments while still returning 200 OK.
+
+### 5. Full Pipeline (`POST /full`)
+A power-user endpoint that runs Transcription, Diarization, and Emotion recognition in parallel (server-side).
+
+**Special Feature:** Diarization results are automatically mapped to transcription segments. Each segment in the `segments` list will contain a `speaker` field (e.g., `SPEAKER_00`, `SPEAKER_01`, or `UNKNOWN`).
+
+---
+
+## Example Usage (Telecom Call)
 
 ```bash
-curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/emotion \
-  -H "ngrok-skip-browser-warning: true" \
-  -F "file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077593127/2077593127_final_stereo.wav"
-```
-
-#### 3. Diarization (`/diarize`)
-Returns Pyannote speakers timestamps (`SPEAKER_00`, `SPEAKER_01`).
-
-```bash
-curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/diarize \
-  -H "ngrok-skip-browser-warning: true" \
-  -F "file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077589677/2077589677_final_stereo.wav"
-```
-
-#### 4. Full Pipeline (`/full`)
-Combines STT, Emotion, and Diarization into one JSON output.
-
-```bash
+# Full analysis of a 3-minute telecom call
 curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/full \
   -H "ngrok-skip-browser-warning: true" \
-  -F "file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077593127/2077593127_final_stereo.wav"
+  -F "file=@telecom_call.mp3"
 ```
+
+---
+
+## Implementation Details
+
+- **Input Format:** `multipart/form-data` with a `file` field.
+- **Auto-Processing:** Stereo files are automatically mixed down to mono for Diarization processing to ensure high accuracy.
+- **Concurrency:** The server uses an internal GPU lock and `asyncio.to_thread` to ensure stable processing and non-blocking health checks.
+- **Detailed Schema:** See [api_response_schema.json](api_response_schema.json) for raw response objects.

@@ -1,42 +1,66 @@
 {
-  "/transcribe": {
-    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/transcribe -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077589677/2077589677_final_stereo.wav\"",
+  "/health": {
+    "curl_example": "curl -X GET https://etta-cleistogamous-untangentially.ngrok-free.dev/health -H \"ngrok-skip-browser-warning: true\"",
     "response": {
-      "text": "Hello world.",
+      "status": "ok"
+    }
+  },
+  "/transcribe": {
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/transcribe -H \"ngrok-skip-browser-warning: true\" -F \"file=@telecom_call.mp3\"",
+    "response": {
+      "text": "Hello, thank you for calling customer support...",
       "language": "en",
       "segments": [
-        {"start": 0.0, "end": 2.5, "text": "Hello world."}
+        {
+          "start": 0.0,
+          "end": 4.72,
+          "text": " Hello, thank you for calling customer support. My name is Rajesh. How can I help you today?"
+        }
       ]
     }
   },
   "/emotion": {
-    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/emotion -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077593127/2077593127_final_stereo.wav\"",
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/emotion -H \"ngrok-skip-browser-warning: true\" -F \"file=@telecom_call.mp3\"",
     "response": {
       "top_emotion": "neutral",
       "emotions": [
-        {"label": "neutral", "score": 0.996}
+        {
+          "label": "neutral",
+          "score": 0.2776
+        },
+        {
+          "label": "sad",
+          "score": 0.2193
+        }
       ]
     }
   },
   "/diarize": {
-    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/diarize -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077589677/2077589677_final_stereo.wav\"",
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/diarize -H \"ngrok-skip-browser-warning: true\" -F \"file=@telecom_call.mp3\"",
     "response": {
-      "segments": [
-        {"start": 0.0, "end": 2.5, "speaker": "SPEAKER_00"}
-      ]
-    }
+      "segments": []
+    },
+    "note": "Currently returns empty if the remote model is still being optimized or if speaker separation is unclear."
   },
   "/full": {
-    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/full -H \"ngrok-skip-browser-warning: true\" -F \"file=@g:/projects/VocalMind/research/voices-examples/DEX_channel_separated_callcenter/2077593127/2077593127_final_stereo.wav\"",
+    "curl_example": "curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/full -H \"ngrok-skip-browser-warning: true\" -F \"file=@telecom_call.mp3\"",
     "response": {
-      "text": "Hello world.",
+      "text": "Hello, thank you for calling customer support...",
       "language": "en",
       "segments": [
-        {"start": 0.0, "end": 2.5, "text": "Hello world.", "speaker": "SPEAKER_00"}
+        {
+          "start": 0.0,
+          "end": 4.72,
+          "text": " Hello, thank you for calling customer support...",
+          "speaker": "UNKNOWN"
+        }
       ],
       "top_emotion": "neutral",
       "emotions": [
-        {"label": "neutral", "score": 0.996}
+        {
+          "label": "neutral",
+          "score": 0.2776
+        }
       ]
     }
   }
