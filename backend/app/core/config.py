@@ -28,13 +28,11 @@ class Settings(BaseSettings):
     # Docker container URLs (used when IS_LOCAL=true)
     EMOTION_API_URL: str = "http://localhost:8001"
     VAD_API_URL: str = "http://localhost:8002"
+    WHISPERX_API_URL: str = "http://localhost:8003"
 
-    # Kaggle Emotion API (ngrok URL)
-    KAGGLE_NGROK_URL: str = ""
-    KAGGLE_API_SECRET: str = "vocalmind_secret_gpu_key"
-
-    # Kaggle server URL (used when IS_LOCAL=false)
+    # Kaggle inference server (used when IS_LOCAL=false)
     KAGGLE_SERVER_URL: str = ""
+    KAGGLE_NGROK_URL: str = ""
 
     # Supabase (for routes that use Supabase client directly)
     SUPABASE_URL: str = ""

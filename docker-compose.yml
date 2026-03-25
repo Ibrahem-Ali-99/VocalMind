@@ -33,8 +33,9 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://vocalmind:vocalmind_dev@db:5432/vocalmind
-      - EMOTION_API_URL=http://emotion:8001
+      - EMOTION_API_URL=http://emotion:8000
       - VAD_API_URL=http://vad:8002
+      - WHISPERX_API_URL=http://whisperx:8000
       - FRONTEND_URL=http://localhost:3000
     volumes:
       - ./backend/app:/app/app
@@ -135,9 +136,9 @@ services:
       context: ./services/emotion
     container_name: vocalmind-emotion
     ports:
-      - "8001:8001"
+      - "8001:8000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -150,9 +151,9 @@ services:
       context: ./services/whisperx
     container_name: vocalmind-whisperx
     ports:
-      - "8003:8003"
+      - "8003:8000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

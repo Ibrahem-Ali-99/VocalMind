@@ -1,19 +1,18 @@
-# Diarization microservice client.
-# Inherits all HTTP logic from BaseKaggleClient — only sets the endpoint.
-
 from app.core.config import settings
+from app.core.inference_contracts import normalize_diarization_response
 from app.core.kaggle_client import BaseKaggleClient
 
 
 class DiarizationAPIClient(BaseKaggleClient):
-    """HTTP client for the speaker diarization service."""
-
-    endpoint = "/diarize"
+    local_endpoint = "/transcribe"
+    remote_endpoint = "/diarize"
 
     @property
     def local_base_url(self) -> str:
-        return settings.EMOTION_API_URL  # same Docker host for now
+        return settings.WHISPERX_API_URL
+
+    def normalize_response(self, data):
+        return normalize_diarization_response(data)
 
 
-# Module-level singleton
 diarization_client = DiarizationAPIClient()
