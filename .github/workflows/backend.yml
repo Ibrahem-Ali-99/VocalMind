@@ -46,8 +46,8 @@ jobs:
       - name: Lint (Ruff)
         run: uv run ruff check . --output-format=github
 
-      # - name: Test (pytest)
-      #   run: uv run pytest tests/ -v --tb=short
+      - name: Test (pytest)
+        run: uv run pytest tests/ -v --tb=short
 
       - name: License Audit
         run: |
