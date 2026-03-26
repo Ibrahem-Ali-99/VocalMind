@@ -28,32 +28,52 @@ VocalMind is a modular AI ecosystem integrating speech processing (ASR, Diarizat
 - **Docker & Docker Compose**
 
 ### Configuration
-Copy `.env.example` to `.env` and fill in the required api keys:
+For local API development, copy `backend/.env.example` to `backend/.env`.
+If you run services that load config from the repository root, also copy `.env.example` to `.env`.
+
 ```bash
+cp backend/.env.example backend/.env
 cp .env.example .env
 ```
-Key requirements: Groq, Google, Pinecone, ElevenLabs, HuggingFace.
 
-### 1. Start Services (Docker)
+### Option A. Run The Full Stack In Docker
 
-Start all services (Database, Backend, Frontend, Ollama, Qdrant, Ingestion, VAD, Emotion, WhisperX):
+Start the full stack in containers (Database, Backend, Frontend, Ollama, Qdrant, Ingestion, VAD, Emotion, WhisperX):
 
 ```bash
 make up
 ```
 
-### 2. Run Local Development
+This serves the app at:
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+
+### Option B. Run Backend And Frontend Locally
+
+Start only the supporting services needed by the local apps:
+
+```bash
+make support-up
+```
+
+If you want the local backend to use the local Dockerized inference services, set `IS_LOCAL=true` in `backend/.env`.
 
 **Backend:**
 ```bash
-make backend-install
-make backend-dev     # → http://localhost:8000
+make be-install
+make be-dev          # -> http://localhost:8000
 ```
 
 **Frontend:**
 ```bash
-make frontend-install
-make frontend-dev    # → http://localhost:3000
+make fe-install
+make fe-dev          # -> http://localhost:3000
+```
+
+Stop only the supporting containers when you are done with local development:
+
+```bash
+make support-down
 ```
 
 ---
@@ -83,26 +103,28 @@ VocalMind/
 
 ### Backend
 ```bash
-make backend-install  # Install dependencies
-make backend-dev      # Run api gateway
-make backend-test     # Run pytest suite
-make backend-lint     # Run Ruff linter
+make be-install       # Install dependencies
+make be-dev           # Run api gateway
+make be-test          # Run pytest suite
+make be-lint          # Run Ruff linter
 ```
 
 ### Frontend
 ```bash
-make frontend-install # Install dependencies
-make frontend-test    # Run Cypress E2E tests
-make frontend-lint    # Run ESLint validation
-make frontend-build   # Build production bundle
+make fe-install       # Install dependencies
+make fe-test          # Run Cypress E2E tests
+make fe-lint          # Run ESLint validation
+make fe-build         # Build production bundle
 ```
 
 ### Docker
 ```bash
 make up               # Start all services
+make support-up       # Start only supporting services for local app development
 make logs             # Tail container logs
 make build            # Rebuild images
 make down             # Stop all services
+make support-down     # Stop supporting services only
 ```
 
 ### General
