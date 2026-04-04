@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Headphones, Mail, Lock, LogIn, AlertCircle } from "lucide-react";
 
 export default function Login() {
-  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { login, user, isAuthenticated, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   
   const [email, setEmail] = useState("");
@@ -23,7 +23,7 @@ export default function Login() {
 
   // If already logged in, redirect away
   if (isAuthenticated) {
-    return <Navigate to="/manager" replace />;
+    return <Navigate to={user?.role === "agent" ? "/agent" : "/manager"} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,8 +32,12 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
-      navigate("/manager");
+      const user = await login(email, password);
+      if (user?.role === "agent") {
+        navigate("/agent");
+      } else {
+        navigate("/manager");
+      }
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please check your credentials.");
     } finally {

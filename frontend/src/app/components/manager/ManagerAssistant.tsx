@@ -195,7 +195,7 @@ export function ManagerAssistant() {
               </div>
             ))}
             {isLoading && (
-               <div className="flex justify-start">
+               <div className="flex justify-start" data-cy="assistant-loading">
                   <div className="bg-card border border-border shadow-sm rounded-[18px_18px_18px_4px] px-4 py-3">
                      <div className="flex gap-1">
                         <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
@@ -220,6 +220,7 @@ export function ManagerAssistant() {
             <button
               key={index}
               onClick={() => handleSend(query)}
+              data-cy={`assistant-suggestion-${index}`}
               className="px-3 py-2 bg-primary/10 text-primary border border-primary/20 rounded-lg text-[12px] text-left hover:bg-primary/20 transition-colors disabled:opacity-50"
               disabled={isLoading}
             >

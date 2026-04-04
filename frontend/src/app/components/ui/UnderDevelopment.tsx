@@ -19,6 +19,7 @@ export function UnderDevelopment() {
       <div className="flex items-center gap-3">
         <button 
           onClick={() => navigate(-1)}
+          data-cy="under-development-back"
           className="flex items-center gap-2 h-10 px-5 rounded-xl border border-border bg-card text-[13px] font-semibold text-foreground hover:bg-muted transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -26,6 +27,7 @@ export function UnderDevelopment() {
         </button>
         <Link 
           to="/login"
+          data-cy="under-development-home"
           className="flex items-center gap-2 h-10 px-5 rounded-xl bg-primary text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20"
         >
           Return Home

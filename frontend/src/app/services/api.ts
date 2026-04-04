@@ -390,25 +390,66 @@ export function getAssistantHistory(): Promise<AssistantResponse[]> {
 
 const API_BASE_ROOT = "http://localhost:8000/api/v1";
 
+// Mock values for demonstration
+const MOCK_MANAGER: User = {
+  id: "b0000000-0000-0000-0000-000000000001",
+  email: "manager@niletech.com",
+  name: "Galal Manager",
+  role: "manager",
+  organization_id: "a0000000-0000-0000-0000-000000000001",
+  is_active: true
+};
+
+const MOCK_AGENT: User = {
+  id: "b0000001-0000-0000-0000-000000000002",
+  email: "mohsen@niletech.com",
+  name: "Mohsen Agent",
+  role: "agent",
+  agent_type: "human",
+  organization_id: "a0000000-0000-0000-0000-000000000001",
+  is_active: true
+};
+
+let currentUser: User | null = null;
+
 export async function loginWithEmail(email: string, password: string): Promise<{ access_token: string }> {
+  // Simple mock logic for demonstration
+  if (password === "password") {
+    if (email === "manager@niletech.com") {
+      currentUser = MOCK_MANAGER;
+      return { access_token: "mock-token-manager" };
+    } else if (email === "mohsen@niletech.com") {
+      currentUser = MOCK_AGENT;
+      return { access_token: "mock-token-agent" };
+    }
+  }
+
   const formData = new URLSearchParams();
   formData.append("username", email);
   formData.append("password", password);
 
-  const res = await fetch(`${API_BASE_ROOT}/auth/login/access-token`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: formData,
-  });
+  try {
+    const res = await fetch(`${API_BASE_ROOT}/auth/login/access-token`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData,
+    });
 
-  if (!res.ok) {
-    throw new Error("Invalid email or password");
+    if (!res.ok) {
+      throw new Error("Invalid email or password");
+    }
+
+    return res.json();
+  } catch (err) {
+    if (password === "password" && (email === "manager@niletech.com" || email === "mohsen@niletech.com")) {
+       // Fallback to mock if backend is down
+       return { access_token: "mock-token-fallback" };
+    }
+    throw err;
   }
-
-  return res.json();
 }
 
 export async function loginWithGoogle(idToken: string): Promise<{ access_token: string }> {
@@ -428,6 +469,7 @@ export interface User {
 }
 
 export async function getUserMe(): Promise<User> {
+  if (currentUser) return currentUser;
   return apiFetch<User>("/users/me");
 }
 

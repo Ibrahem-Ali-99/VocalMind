@@ -52,13 +52,17 @@ fe-lint: ## Lint frontend code
 	cd frontend && npm run lint
 
 fe-test: ## Run frontend E2E tests (Cypress)
+	cd frontend && npm run build
 	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npm run cy:run"
 
 fe-e2e-summary: ## Run frontend E2E tests with concise summary
+	cd frontend && npm run build
 	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npx cypress run --reporter list"
 
 fe-e2e-cov: ## Run frontend E2E tests and generate code coverage report
-	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npx cypress run --env coverage=true" && npx nyc report --reporter=text-summary
+	powershell -NoProfile -Command "$$paths = 'frontend/.nyc_output','frontend/coverage','frontend/dist'; foreach ($$path in $$paths) { if (Test-Path $$path) { Remove-Item -Recurse -Force $$path } }"
+	powershell -NoProfile -Command "Set-Location frontend; $$env:CYPRESS_COVERAGE='true'; npm run build"
+	cd frontend && npx -y concurrently -k -s first "npm run preview" "npx -y wait-on http-get://localhost:3000/ && npx cypress run --env coverage=true" && npx nyc report --reporter=html --reporter=text-summary
 
 fe-test-cov: ## Run frontend unit tests with coverage report
 	cd frontend && npx vitest run --coverage.enabled --coverage.reporter=text --coverage.reporter=html
@@ -80,7 +84,7 @@ rag-install: ## Install RAG dependencies
 llm-trigger-test: ## Run full LLM-trigger validation (backend + RAG + frontend)
 	cd backend && uv run pytest tests/test_llm_trigger_service.py tests/test_interactions_llm_triggers.py tests/test_sop_retrieval.py -q
 	cd services/rag && uv run pytest tests/test_ingest.py -q
-	cd frontend && npm run test -- --run src/tests/LLMTriggerSections.test.tsx
+	cd frontend && npm run test -- --run src/tests/AgentCallDetail.test.tsx
 
 # ── CI/CD ─────────────────────────────────────────────────────────────────
 

@@ -126,6 +126,7 @@ export function ManagerLayout() {
         <div className="border-t border-sidebar-border p-4">
           <button
             onClick={() => setCollapsed(!collapsed)}
+            data-cy="sidebar-collapse-toggle"
             className="w-full flex items-center justify-center h-8 text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors mb-3"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >

@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router";
 import { ArrowLeft, Play, Headphones, Loader2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
+import { formatResponseTime } from "../../utils/interactionFormat";
 
 const emotionTheme: Record<string, { label: string; color: string; surface: string; score: number }> = {
   neutral: { label: "Neutral", color: "#64748B", surface: "rgba(100, 116, 139, 0.16)", score: 54 },
@@ -358,8 +359,14 @@ export function SessionDetail() {
     return "var(--destructive)";
   };
 
-  const responseTimeText = interaction.responseTime.endsWith("s") ? interaction.responseTime : `${interaction.responseTime}s`;
+  const responseTimeText = formatResponseTime(interaction.responseTime);
   const progressPercent = Math.max(0, Math.min(100, (currentTimeSeconds / totalDurationSeconds) * 100));
+  const processAdherenceResolved = Boolean(ragCompliance?.processAdherence?.isResolved);
+  const processAdherenceAccentClass = processAdherenceResolved ? "before:bg-success" : "before:bg-destructive";
+  const processAdherenceBadgeClass = processAdherenceResolved
+    ? "bg-success/10 text-success"
+    : "bg-destructive/10 text-destructive";
+  const processAdherenceBadgeText = processAdherenceResolved ? "Resolved" : "Unresolved";
 
   const handleProgressChange = (value: number) => {
     if (!audioRef.current) {
@@ -668,6 +675,7 @@ export function SessionDetail() {
                             event.stopPropagation();
                             setWindowedUtteranceId(u.id);
                           }}
+                          data-cy="transcript-window-trigger"
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-slate-500 dark:text-slate-300 hover:text-primary"
                         >
                           Open Window
@@ -708,17 +716,17 @@ export function SessionDetail() {
               ) : (
                 <>
                   {ragCompliance.processAdherence && (
-                    <div className="relative pl-5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-destructive before:rounded-full space-y-5">
+                    <div className={`relative pl-5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:rounded-full space-y-5 ${processAdherenceAccentClass}`}>
                       <div className="flex items-center justify-between">
                         <h4 className="text-[16px] font-extrabold text-slate-800 dark:text-slate-100">Process Adherence</h4>
-                        <span className="px-2.5 py-1 bg-destructive/10 text-destructive text-[11px] font-extrabold rounded-md uppercase tracking-wider">Unresolved</span>
+                        <span className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md uppercase tracking-wider ${processAdherenceBadgeClass}`}>{processAdherenceBadgeText}</span>
                       </div>
 
                       <div className="grid grid-cols-[100px_1fr] gap-3 text-[13px]">
                         <span className="text-slate-500 font-medium">Topic:</span>
                         <span className="font-extrabold text-slate-800 dark:text-slate-100 text-right">{ragCompliance.processAdherence.detectedTopic}</span>
                         <span className="text-slate-500 font-medium">Efficiency:</span>
-                        <span className="font-extrabold text-slate-800 dark:text-slate-100 text-right">4/10</span>
+                        <span className="font-extrabold text-slate-800 dark:text-slate-100 text-right">{ragCompliance.processAdherence.efficiencyScore}/10</span>
                       </div>
 
                       <div>
@@ -828,7 +836,10 @@ export function SessionDetail() {
       </div>
 
       {windowedUtterance && (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4"
+          data-cy="conversation-window"
+        >
           <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F131C] shadow-2xl">
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
               <div>
@@ -838,6 +849,7 @@ export function SessionDetail() {
               <button
                 type="button"
                 onClick={() => setWindowedUtteranceId(null)}
+                data-cy="transcript-window-close"
                 className="text-[12px] font-bold text-slate-500 dark:text-slate-300 hover:text-primary"
               >
                 Close

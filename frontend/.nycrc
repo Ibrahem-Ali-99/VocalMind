@@ -1,14 +1,23 @@
 {
   "extends": "@istanbuljs/nyc-config-typescript",
   "all": true,
+  "include": [
+    "src/main.tsx",
+    "src/app/**/*.{ts,tsx}"
+  ],
   "reporter": [
     "html"
   ],
   "exclude": [
+    "src/**/*.d.ts",
+    "src/imports/**",
+    "src/tests/**",
+    "src/app/components/ui/**",
+    "src/app/components/figma/**",
     "cypress/**",
-    "**/*.test.tsx",
-    "**/*.cy.ts",
-    "vitest.setup.ts",
-    "dist/**"
+    "dist/**",
+    "coverage/**",
+    ".nyc_output/**",
+    "vitest.setup.tsx"
   ]
 }

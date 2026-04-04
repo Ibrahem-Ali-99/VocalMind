@@ -108,7 +108,11 @@ export function KnowledgeBase() {
                     <p className="text-[12px] text-muted-foreground line-clamp-2">{p.preview}</p>
                   </div>
                   <div className="flex flex-col items-center gap-2 shrink-0">
-                    <Switch checked={p.isActive} onCheckedChange={() => togglePolicy(p.id)} />
+                    <Switch
+                      checked={p.isActive}
+                      data-cy={`policy-toggle-${p.id}`}
+                      onCheckedChange={() => togglePolicy(p.id)}
+                    />
                     <span className={`text-[10px] font-bold ${p.isActive ? "text-success" : "text-muted-foreground"}`}>
                       {p.isActive ? "ACTIVE" : "INACTIVE"}
                     </span>
@@ -150,7 +154,11 @@ export function KnowledgeBase() {
                     <p className="text-[12px] text-muted-foreground line-clamp-2">{f.preview}</p>
                   </div>
                   <div className="flex flex-col items-center gap-2 shrink-0">
-                    <Switch checked={f.isActive} onCheckedChange={() => toggleFaq(f.id)} />
+                    <Switch
+                      checked={f.isActive}
+                      data-cy={`faq-toggle-${f.id}`}
+                      onCheckedChange={() => toggleFaq(f.id)}
+                    />
                     <span className={`text-[10px] font-bold ${f.isActive ? "text-success" : "text-muted-foreground"}`}>
                       {f.isActive ? "ACTIVE" : "INACTIVE"}
                     </span>

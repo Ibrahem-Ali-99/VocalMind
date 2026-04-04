@@ -11,7 +11,8 @@ export default defineConfig({
     // Instruments client code for Cypress test coverage
     istanbul({
       cypress: true,
-      requireEnv: false,
+      requireEnv: true,
+      forceBuildInstrument: true,
     }),
   ],
   resolve: {

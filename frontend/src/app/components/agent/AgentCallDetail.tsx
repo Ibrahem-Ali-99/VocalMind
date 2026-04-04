@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { ArrowLeft, Target, Play, Headphones, Loader2, AlertTriangle } from "lucide-react";
 import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
 import { EmotionComparisonPanel } from "../manager/EmotionComparisonPanel.tsx";
+import { formatResponseTime } from "../../utils/interactionFormat";
 
 export function AgentCallDetail() {
   const { id } = useParams();
@@ -70,7 +71,7 @@ export function AgentCallDetail() {
     empathyScore: interaction.empathyScore,
     policyScore: interaction.policyScore,
     resolutionScore: interaction.resolutionScore,
-    responseTime: interaction.responseTime,
+    responseTime: formatResponseTime(interaction.responseTime),
   };
 
   const getScoreColor = (score: number) => {
@@ -200,7 +201,7 @@ export function AgentCallDetail() {
           <div className="bg-muted/30 rounded-lg p-3 text-center">
             <div className="text-[11px] text-muted-foreground mb-1">Resp. Time</div>
             <div className="text-[18px] font-semibold text-foreground">
-              {callData.responseTime}s
+              {callData.responseTime}
             </div>
           </div>
         </div>
@@ -254,6 +255,7 @@ export function AgentCallDetail() {
                 setRefreshingLLM(true);
                 setLlmRefreshTick((v) => v + 1);
               }}
+              data-cy="llm-refresh"
               className="mt-2 px-3 py-1.5 border border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8] rounded text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors"
             >
               {refreshingLLM ? "Refreshing..." : "Refresh LLM"}

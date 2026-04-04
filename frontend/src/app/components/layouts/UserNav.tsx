@@ -47,7 +47,10 @@ export function UserNav() {
     <div className="flex items-center gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="relative flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold ring-2 ring-primary/20 hover:ring-primary/40 transition-all focus:outline-none">
+          <button
+            data-cy="user-menu-trigger"
+            className="relative flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold ring-2 ring-primary/20 hover:ring-primary/40 transition-all focus:outline-none"
+          >
             {getInitials(user?.name || "User")}
           </button>
         </DropdownMenuTrigger>
@@ -84,6 +87,7 @@ export function UserNav() {
           </DropdownMenuLabel>
           <DropdownMenuItem 
             onClick={() => setTheme("light")}
+            data-cy="theme-option-light"
             className="flex items-center justify-between text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             <div className="flex items-center">
@@ -94,6 +98,7 @@ export function UserNav() {
           </DropdownMenuItem>
           <DropdownMenuItem 
             onClick={() => setTheme("dark")}
+            data-cy="theme-option-dark"
             className="flex items-center justify-between text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             <div className="flex items-center">
@@ -104,6 +109,7 @@ export function UserNav() {
           </DropdownMenuItem>
           <DropdownMenuItem 
             onClick={() => setTheme("system")}
+            data-cy="theme-option-system"
             className="flex items-center justify-between text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             <div className="flex items-center">
@@ -136,6 +142,7 @@ export function UserNav() {
                 <AlertDialogCancel className="border-border text-foreground hover:bg-accent">Cancel</AlertDialogCancel>
                 <AlertDialogAction 
                   onClick={logout}
+                  data-cy="logout-confirm"
                   className="bg-destructive hover:opacity-90 text-destructive-foreground border-none"
                 >
                   Sign Out
