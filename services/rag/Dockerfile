@@ -23,8 +23,8 @@ RUN python -c "from docling.document_converter import DocumentConverter; Documen
 # Copy all application code
 COPY config.py ingest.py query_engine.py evaluator.py main.py __init__.py ./
 
-# Directories mapped via Docker volumes at runtime
-RUN mkdir -p /app/docs /app/parsed_docs /app/logs /app/reports
+# Directories used at runtime
+RUN mkdir -p /sop-standards /app/logs /app/reports
 
 # Default: run ingestion
 CMD ["python", "main.py", "--ingest"]

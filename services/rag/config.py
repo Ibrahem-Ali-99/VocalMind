@@ -18,6 +18,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
+SERVICE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SERVICE_DIR.parent.parent
+
 
 # ── Sub-configs ───────────────────────────────────────────────────────────────
 
@@ -76,20 +79,20 @@ class Settings(BaseSettings):
     """Application-wide settings with environment variable support."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=SERVICE_DIR / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
         env_nested_delimiter="__",
     )
 
     # Paths
-    BASE_DIR: Path = Path(__file__).resolve().parent
+    BASE_DIR: Path = SERVICE_DIR
     DOCS_DIR: Path = Field(
-        default_factory=lambda: Path(__file__).resolve().parent.parent.parent / "sop-standards",
+        default_factory=lambda: REPO_ROOT / "sop-standards",
         alias="DOCS_DIR",
     )
     PARSED_DIR: Path = Field(
-        default_factory=lambda: Path(__file__).resolve().parent.parent.parent / "sop-standards",
+        default_factory=lambda: REPO_ROOT / "sop-standards",
         alias="PARSED_DIR",
     )
 
@@ -103,6 +106,16 @@ class Settings(BaseSettings):
     # Query defaults
     similarity_top_k: int = 5
     response_mode: Literal["compact", "refine", "tree_summarize"] = "compact"
+
+    def model_post_init(self, __context) -> None:
+        """Resolve relative env paths from the RAG service directory."""
+        self.DOCS_DIR = self._resolve_path(self.DOCS_DIR)
+        self.PARSED_DIR = self._resolve_path(self.PARSED_DIR)
+
+    @staticmethod
+    def _resolve_path(path: Path) -> Path:
+        """Resolve relative paths against services/rag/."""
+        return path if path.is_absolute() else (SERVICE_DIR / path).resolve()
 
     def validate_config(self) -> None:
         """Validate critical config at startup."""
