@@ -1,10 +1,12 @@
 // Import custom Cypress commands
 import './commands';
 
-// Import code coverage support hooks
-import '@cypress/code-coverage/support';
+if (Cypress.env('coverage')) {
+  require('@cypress/code-coverage/support');
+}
 
 beforeEach(() => {
   cy.clearCookies();
   cy.clearLocalStorage();
+  cy.mockApiScenario();
 });

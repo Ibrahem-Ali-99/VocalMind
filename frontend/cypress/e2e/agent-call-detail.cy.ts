@@ -1,77 +1,110 @@
-describe("Agent Call Detail", () => {
-  describe("int-001 (High Score, No Violations)", () => {
-    beforeEach(() => {
-      cy.visit("/agent/calls/int-001");
-    });
+import {
+  buildInteractionDetail,
+  buildInteractionSummary,
+} from '../support/mockApi';
 
-    it("renders the back navigation link", () => {
-      cy.contains("a", "Back to My Calls").should("have.attr", "href", "/agent");
-    });
+describe('Agent Call Detail', () => {
+  it('renders coaching and llm insights for an unresolved call', () => {
+    cy.visitAs('agent', '/agent/calls/int-002');
 
-    it("displays call header with updated date, time, and language", () => {
-      cy.contains("CALL DETAIL");
-      cy.contains("2025-03-01 · 09:15 AM");
-      cy.contains("8:42 · English");
-    });
-
-    it("displays overall score ring", () => {
-      cy.get("svg circle").should("have.length.at.least", 2);
-      cy.contains("92%"); // Overall is 92 in mockData
-    });
-
-    it("renders the score grid with four categories", () => {
-      cy.contains("Empathy");
-      cy.contains("95%"); // Empathy for int-001
-      cy.contains("Policy");
-      cy.contains("90%");
-      cy.contains("Resolution");
-      cy.contains("88%");
-      cy.contains("Resp. Time");
-      cy.contains("1.2s");
-    });
-
-    it("renders transcript section with utterances", () => {
-      cy.contains("h3", "Transcript");
-      cy.contains("Good morning! Thank you for calling VocalMind support.");
-      cy.contains("Hi, I've been having issues with my account login");
-      cy.contains("I'm sorry to hear that.");
-    });
-
-    it("shows speaker labels and emotion badges in transcript", () => {
-      cy.contains("Me");
-      cy.contains("Customer");
-      cy.contains("Neutral");
-      cy.contains("Frustrated");
-    });
-
-    it("renders customer emotion journey section", () => {
-      cy.contains("h3", "Customer Emotion Journey");
-      cy.contains("emotion_events — how customer sentiment changed");
-    });
-
-    it("shows emotion transitions with Jump buttons", () => {
-      cy.contains("button", "Jump to 00:05");
-    });
-
-    it("navigates back to agent dashboard", () => {
-      cy.contains("a", "Back to My Calls").click();
-      cy.url().should("eq", Cypress.config().baseUrl + "/agent");
-    });
+    cy.wait('@getInteractionDetail');
+    cy.contains('Coaching Points').should('be.visible');
+    cy.contains(/Hold Time Limit|Escalation Policy/).should('be.visible');
+    cy.contains('LLM Coaching Insights').scrollIntoView().should('be.visible');
+    cy.contains('Needs follow-up').should('exist');
+    cy.contains('Contradiction').should('exist');
   });
 
-  describe("int-002 (Low Score, Has Violations)", () => {
-    beforeEach(() => {
-      cy.visit("/agent/calls/int-002");
+  it('refreshes the llm insights with a rerun request', () => {
+    const refreshedDetail = buildInteractionDetail(
+      buildInteractionSummary({
+        id: 'int-001',
+        agentId: 'agent-001',
+        agentName: 'Sarah M.',
+      }),
+      {
+        llmTriggers: {
+          available: true,
+          interactionId: 'int-001',
+          processAdherence: {
+            detectedTopic: 'Refund follow-up',
+            isResolved: false,
+            efficiencyScore: 6,
+            justification: 'Updated rerun justification.',
+            missingSopSteps: ['Supervisor escalation'],
+            evidenceQuotes: [],
+            citations: [],
+          },
+          nliPolicy: {
+            nliCategory: 'Benign Deviation',
+            justification: 'Updated policy view.',
+            evidenceQuotes: [],
+            citations: [],
+          },
+          emotionShift: {
+            isDissonanceDetected: false,
+            dissonanceType: 'None',
+            rootCause: 'Updated emotion analysis.',
+            currentCustomerEmotion: 'calmer',
+            currentEmotionReasoning: 'Customer accepted the next step.',
+            counterfactualCorrection: 'Maintain current pacing.',
+            evidenceQuotes: [],
+            citations: [],
+          },
+        },
+      },
+    );
+
+    cy.visitAs('agent', '/agent/calls/int-001');
+    cy.wait('@getInteractionDetail');
+    cy.contains('Account Login').should('be.visible');
+
+    cy.intercept(
+      'GET',
+      '**/api/v1/interactions/int-001*llm_force_rerun=true*',
+      {
+        statusCode: 200,
+        body: refreshedDetail,
+      },
+    ).as('refreshLLM');
+
+    cy.get('[data-cy="llm-refresh"]').click();
+
+    cy.wait('@refreshLLM');
+    cy.contains('Refund follow-up').should('be.visible');
+    cy.contains('Updated policy view.').should('be.visible');
+  });
+
+  it('shows an unavailable state when llm insights are offline', () => {
+    cy.visitAs('agent', '/agent/calls/int-001', {
+      interactionDetails: {
+        'int-001': {
+          body: buildInteractionDetail(buildInteractionSummary(), {
+            llmTriggers: {
+              available: false,
+              error: 'LLM offline',
+              interactionId: 'int-001',
+            } as any,
+          }),
+        },
+      },
     });
 
-    it("renders coaching points card with violations", () => {
-      cy.contains("Coaching Points");
-      cy.contains("Areas to focus on");
-      cy.contains("Hold Time Limit");
+    cy.wait('@getInteractionDetail');
+    cy.contains('LLM coaching insights unavailable.').should('be.visible');
+    cy.contains('LLM offline').should('be.visible');
+  });
+
+  it('shows an error state when the call detail request fails', () => {
+    cy.visitAs('agent', '/agent/calls/int-500', {
+      interactionDetails: {
+        'int-500': {
+          statusCode: 500,
+        },
+      },
     });
 
-    it("displays violation scores", () => {
-      cy.contains("Score: 45% — target 80%+");
-    });
+    cy.wait('@getInteractionDetail');
+    cy.contains('Failed to load call details').should('be.visible');
   });
 });

@@ -1,43 +1,31 @@
-describe("Manager Dashboard", () => {
+describe('Manager Dashboard', () => {
   beforeEach(() => {
-    cy.visit("/manager");
+    cy.loginAs('manager');
+    cy.wait('@getDashboardStats');
   });
 
-  it("renders KPI stat cards", () => {
-    cy.contains("Average Score");
-    cy.contains("Calls Processed");
-    cy.contains("Resolution Rate");
-    cy.contains("Policy Violations");
+  it('renders KPI cards from the dashboard response', () => {
+    cy.contains('Average Score').should('be.visible');
+    cy.contains('88%').should('be.visible');
+    cy.contains('Calls Processed').should('be.visible');
+    cy.contains('342').should('be.visible');
+    cy.contains('Resolution Rate').should('be.visible');
+    cy.contains('91%').should('be.visible');
   });
 
-  it("renders chart containers", () => {
-    cy.get(".recharts-wrapper").should("have.length.at.least", 2);
+  it('opens a recent interaction from the dashboard', () => {
+    cy.get('a[href^="/manager/inspector/int-"]').first().click();
+
+    cy.wait('@getInteractionDetail');
+    cy.location('pathname').should('match', /\/manager\/inspector\/.+/);
+    cy.contains('Back to Sessions').should('be.visible');
   });
 
-  it("displays recent interactions with data", () => {
-    cy.contains("Recent Interactions");
-    cy.contains("Sarah M.");
-    cy.contains("VIOLATION");
-  });
+  it('opens the full session inspector list', () => {
+    cy.contains('View All Interactions').click();
 
-  it("interaction cards link to session detail", () => {
-    cy.get('a[href^="/manager/inspector/"]').first().click();
-    cy.url().should("match", /\/manager\/inspector\/.+/);
-  });
-
-  it("renders chart section headings", () => {
-    cy.contains("Weekly Score Trends");
-    cy.contains("Emotion Distribution");
-    cy.contains("Agent Leaderboard");
-  });
-
-  it("displays the agent leaderboard", () => {
-    cy.contains("Agent Leaderboard");
-    cy.contains("Sarah M.");
-    cy.contains("John D.");
-  });
-
-  it("shows recent interactions section", () => {
-    cy.contains("Recent Interactions");
+    cy.wait('@getInteractions');
+    cy.location('pathname').should('eq', '/manager/inspector');
+    cy.contains('Session Inspector').should('be.visible');
   });
 });

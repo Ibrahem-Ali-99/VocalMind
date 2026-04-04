@@ -2,10 +2,13 @@ import {
   mockAgentPerformance,
   mockAgentPersonalData,
   mockEmotionDistribution,
+  mockEmotionEvents,
   mockFAQs,
   mockInteractions,
   mockPolicies,
   mockPolicyCompliance,
+  mockPolicyViolations,
+  mockUtterances,
   mockWeeklyTrend,
 } from '../../src/app/data/mockData';
 import type {
@@ -161,6 +164,18 @@ function buildUser(role: TestRole): User {
 }
 
 function buildUtterances(interaction: InteractionSummary): UtteranceData[] {
+  const cannedUtterances = cloneData(
+    mockUtterances.filter((utterance) => utterance.interactionId === interaction.id),
+  );
+
+  if (cannedUtterances.length > 0) {
+    return cannedUtterances.map((utterance) => ({
+      ...utterance,
+      fusedEmotion: utterance.fusedEmotion ?? utterance.emotion,
+      fusedConfidence: utterance.fusedConfidence ?? utterance.confidence,
+    }));
+  }
+
   const prefix = interaction.id.replace('int-', 'utt-');
 
   if (interaction.resolved) {
@@ -277,6 +292,14 @@ function buildUtterances(interaction: InteractionSummary): UtteranceData[] {
 }
 
 function buildEmotionEvents(interaction: InteractionSummary): EmotionEventData[] {
+  const cannedEvents = cloneData(
+    mockEmotionEvents.filter((event) => event.interactionId === interaction.id),
+  );
+
+  if (cannedEvents.length > 0) {
+    return cannedEvents;
+  }
+
   const prefix = interaction.id.replace('int-', 'emo-');
 
   if (interaction.resolved) {
@@ -336,6 +359,14 @@ function buildEmotionEvents(interaction: InteractionSummary): EmotionEventData[]
 function buildPolicyViolations(
   interaction: InteractionSummary,
 ): PolicyViolationData[] {
+  const cannedViolations = cloneData(
+    mockPolicyViolations.filter((violation) => violation.interactionId === interaction.id),
+  );
+
+  if (cannedViolations.length > 0) {
+    return cannedViolations;
+  }
+
   if (!interaction.hasViolation) {
     return [];
   }
@@ -530,7 +561,8 @@ function replyWith<T>(
 }
 
 export function registerApiScenario(scenario: AppScenario = {}) {
-  const initialRole = scenario.auth === false ? null : scenario.auth?.role ?? null;
+  const initialRole =
+    scenario.auth === false ? null : scenario.auth?.role ?? 'manager';
   const authState: { role: TestRole | null } = { role: initialRole };
 
   const interactions = cloneData(

@@ -1,7 +1,12 @@
 import coverageTask from '@cypress/code-coverage/task';
 import { defineConfig } from 'cypress';
 
+const coverageEnabled = process.env.CYPRESS_COVERAGE === 'true';
+
 export default defineConfig({
+  env: {
+    coverage: coverageEnabled,
+  },
   e2e: {
     baseUrl: 'http://localhost:3000',
     specPattern: 'cypress/e2e/**/*.cy.ts',
@@ -15,8 +20,9 @@ export default defineConfig({
     video: false,
     
     setupNodeEvents(on, config) {
-      // Register Cypress code coverage task
-      coverageTask(on, config);
+      if (config.env.coverage) {
+        coverageTask(on, config);
+      }
       return config;
     },
   },

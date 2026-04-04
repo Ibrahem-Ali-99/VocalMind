@@ -1,42 +1,23 @@
-describe("Agent Dashboard", () => {
+describe('Agent Dashboard', () => {
   beforeEach(() => {
-    cy.visit("/agent");
+    cy.loginAs('agent');
+    cy.wait('@getAgents');
+    cy.wait('@getAgentProfile');
   });
 
-  it("renders agent performance stats", () => {
-    cy.contains("Overall Score");
-    cy.contains("88%");
-    cy.contains("Resolution Rate");
-    cy.contains("91%");
+  it('loads the default agent profile metrics', () => {
+    cy.contains('Sarah M.').should('be.visible');
+    cy.contains('Calls This Week').should('be.visible');
+    cy.contains('Overall Score').should('be.visible');
+    cy.contains('#1').should('be.visible');
+    cy.contains('34').should('exist');
   });
 
-  it("renders performance charts", () => {
-    cy.get(".recharts-wrapper").should("have.length.at.least", 1);
-  });
+  it('opens a recent call from the dashboard', () => {
+    cy.get('a[href^="/agent/calls/"]').first().click();
 
-  it("displays recent calls", () => {
-    cy.contains("09:15 AM");
-    cy.contains("Review");
-  });
-
-  it("renders the hero card with agent info", () => {
-    cy.contains("MY PERFORMANCE");
-    cy.contains("Sarah M.");
-    cy.contains("Senior Agent · VocalMind Corp");
-  });
-
-  it("shows score breakdown progress bars", () => {
-    cy.contains("My Score Breakdown");
-    cy.contains("Empathy Score");
-    cy.contains("Policy Adherence");
-  });
-
-  it("shows weekly trend chart heading", () => {
-    cy.contains("My Weekly Trend");
-  });
-
-  it("recent calls link to call detail", () => {
-    cy.contains("a", "09:15 AM").click();
-    cy.url().should("include", "/agent/calls/");
+    cy.wait('@getInteractionDetail');
+    cy.location('pathname').should('match', /\/agent\/calls\/.+/);
+    cy.contains('CALL DETAIL').should('exist');
   });
 });

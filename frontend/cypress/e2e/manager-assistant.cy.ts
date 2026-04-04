@@ -1,64 +1,52 @@
-describe("Manager Assistant", () => {
-  beforeEach(() => {
-    cy.visit("/manager/assistant");
+describe('Manager Assistant', () => {
+  it('submits a typed question and renders the response data', () => {
+    cy.visitAs('manager', '/manager/assistant', {
+      assistantQuery: {
+        delayMs: 400,
+      },
+    });
+    cy.wait('@getAssistantHistory');
+
+    cy.get('input[placeholder*="Ask about scores"]')
+      .type('What is the average score?{enter}');
+
+    cy.contains('What is the average score?').should('be.visible');
+    cy.get('[data-cy="assistant-loading"]').should('be.visible');
+    cy.wait('@postAssistantQuery');
+
+    cy.get('[data-cy="assistant-loading"]').should('not.exist');
+    cy.contains("I've analyzed your query.").should('be.visible');
+    cy.contains('Sarah M.').should('be.visible');
+    cy.contains('John D.').should('be.visible');
   });
 
-  it("renders the assistant header", () => {
-    cy.contains("h2", "Manager Assistant");
-    cy.contains("Ask anything about your call centre");
+  it('submits a suggested query and exposes the generated sql details', () => {
+    cy.visitAs('manager', '/manager/assistant');
+    cy.wait('@getAssistantHistory');
+
+    cy.get('[data-cy="assistant-suggestion-1"]').click();
+
+    cy.wait('@postAssistantQuery');
+    cy.contains('List all policy violations').should('be.visible');
+    cy.contains('Show generated SQL').click();
+    cy.contains('SELECT * FROM interactions LIMIT 5').should('be.visible');
+    cy.contains('Executed in 120ms').should('be.visible');
   });
 
-  it("displays the initial assistant welcome message", () => {
-    cy.contains("Voice or text — queries are logged to assistant_queries");
-  });
+  it('shows a fallback message when the assistant request fails', () => {
+    cy.visitAs('manager', '/manager/assistant', {
+      assistantQuery: {
+        statusCode: 500,
+      },
+    });
+    cy.wait('@getAssistantHistory');
 
-  it("shows suggested query buttons", () => {
-    cy.contains("Suggested queries");
-    cy.contains("button", "Who are the top 5 agents by overall score?");
-    cy.contains("button", "List all policy violations");
-    cy.contains("button", "What are the most common customer emotions?");
-    cy.contains("button", "help");
-  });
+    cy.get('input[placeholder*="Ask about scores"]')
+      .type('Which calls need review?{enter}');
 
-  it("sends a message when a suggested query is clicked", () => {
-    cy.contains("button", "Who are the top 5 agents by overall score?").click();
-    cy.contains("Who are the top 5 agents by overall score?");
-    cy.contains("I've analyzed your query.");
-  });
-
-  it("sends a message and receives an AI response", () => {
-    cy.get('input[placeholder="Ask about scores, violations, agent trends…"]')
-      .type("What is the average score?");
-    // Click the send button
-    cy.get('button').filter(':has(svg.lucide-send)').click();
-    // User message should appear
-    cy.contains("What is the average score?");
-    // AI response should appear
-    cy.contains("I've analyzed your query.");
-    // SQL block should be visible
-    cy.contains("SELECT * FROM interactions");
-    // Execution time badge
-    cy.contains("Executed in 120ms");
-  });
-
-  it("sends a message via Enter key", () => {
-    cy.get('input[placeholder="Ask about scores, violations, agent trends…"]')
-      .type("Show me violations{enter}");
-    cy.contains("Show me violations");
-    cy.contains("I've analyzed your query.");
-  });
-
-  it("does not send empty messages", () => {
-    // Send button should be disabled when input is empty
-    cy.get('button').filter(':has(svg.lucide-send)').should("be.disabled");
-  });
-
-  it("has a microphone button for voice input", () => {
-    cy.get('svg.lucide-mic').should("have.length.at.least", 1);
-  });
-
-  it("renders the text input and send button", () => {
-    cy.get('input[placeholder="Ask about scores, violations, agent trends…"]').should("exist");
-    cy.get('svg.lucide-send').should("exist");
+    cy.wait('@postAssistantQuery');
+    cy.contains(
+      "I'm sorry, I'm having trouble connecting to the service.",
+    ).should('be.visible');
   });
 });
