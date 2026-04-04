@@ -1,8 +1,9 @@
 import React from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { KnowledgeBase } from '../app/components/manager/KnowledgeBase'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
+
+import { KnowledgeBase } from '../app/components/manager/KnowledgeBase'
 
 const { getPoliciesMock, getFaqsMock } = vi.hoisted(() => ({
     getPoliciesMock: vi.fn(),
@@ -66,30 +67,7 @@ describe('KnowledgeBase', () => {
         ])
     })
 
-    it('renders info banner and headers', async () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        expect(await screen.findByText(/Manage which policies and FAQ articles/)).toBeInTheDocument()
-        expect(screen.getByText('Company Policies')).toBeInTheDocument()
-        expect(screen.getByText('FAQ Articles')).toBeInTheDocument()
-    })
-
-    it('renders search placeholders', async () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        expect(await screen.findByPlaceholderText('Search policies...')).toBeInTheDocument()
-        expect(screen.getByPlaceholderText('Search FAQs...')).toBeInTheDocument()
-    })
-
-    it('toggles policy switch and filters policy list', async () => {
+    it('filters policies and lets the visible policy be toggled', async () => {
         render(
             <MemoryRouter>
                 <KnowledgeBase />
@@ -98,15 +76,116 @@ describe('KnowledgeBase', () => {
 
         expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
 
-        const switches = screen.getAllByRole('switch')
-        const escalationSwitch = switches[2]
-        expect(escalationSwitch).not.toBeChecked()
-        fireEvent.click(escalationSwitch)
-        expect(escalationSwitch).toBeChecked()
+        fireEvent.change(screen.getByPlaceholderText('Search policies...'), { target: { value: 'Escalation' } })
 
-        const policySearch = screen.getByPlaceholderText('Search policies...')
-        fireEvent.change(policySearch, { target: { value: 'Privacy' } })
-        expect(screen.getByText('Data Privacy Guidelines')).toBeInTheDocument()
+        expect(screen.getByText('Escalation Procedure')).toBeInTheDocument()
         expect(screen.queryByText('Greeting Protocol')).not.toBeInTheDocument()
+
+        const [visibleSwitch] = screen.getAllByRole('switch')
+        expect(visibleSwitch).not.toBeChecked()
+
+        fireEvent.click(visibleSwitch)
+
+        expect(visibleSwitch).toBeChecked()
+    })
+
+    it('filters faq articles independently from the policy list', async () => {
+        render(
+            <MemoryRouter>
+                <KnowledgeBase />
+            </MemoryRouter>
+        )
+
+        expect(await screen.findByText("How do I reset a customer's password?")).toBeInTheDocument()
+
+        fireEvent.change(screen.getByPlaceholderText('Search FAQs...'), { target: { value: 'refund' } })
+
+        expect(screen.getByText('What is the refund policy?')).toBeInTheDocument()
+        expect(screen.queryByText("How do I reset a customer's password?")).not.toBeInTheDocument()
+    })
+
+    it('shows a loading state until both knowledge sources finish loading', async () => {
+        let resolvePolicies: ((value: any[]) => void) | undefined
+        let resolveFaqs: ((value: any[]) => void) | undefined
+
+        getPoliciesMock.mockReturnValue(
+            new Promise((resolve) => {
+                resolvePolicies = resolve
+            })
+        )
+        getFaqsMock.mockReturnValue(
+            new Promise((resolve) => {
+                resolveFaqs = resolve
+            })
+        )
+
+        render(
+            <MemoryRouter>
+                <KnowledgeBase />
+            </MemoryRouter>
+        )
+
+        expect(screen.getByText('Loading knowledge base...')).toBeInTheDocument()
+
+        resolvePolicies?.([
+            {
+                id: 'p1',
+                title: 'Greeting Protocol',
+                category: 'customer_service',
+                content: 'content',
+                preview: 'Greeting preview',
+                lastUpdated: '2026-03-01',
+                isActive: true,
+            },
+        ])
+        resolveFaqs?.([
+            {
+                id: 'f1',
+                question: "How do I reset a customer's password?",
+                answer: 'answer',
+                preview: 'preview',
+                category: 'account',
+                isActive: true,
+            },
+        ])
+
+        expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
+    })
+
+    it('shows the shared error state when one knowledge source fails', async () => {
+        getPoliciesMock.mockRejectedValue(new Error('policies unavailable'))
+        getFaqsMock.mockResolvedValue([])
+
+        render(
+            <MemoryRouter>
+                <KnowledgeBase />
+            </MemoryRouter>
+        )
+
+        expect(await screen.findByText('Failed to load knowledge base')).toBeInTheDocument()
+        expect(screen.getByText('policies unavailable')).toBeInTheDocument()
+    })
+
+    it('toggles the filtered faq article without affecting the policy results', async () => {
+        render(
+            <MemoryRouter>
+                <KnowledgeBase />
+            </MemoryRouter>
+        )
+
+        expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
+
+        fireEvent.change(screen.getByPlaceholderText('Search FAQs...'), { target: { value: 'refund' } })
+
+        const switches = screen.getAllByRole('switch')
+        const faqSwitch = switches[switches.length - 1]
+
+        expect(screen.getByText('What is the refund policy?')).toBeInTheDocument()
+        expect(screen.getByText('Greeting Protocol')).toBeInTheDocument()
+        expect(faqSwitch).toBeChecked()
+
+        fireEvent.click(faqSwitch)
+
+        expect(faqSwitch).not.toBeChecked()
     })
 })
