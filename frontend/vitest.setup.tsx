@@ -15,7 +15,7 @@ vi.mock('lucide-react', () => {
         'BarChart2', 'Phone', 'CheckCircle', 'AlertTriangle', 'Star', 'TrendingUp', 'TrendingDown',
         'Target', 'Zap', 'Search', 'ArrowLeft', 'Play', 'ThumbsUp', 'ThumbsDown', 'XCircle', 'Flag',
         'BookOpen', 'HelpCircle', 'Info', 'ChevronDown', 'FileText', 'Calendar', 'Clock', 'PhoneCall', 'Pause',
-        'Mic', 'UserCircle', 'Shield', 'MessageSquare', 'Send', 'Activity',
+        'Mic', 'UserCircle', 'Shield', 'ArrowRight', 'MessageSquare', 'Send', 'Activity',
         'LayoutDashboard', 'Settings', 'ChevronLeft', 'ChevronRight', 'Bell', 'Download',
         'Loader2', 'Headphones', 'AlertCircle', 'ChevronUp', 'Quote', 'ShieldAlert',
     ]

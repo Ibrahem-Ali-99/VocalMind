@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Mic, UserCircle, Shield } from "lucide-react";
+import { ArrowRight, Mic, Shield, UserCircle } from "lucide-react";
 
 export function LandingPage() {
   return (
@@ -11,7 +11,7 @@ export function LandingPage() {
             <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
               <Mic className="w-8 h-8 text-primary-foreground" />
             </div>
-            <h1 className="text-5xl font-bold text-foreground" style={{ fontFamily: 'var(--font-sans)' }}>
+            <h1 className="text-5xl font-bold text-foreground" style={{ fontFamily: "var(--font-sans)" }}>
               VocalMind
             </h1>
           </div>
@@ -40,36 +40,37 @@ export function LandingPage() {
                 </p>
               </div>
             </div>
-            
+
             <div className="space-y-3 mb-6">
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Comprehensive dashboard with org-wide KPIs
                 </p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Session Inspector with emotion detection
                 </p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   AI Assistant for data queries
                 </p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Knowledge Base management
                 </p>
               </div>
             </div>
 
             <div className="text-primary font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-2">
-              Enter Manager Portal →
+              <span>Enter Manager Portal</span>
+              <ArrowRight className="h-4 w-4" />
             </div>
           </Link>
 
@@ -91,36 +92,37 @@ export function LandingPage() {
                 </p>
               </div>
             </div>
-            
+
             <div className="space-y-3 mb-6">
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#10B981] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Personal performance metrics and trends
                 </p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#10B981] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Individual call transcripts and analysis
                 </p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#10B981] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Coaching points for improvement
                 </p>
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-[#10B981] rounded-full mt-2" />
-                <p className="text-sm text-[#D1D5DB]">
+                <p className="text-sm leading-6 text-muted-foreground">
                   Customer emotion journey insights
                 </p>
               </div>
             </div>
 
             <div className="text-success font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-2">
-              Enter Agent Portal →
+              <span>Enter Agent Portal</span>
+              <ArrowRight className="h-4 w-4" />
             </div>
           </Link>
         </div>
