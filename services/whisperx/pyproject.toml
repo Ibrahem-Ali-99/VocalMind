@@ -11,9 +11,9 @@ dependencies = [
     "python-multipart>=0.0.9",
     "python-dotenv>=1.0.0",
 
-    # Core PyTorch
-    "torch>=2.4.0",
-    "torchaudio>=2.4.0",
+    # Core PyTorch (use pip repo versions compatible with system)
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
 
     # ASR & Diarization
     "whisperx>=3.7.0",
@@ -36,11 +36,3 @@ dependencies = [
     "scipy>=1.10.0",
     "huggingface-hub>=0.20.0",
 ]
-
-[tool.uv]
-index-strategy = "unsafe-best-match"
-
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
-priority = "primary"

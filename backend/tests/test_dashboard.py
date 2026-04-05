@@ -5,7 +5,34 @@ Strategy: Pre-populate the cache with known data to bypass PostgreSQL-specific
 SQL and test the endpoint response structure cleanly.
 """
 import pytest
+from uuid import UUID
+
+from app.api.deps import get_current_user
 from app.core.cache import dashboard_cache
+from app.models.enums import UserRole
+from app.models.user import User
+
+
+TEST_ORG_ID = UUID("8c662e42-9200-493e-aeb2-17d23ac7222a")
+TEST_USER_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+@pytest.fixture(autouse=True)
+def override_current_user(client):
+    async def _override_current_user():
+        return User(
+            id=TEST_USER_ID,
+            organization_id=TEST_ORG_ID,
+            email="manager@nexalink.com",
+            password_hash="test_hash",
+            name="Test Manager",
+            role=UserRole.manager,
+            is_active=True,
+        )
+
+    client.app.dependency_overrides[get_current_user] = _override_current_user
+    yield
+    client.app.dependency_overrides.pop(get_current_user, None)
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +89,7 @@ MOCK_DASHBOARD_DATA = {
 @pytest.fixture(autouse=True)
 def seed_cache():
     """Pre-load the cache so every test bypasses the real DB."""
-    dashboard_cache.set("manager_stats", MOCK_DASHBOARD_DATA)
+    dashboard_cache.set(f"manager_stats_{TEST_ORG_ID}", MOCK_DASHBOARD_DATA)
     yield
     dashboard_cache.clear()
 
@@ -132,7 +159,7 @@ def test_get_dashboard_stats_returns_cached_data(client):
 def test_get_dashboard_stats_cache_is_used(client):
     """Cache should still be populated after the request completes."""
     client.get("/api/v1/dashboard/stats")
-    assert dashboard_cache.get("manager_stats") is not None
+    assert dashboard_cache.get(f"manager_stats_{TEST_ORG_ID}") is not None
 
 
 def test_get_dashboard_stats_interactions_structure(client):

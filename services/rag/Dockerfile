@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+ENV PIP_DEFAULT_TIMEOUT=300
+RUN pip install --no-cache-dir --retries 10 .
 
 # Pre-download Docling AI models into the image (avoids download at runtime)
 RUN python -c "from docling.document_converter import DocumentConverter; DocumentConverter()"
@@ -26,5 +27,5 @@ COPY config.py ingest.py query_engine.py evaluator.py main.py __init__.py ./
 # Directories used at runtime
 RUN mkdir -p /sop-standards /app/logs /app/reports
 
-# Default: run ingestion
-CMD ["python", "main.py", "--ingest"]
+# Default: keep the ingestion worker alive and refresh on changes.
+CMD ["python", "main.py", "--watch"]

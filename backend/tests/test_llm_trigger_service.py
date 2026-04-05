@@ -8,6 +8,7 @@ from app.llm_trigger.service import (
     _build_rolling_windows,
     _detect_cross_modal_dissonance,
     _detect_topic,
+    _derive_llm_inputs,
     _render_window_bundle,
     _trajectory_missing_steps,
     _window_citations,
@@ -25,6 +26,11 @@ class _FakeProcessChain:
             justification="Agent completed key verification steps but skipped the refund confirmation closeout.",
             missing_sop_steps=["Confirm refund method and timeline"],
         )
+
+
+class _FailingProcessChain:
+    async def ainvoke(self, _payload):
+        raise Exception("Error code: 429 - rate_limit_exceeded")
 
 
 @pytest.mark.asyncio
@@ -122,6 +128,63 @@ async def test_evaluate_process_adherence_merges_deterministic_and_llm_steps():
     assert len(result.missing_sop_steps) >= 1
     assert result.evidence_quotes
     assert result.citations
+
+
+@pytest.mark.asyncio
+async def test_evaluate_process_adherence_fallback_mentions_rate_limit():
+    transcript = (
+        "customer: I need a refund.\n"
+        "agent: I can help and check your eligibility now."
+    )
+
+    with patch("app.llm_trigger.service.build_process_adherence_chain", return_value=_FailingProcessChain()):
+        result = await evaluate_process_adherence(
+            transcript_text=transcript,
+            retrieved_sop_from_pinecone="",
+            org_filter=None,
+        )
+
+    assert "rate limit" in result.justification.lower()
+
+
+def test_derive_llm_inputs_uses_full_call_customer_and_agent_turns():
+    utterances = [
+        SimpleNamespace(speaker_role=SimpleNamespace(value="customer"), text="I called yesterday.", emotion="neutral", emotion_confidence=0.3),
+        SimpleNamespace(speaker_role=SimpleNamespace(value="agent"), text="I can help with that.", emotion=None, emotion_confidence=None),
+        SimpleNamespace(speaker_role=SimpleNamespace(value="customer"), text="I am still frustrated because this is unresolved.", emotion="frustrated", emotion_confidence=0.82),
+        SimpleNamespace(speaker_role=SimpleNamespace(value="agent"), text="I will process the refund right now.", emotion=None, emotion_confidence=None),
+    ]
+
+    agent_context, customer_text, acoustic_emotion, fused_emotion, agent_statement = _derive_llm_inputs(
+        utterances=utterances,
+        transcript_text="fallback transcript",
+        agent_name="Sara",
+    )
+
+    assert "I called yesterday." in customer_text
+    assert "still frustrated" in customer_text
+    assert "I can help with that." in agent_statement
+    assert "process the refund" in agent_statement
+    assert acoustic_emotion == "frustrated"
+    assert fused_emotion
+    assert "full-call behavior" in agent_context
+
+
+def test_derive_llm_inputs_uses_dominant_customer_emotion_not_last_turn_only():
+    utterances = [
+        SimpleNamespace(speaker_role=SimpleNamespace(value="customer"), text="This issue is still unresolved and very frustrating.", emotion="frustrated", emotion_confidence=0.94),
+        SimpleNamespace(speaker_role=SimpleNamespace(value="customer"), text="I keep waiting and this is unacceptable.", emotion="angry", emotion_confidence=0.86),
+        SimpleNamespace(speaker_role=SimpleNamespace(value="agent"), text="I understand your concern and will check now.", emotion=None, emotion_confidence=None),
+        SimpleNamespace(speaker_role=SimpleNamespace(value="customer"), text="Thanks for checking that.", emotion="happy", emotion_confidence=0.31),
+    ]
+
+    _agent_context, _customer_text, acoustic_emotion, _fused_emotion, _agent_statement = _derive_llm_inputs(
+        utterances=utterances,
+        transcript_text="fallback transcript",
+        agent_name="Sara",
+    )
+
+    assert acoustic_emotion in {"frustrated", "angry"}
 
 
 def test_build_rolling_windows_and_bundle_for_long_transcript():

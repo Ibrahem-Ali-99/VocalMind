@@ -59,13 +59,34 @@ class RAGQueryEngine:
 
     def _embed_query(self, text: str) -> list[float]:
         """Embed a query string via Ollama."""
-        response = httpx.post(
-            f"{settings.embedding.base_url}/api/embeddings",
-            json={"model": settings.embedding.model, "prompt": text},
-            timeout=settings.embedding.request_timeout,
+        retry_delays = (0.4, 1.0, 2.0)
+        payloads = (
+            ("/api/embed", {"model": settings.embedding.model, "input": text}),
+            ("/api/embeddings", {"model": settings.embedding.model, "prompt": text}),
         )
-        response.raise_for_status()
-        return response.json()["embedding"]
+        last_error: Exception | None = None
+        for delay in (0.0, *retry_delays):
+            if delay:
+                time.sleep(delay)
+
+            for path, payload in payloads:
+                try:
+                    response = httpx.post(
+                        f"{settings.embedding.base_url}{path}",
+                        json=payload,
+                        timeout=settings.embedding.request_timeout,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    vector = data.get("embedding")
+                    if vector:
+                        return vector
+                except Exception as exc:
+                    last_error = exc
+
+        raise ConnectionError(
+            f"Cannot reach Ollama embeddings API at {settings.embedding.base_url}: {last_error}"
+        )
 
     # ── Retrieval ─────────────────────────────────────────────────────────
 

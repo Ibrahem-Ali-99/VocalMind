@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import extract
 from datetime import datetime, timedelta
 
-from app.api.deps import SessionDep
+from app.api.deps import SessionDep, CurrentUser
 from app.models.user import User as UserModel
 from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
@@ -15,10 +15,14 @@ router = APIRouter()
 
 
 @router.get("")
-async def list_agents(session: SessionDep):
-    """List all agents — used for agent selection when no auth."""
+async def list_agents(session: SessionDep, current_user: CurrentUser):
+    """List all agents for the current organization."""
     result = await session.exec(
-        select(UserModel).where(UserModel.role == UserRole.agent, UserModel.is_active == True)  # noqa: E712
+        select(UserModel).where(
+            UserModel.role == UserRole.agent, 
+            UserModel.is_active == True,  # noqa: E712
+            UserModel.organization_id == current_user.organization_id
+        )
     )
     agents = result.all()
     return [
@@ -32,18 +36,22 @@ async def list_agents(session: SessionDep):
 
 
 @router.get("/{agent_id}")
-async def get_agent_profile(agent_id: UUID, session: SessionDep):
+async def get_agent_profile(agent_id: UUID, session: SessionDep, current_user: CurrentUser):
     """Get agent profile with stats, weekly trend, and recent calls."""
 
     # Check cache first
-    cache_key = f"agent_profile_{agent_id}"
+    cache_key = f"agent_profile_{current_user.organization_id}_{agent_id}"
     cached_data = dashboard_cache.get(cache_key)
     if cached_data:
         return cached_data
 
     # 1. Get the agent user
     result = await session.exec(
-        select(UserModel).where(UserModel.id == agent_id, UserModel.role == UserRole.agent)
+        select(UserModel).where(
+            UserModel.id == agent_id, 
+            UserModel.role == UserRole.agent,
+            UserModel.organization_id == current_user.organization_id
+        )
     )
     agent = result.first()
     if not agent:

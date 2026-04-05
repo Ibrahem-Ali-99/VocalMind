@@ -4,6 +4,7 @@ VocalMind Final RAG — CLI Entry Point.
 Subcommands:
   --ingest           Ingest PDFs from docs/ into Qdrant (parents + children)
   --ingest --force   Wipe collections and re-ingest
+    --watch            Keep running and reprocess documents on change
   -q QUESTION        Single query (defaults to children collection)
   --compliance TEXT   Check policy compliance of a transcript
   --check-answer     Check correctness of an agent's answer
@@ -12,6 +13,7 @@ Subcommands:
 Examples:
   python main.py --ingest
   python main.py --ingest --force
+    python main.py --watch
   python main.py -q "What is the refund policy?"
   python main.py -q "What is the refund policy?" --org org1
   python main.py --compliance "Agent said: sure, full refund, no questions"
@@ -21,6 +23,23 @@ Examples:
 
 import argparse
 import sys
+import time
+from pathlib import Path
+
+
+def _snapshot_documents(docs_dirs: list[Path]) -> dict[str, tuple[int, int]]:
+    snapshot: dict[str, tuple[int, int]] = {}
+    for docs_dir in docs_dirs:
+        if not docs_dir.exists():
+            continue
+
+        for pattern in ("*.pdf", "*.PDF"):
+            for pdf in docs_dir.rglob(pattern):
+                if not pdf.is_file():
+                    continue
+                stat = pdf.stat()
+                snapshot[str(pdf.resolve())] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -35,6 +54,46 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     pipeline.run(force=args.force)
 
     print("\nIngestion complete!")
+
+
+def cmd_watch(args: argparse.Namespace) -> None:
+    """Keep the ingestion service alive and reprocess documents on change."""
+    from config import settings
+    from ingest import DocumentIngestionPipeline
+
+    print("=" * 60)
+    print("VocalMind Final RAG — Watch Mode")
+    print("=" * 60)
+
+    pipeline = DocumentIngestionPipeline()
+    candidate_dirs = [
+        Path(settings.DOCS_DIR),
+        Path(settings.POLICY_DOCS_DIR),
+        Path(settings.KNOWLEDGE_DOCS_DIR),
+    ]
+    docs_dirs: list[Path] = []
+    for path in candidate_dirs:
+        try:
+            resolved = path.resolve()
+        except Exception:
+            resolved = path
+        if resolved in docs_dirs:
+            continue
+        docs_dirs.append(resolved)
+
+    interval = max(10, args.interval)
+    last_snapshot: dict[str, tuple[int, int]] = {}
+
+    while True:
+        current_snapshot = _snapshot_documents(docs_dirs)
+        if current_snapshot != last_snapshot:
+            print("\nDocument changes detected. Running ingestion...\n")
+            pipeline.run(force=args.force)
+            last_snapshot = current_snapshot
+        else:
+            print(f"\nNo document changes detected. Sleeping for {interval}s...")
+
+        time.sleep(interval)
 
 
 def cmd_query(args: argparse.Namespace) -> None:
@@ -194,6 +253,14 @@ def main() -> None:
         help="Force re-indexing (wipe collections and re-ingest)",
     )
     parser.add_argument(
+        "--watch", action="store_true",
+        help="Keep the ingestion pipeline running and reprocess on document changes",
+    )
+    parser.add_argument(
+        "--interval", type=int, default=60,
+        help="Polling interval in seconds for --watch",
+    )
+    parser.add_argument(
         "-q", "--query", type=str,
         help="Execute a single query and exit",
     )
@@ -227,6 +294,8 @@ def main() -> None:
     try:
         if args.ingest:
             cmd_ingest(args)
+        elif args.watch:
+            cmd_watch(args)
         elif args.query:
             cmd_query(args)
         elif args.compliance:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,9 @@ from app.models.policy import CompanyPolicy, OrganizationPolicy
 from app.models.transcript import Transcript
 from app.models.utterance import Utterance
 from app.models.user import User
+
+
+logger = logging.getLogger(__name__)
 
 
 RESOLUTION_GRAPHS: dict[str, list[str]] = {
@@ -99,8 +103,10 @@ def _normalize_acoustic_label(label: str) -> str:
 
 def _emotion_polarity(label: str) -> str:
     normalized = _normalize_acoustic_label(label)
-    if normalized in {"happy", "neutral"}:
+    if normalized in {"happy", "grateful"}:
         return "positive"
+    if normalized in {"neutral", "unknown"}:
+        return "neutral"
     if normalized in {"angry", "frustrated", "sad"}:
         return "negative"
     return "neutral"
@@ -135,10 +141,22 @@ def _detect_topic(transcript_text: str, retrieved_sop: str) -> str:
 def _extract_sop_steps(retrieved_sop: str) -> list[str]:
     steps: list[str] = []
     for line in retrieved_sop.splitlines():
-        cleaned = line.strip().lstrip("-*0123456789. ").strip()
+        raw = line.strip()
+        if not raw:
+            continue
+        if raw.startswith("#") or raw.startswith("<!--"):
+            continue
+        if "|" in raw:
+            continue
+
+        if not re.match(r"^(?:[-*]|\d+[.)])\s+", raw):
+            if not raw.lower().startswith("step "):
+                continue
+
+        cleaned = re.sub(r"^(?:[-*]|\d+[.)])\s+", "", raw).strip()
         if not cleaned:
             continue
-        if len(cleaned.split()) >= 4:
+        if len(cleaned.split()) >= 3 and len(cleaned) <= 120:
             steps.append(cleaned)
     return steps[:5]
 
@@ -176,7 +194,18 @@ def _trajectory_missing_steps(transcript_text: str, expected_steps: list[str]) -
 
 def _is_resolved_heuristic(transcript_text: str) -> bool:
     text = transcript_text.lower()
-    positive_endings = ["resolved", "fixed", "works now", "thank you", "anything else"]
+    positive_endings = [
+        "resolved",
+        "fixed",
+        "works now",
+        "thank you",
+        "anything else",
+        "refund has been processed",
+        "credit has been applied",
+        "case reference",
+        "ticket number",
+        "follow-up",
+    ]
     unresolved_markers = ["still not", "didn't work", "not fixed", "call back"]
     if any(marker in text for marker in unresolved_markers):
         return False
@@ -200,11 +229,90 @@ def _split_sentences(text: str) -> list[str]:
     return [segment.strip() for segment in re.split(r"(?<=[.!?])\s+", text) if segment.strip()]
 
 
-def _quote_candidates(text: str, max_quotes: int = 3) -> list[str]:
+EMOTIONAL_QUOTE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "negative": (
+        "frustrat",
+        "angry",
+        "upset",
+        "terrible",
+        "unacceptable",
+        "not working",
+        "still",
+        "again",
+        "delay",
+        "waiting",
+        "issue",
+        "problem",
+        "broken",
+        "failed",
+        "cannot",
+        "can't",
+        "won't",
+        "refund",
+        "complaint",
+    ),
+    "positive": (
+        "thank",
+        "great",
+        "resolved",
+        "fixed",
+        "helpful",
+        "perfect",
+        "appreciate",
+    ),
+}
+
+
+def _sentence_emotion_score(sentence: str, target_emotion: str | None = None) -> float:
+    text = sentence.lower()
+    score = 0.0
+
+    negative_hits = sum(1 for token in EMOTIONAL_QUOTE_KEYWORDS["negative"] if token in text)
+    positive_hits = sum(1 for token in EMOTIONAL_QUOTE_KEYWORDS["positive"] if token in text)
+
+    score += (negative_hits * 1.6)
+    score += (positive_hits * 0.9)
+
+    if "!" in sentence:
+        score += 0.8
+    if "?" in sentence:
+        score += 0.3
+    if len(sentence.split()) >= 8:
+        score += 0.4
+
+    if target_emotion:
+        target_polarity = _emotion_polarity(target_emotion)
+        if target_polarity == "negative":
+            score += (negative_hits * 1.1)
+            score -= (positive_hits * 0.4)
+        elif target_polarity == "positive":
+            score += (positive_hits * 0.6)
+
+    # Down-rank identity-only lines that often pollute evidence snippets.
+    if "my name is" in text or "pin is" in text:
+        score -= 1.8
+
+    return score
+
+
+def _quote_candidates(text: str, max_quotes: int = 3, target_emotion: str | None = None) -> list[str]:
     if not text:
         return []
 
     sentences = _split_sentences(text)
+    scored_sentences: list[tuple[float, int, str]] = []
+    for sentence in sentences:
+        cleaned = sentence.strip().strip('"')
+        if len(cleaned.split()) < 4:
+            continue
+
+        score = _sentence_emotion_score(cleaned, target_emotion=target_emotion)
+        scored_sentences.append((score, len(scored_sentences), cleaned))
+
+    if scored_sentences:
+        scored_sentences.sort(key=lambda item: (-item[0], item[1]))
+        return [sentence for _, _, sentence in scored_sentences[:max_quotes]]
+
     quotes: list[str] = []
     for sentence in sentences:
         cleaned = sentence.strip().strip('"')
@@ -219,6 +327,27 @@ def _quote_candidates(text: str, max_quotes: int = 3) -> list[str]:
 
     fallback = text.strip().replace("\n", " ")
     return [fallback[:180]] if fallback else []
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    normalized = (text or "").strip()
+    if len(normalized) <= max_chars:
+        return normalized
+    trimmed = normalized[:max_chars].rsplit(" ", 1)[0].strip()
+    return trimmed or normalized[:max_chars].strip()
+
+
+def _llm_failure_reason(exc: Exception) -> str:
+    message = str(exc or "").strip().lower()
+    if "rate limit" in message or "rate_limit_exceeded" in message or "error code: 429" in message:
+        return "the LLM provider rate limit was reached"
+    if "api key" in message or "unauthorized" in message or "forbidden" in message or "authentication" in message:
+        return "LLM authentication failed"
+    if "timeout" in message or "timed out" in message:
+        return "the LLM request timed out"
+    if "connection" in message or "refused" in message or "unavailable" in message:
+        return "the LLM service was unavailable"
+    return "the LLM service was unavailable"
 
 
 def _build_customer_emotion_reasoning(emotion: str, root_cause: str, quotes: list[str]) -> str:
@@ -507,7 +636,7 @@ async def analyze_emotion_shift(
 ) -> EmotionShiftAnalysis:
     inferred_emotion = _normalize_acoustic_label(acoustic_emotion)
     if not _detect_cross_modal_dissonance(customer_text, acoustic_emotion):
-        quotes = _quote_candidates(customer_text, max_quotes=2)
+        quotes = _quote_candidates(customer_text, max_quotes=2, target_emotion=inferred_emotion)
         return EmotionShiftAnalysis(
             is_dissonance_detected=False,
             dissonance_type="None",
@@ -531,18 +660,40 @@ async def analyze_emotion_shift(
         )
 
     chain = build_emotion_shift_chain()
-    result = await chain.ainvoke(
-        {
-            "agent_context": agent_context,
-            "customer_text": customer_text,
-            "acoustic_emotion": acoustic_emotion,
-        }
-    )
+    try:
+        result = await chain.ainvoke(
+            {
+                "agent_context": agent_context,
+                "customer_text": customer_text,
+                "acoustic_emotion": acoustic_emotion,
+            }
+        )
+    except Exception as exc:
+        logger.warning("Emotion shift LLM chain failed, using fallback: %s", exc)
+        quotes = _quote_candidates(customer_text, max_quotes=2, target_emotion=inferred_emotion)
+        return EmotionShiftAnalysis(
+            is_dissonance_detected=True,
+            dissonance_type="Unknown",
+            root_cause=INSUFFICIENT_EVIDENCE_LABEL,
+            counterfactual_correction="If the agent had acknowledged the concern and confirmed a clear next action, escalation risk could have decreased.",
+            evidence_quotes=quotes,
+            citations=[
+                EvidenceCitation(source="transcript", speaker="customer", quote=quote)
+                for quote in quotes
+            ],
+            current_customer_emotion=inferred_emotion,
+            current_emotion_reasoning=_build_customer_emotion_reasoning(
+                emotion=inferred_emotion,
+                root_cause=INSUFFICIENT_EVIDENCE_LABEL,
+                quotes=quotes,
+            ),
+            insufficient_evidence=True,
+        )
     result.is_dissonance_detected = True
     if result.dissonance_type.strip().lower() == "none":
         result.dissonance_type = "Sarcasm"
     if not result.evidence_quotes:
-        result.evidence_quotes = _quote_candidates(customer_text, max_quotes=3)
+        result.evidence_quotes = _quote_candidates(customer_text, max_quotes=3, target_emotion=inferred_emotion)
     if not result.root_cause.strip():
         result.root_cause = INSUFFICIENT_EVIDENCE_LABEL
     if not result.evidence_quotes:
@@ -591,17 +742,42 @@ async def evaluate_process_adherence(
     deterministic_resolved = _is_resolved_heuristic(transcript_text)
 
     chain = build_process_adherence_chain()
-    result = await chain.ainvoke(
-        {
-            "topic_hint": topic_hint,
-            "transcript_text": transcript_text,
-            "retrieved_sop": retrieved_sop or "No SOP context found.",
-            "expected_resolution_graph": "\n".join(
-                f"- {step}" for step in expected_steps
-            )
-            or "- No explicit graph available.",
-        }
-    )
+    try:
+        result = await chain.ainvoke(
+            {
+                "topic_hint": topic_hint,
+                "transcript_text": transcript_text,
+                "retrieved_sop": retrieved_sop or "No SOP context found.",
+                "expected_resolution_graph": "\n".join(
+                    f"- {step}" for step in expected_steps
+                )
+                or "- No explicit graph available.",
+            }
+        )
+    except Exception as exc:
+        logger.warning("Process adherence LLM chain failed, using deterministic fallback: %s", exc)
+        evidence_quotes = _quote_candidates(transcript_text, max_quotes=3)
+        citations = [
+            EvidenceCitation(source="transcript", speaker="unknown", quote=quote)
+            for quote in evidence_quotes
+        ]
+        sop_quote = _quote_candidates(retrieved_sop, max_quotes=1)
+        if sop_quote:
+            citations.append(EvidenceCitation(source="sop", speaker="system", quote=sop_quote[0]))
+
+        return ProcessAdherenceReport(
+            detected_topic=topic_hint,
+            is_resolved=deterministic_resolved,
+            efficiency_score=deterministic_efficiency,
+            justification=(
+                f"LLM analysis is temporarily unavailable because {_llm_failure_reason(exc)}. "
+                "Scores are provisional estimates from transcript and SOP keyword coverage."
+            ),
+            missing_sop_steps=deterministic_missing,
+            evidence_quotes=evidence_quotes,
+            citations=citations,
+            insufficient_evidence=not bool(evidence_quotes),
+        )
 
     if not result.detected_topic.strip():
         result.detected_topic = topic_hint
@@ -633,12 +809,34 @@ async def run_nli_policy_check(
     ground_truth_policy: str,
 ) -> NLIEvaluation:
     chain = build_nli_policy_chain()
-    result = await chain.ainvoke(
-        {
-            "agent_statement": agent_statement,
-            "ground_truth_policy": ground_truth_policy,
-        }
-    )
+    try:
+        result = await chain.ainvoke(
+            {
+                "agent_statement": agent_statement,
+                "ground_truth_policy": ground_truth_policy,
+            }
+        )
+    except Exception as exc:
+        logger.warning("NLI policy LLM chain failed, using deterministic fallback: %s", exc)
+        statement_quote = _quote_candidates(agent_statement, max_quotes=1)
+        policy_quote = _quote_candidates(ground_truth_policy, max_quotes=1)
+        evidence_quotes = statement_quote + [q for q in policy_quote if q not in statement_quote]
+        citations: list[EvidenceCitation] = []
+        if statement_quote:
+            citations.append(EvidenceCitation(source="transcript", speaker="agent", quote=statement_quote[0]))
+        if policy_quote:
+            citations.append(EvidenceCitation(source="policy", speaker="system", quote=policy_quote[0]))
+
+        return NLIEvaluation(
+            nli_category="Benign Deviation",
+            justification=(
+                "Deterministic fallback was used because the LLM NLI service was unavailable. "
+                "This label is provisional and should be revalidated when LLM connectivity is restored."
+            ),
+            evidence_quotes=evidence_quotes,
+            citations=citations,
+            insufficient_evidence=not bool(citations),
+        )
     if not result.evidence_quotes:
         result.evidence_quotes = _quote_candidates(
             f"{agent_statement}\n{ground_truth_policy}",
@@ -665,37 +863,60 @@ def _derive_llm_inputs(
     transcript_text: str,
     agent_name: str | None,
 ) -> tuple[str, str, str, str, str]:
-    customer_text = ""
+    customer_fragments: list[str] = []
+    agent_fragments: list[str] = []
+    customer_emotion_weights: dict[str, float] = {}
     acoustic_emotion = "neutral"
-    agent_statement = ""
+    acoustic_confidence: float | None = None
 
-    for utterance in utterances:
+    for index, utterance in enumerate(utterances):
         if not utterance.text:
             continue
         role = utterance.speaker_role.value if utterance.speaker_role else ""
 
-        if role == "customer" and not customer_text:
-            customer_text = utterance.text
+        if role == "customer":
+            customer_fragments.append(utterance.text)
             if utterance.emotion:
-                acoustic_emotion = utterance.emotion
+                normalized_emotion = _normalize_acoustic_label(utterance.emotion)
+                confidence = float(utterance.emotion_confidence) if utterance.emotion_confidence is not None else 0.5
+                recency_weight = 1.0 + (((index + 1) / max(1, len(utterances))) * 0.08)
+                customer_emotion_weights[normalized_emotion] = customer_emotion_weights.get(normalized_emotion, 0.0) + (confidence * recency_weight)
 
         if role == "agent":
-            agent_statement = utterance.text
+            agent_fragments.append(utterance.text)
+
+    if customer_emotion_weights:
+        def _emotion_rank(item: tuple[str, float]) -> tuple[float, int]:
+            label, weight = item
+            polarity_rank = {
+                "negative": 2,
+                "neutral": 1,
+                "positive": 0,
+            }.get(_emotion_polarity(label), 0)
+            return (weight, polarity_rank)
+
+        acoustic_emotion = max(customer_emotion_weights.items(), key=_emotion_rank)[0]
+        total_weight = sum(customer_emotion_weights.values())
+        acoustic_confidence = customer_emotion_weights[acoustic_emotion] / total_weight if total_weight > 0 else 0.5
+
+    customer_text = _truncate_text("\n".join(customer_fragments), 2400)
+    agent_statement = _truncate_text("\n".join(agent_fragments), 2400)
 
     if not customer_text:
-        customer_text = transcript_text[:500] if transcript_text else "No customer text available."
+        customer_text = _truncate_text(transcript_text, 900) if transcript_text else "No customer text available."
 
     if not agent_statement:
-        agent_statement = transcript_text[:500] if transcript_text else "No agent statement available."
+        agent_statement = _truncate_text(transcript_text, 900) if transcript_text else "No agent statement available."
 
     agent_label = agent_name or "Unknown Agent"
     agent_context = (
         f"Agent name: {agent_label}. "
-        "Analyze behavior in a customer-service quality assurance setting."
+        "Analyze full-call behavior in a customer-service quality assurance setting."
     )
     fused = fuse_emotion_signals(
         text=customer_text,
         acoustic_emotion=acoustic_emotion,
+        acoustic_confidence=acoustic_confidence,
     )
     return agent_context, customer_text, acoustic_emotion, fused.emotion, agent_statement
 
@@ -771,12 +992,11 @@ async def evaluate_interaction_triggers(
     selected_emotion_window = _select_emotion_window(rolling_windows)
     process_windows = _select_process_windows(rolling_windows)
 
-    emotion_context_text = selected_emotion_window.text if selected_emotion_window else transcript_text
     process_context_text = _render_window_bundle(process_windows) or transcript_text
 
     agent_context, customer_text, acoustic_emotion, fused_emotion, agent_statement = _derive_llm_inputs(
         utterances=utterances,
-        transcript_text=emotion_context_text,
+        transcript_text=transcript_text,
         agent_name=agent.name if agent else None,
     )
 

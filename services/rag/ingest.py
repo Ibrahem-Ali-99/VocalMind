@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +29,7 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, FieldCondition, Filter, FilterSelector, MatchValue, PointStruct, VectorParams
 
 from config import settings
 
@@ -128,13 +129,36 @@ class DocumentIngestionPipeline:
 
     def _get_embedding(self, text: str) -> list[float]:
         """Request an embedding vector from the local Ollama instance."""
-        response = httpx.post(
-            f"{settings.embedding.base_url}/api/embeddings",
-            json={"model": settings.embedding.model, "prompt": text},
-            timeout=settings.embedding.request_timeout,
+        retry_delays = (0.4, 1.0, 2.0)
+        payloads = (
+            ("/api/embed", {"model": settings.embedding.model, "input": text}),
+            ("/api/embeddings", {"model": settings.embedding.model, "prompt": text}),
         )
-        response.raise_for_status()
-        return response.json()["embedding"]
+        last_error: Exception | None = None
+        for attempt, delay in enumerate((0.0, *retry_delays), start=1):
+            if delay:
+                time.sleep(delay)
+
+            for path, payload in payloads:
+                try:
+                    response = httpx.post(
+                        f"{settings.embedding.base_url}{path}",
+                        json=payload,
+                        timeout=settings.embedding.request_timeout,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    if "embedding" in data:
+                        return data["embedding"]
+                except Exception as exc:
+                    last_error = exc
+
+            if attempt == 1:
+                print("  Ollama embedding request failed, retrying...")
+
+        raise ConnectionError(
+            f"Cannot reach Ollama embeddings API at {settings.embedding.base_url}: {last_error}"
+        )
 
     # ── PDF Parsing ───────────────────────────────────────────────────────
 
@@ -341,12 +365,34 @@ class DocumentIngestionPipeline:
 
         return len(points)
 
+    def _delete_document_points(self, collection_name: str, org_name: str, source_file: str) -> None:
+        """Remove previously indexed chunks for a specific document before re-ingesting it."""
+        self.qdrant.delete(
+            collection_name=collection_name,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(key="org", match=MatchValue(value=org_name)),
+                        FieldCondition(key="source_file", match=MatchValue(value=source_file)),
+                    ]
+                )
+            ),
+            wait=True,
+        )
+
     # ── Per-File Processing ───────────────────────────────────────────────
 
     def _process_file(self, pdf_path: str, org_name: str) -> dict | None:
         """Full 8-step pipeline for a single PDF file."""
         base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        output_dir = str(Path(settings.PARSED_DIR) / org_name / "parsed-docs")
+        normalized_path = str(pdf_path).replace("\\", "/")
+        is_sop_document = any(
+            marker in normalized_path
+            for marker in ("/sop-procedures/", "/faq-docs/")
+        )
+        parsed_root = settings.PARSED_SOP_DIR if is_sop_document else settings.PARSED_POLICY_DIR
+        parsed_folder = "sops" if is_sop_document else "policies"
+        output_dir = str(Path(parsed_root) / org_name / "parsed-docs" / parsed_folder)
         os.makedirs(output_dir, exist_ok=True)
 
         print(f"\n{'='*70}")
@@ -438,13 +484,16 @@ class DocumentIngestionPipeline:
         print(f"  Saved → {val_path}")
 
         # Step 8 — Upload to Qdrant
-        if "sop-procedures" in str(pdf_path):
+        if is_sop_document:
             print("\n[Step 8] SOP Document detected. Uploading to SOP parent collection...")
+            self._delete_document_points(settings.qdrant.collection_sop_parents, org_name, base_name)
             n_parents = self._upload_chunks(
                 parent_chunks, settings.qdrant.collection_sop_parents, "parent"
             )
         else:
             print("\n[Step 8] Uploading Policy to Qdrant...")
+            self._delete_document_points(settings.qdrant.collection_parents, org_name, base_name)
+            self._delete_document_points(settings.qdrant.collection_children, org_name, base_name)
             n_parents = self._upload_chunks(
                 parent_chunks, settings.qdrant.collection_parents, "parent"
             )
@@ -454,7 +503,7 @@ class DocumentIngestionPipeline:
 
         print(f"\n{'─'*50}")
         print(f"  DONE: {base_name}")
-        if "sop-procedures" in str(pdf_path):
+        if is_sop_document:
             print(f"  Parents  : {n_parents} → SOP Parents")
         else:
             print(f"  Parents  : {n_parents} → Policy Parents")
@@ -471,19 +520,37 @@ class DocumentIngestionPipeline:
         Run the full ingestion pipeline.
 
         Args:
-            docs_dir: Override path to documents directory.
+            docs_dir: Override path to the legacy documents directory. The pipeline
+                      also scans POLICY_DOCS_DIR and KNOWLEDGE_DOCS_DIR roots.
                       Expected structure:
-                      - docs_dir/org1/policy-docs/*.pdf
-                      - docs_dir/org1/sop-procedures/*.pdf
-                      - docs_dir/org2/policy-docs/*.pdf
-                      - docs_dir/org2/sop-procedures/*.pdf
-                      Fallback (legacy): docs_dir/org1/*.pdf
+                      - root/org1/policy-docs/*.pdf
+                      - root/org1/sop-procedures/*.pdf
+                      Backward compatible:
+                      - root/org1/faq-docs/*.pdf
+                      - root/org1/*.pdf
             force:    If True, delete existing collections and re-create them.
 
         Returns:
             List of per-file validation reports.
         """
         docs_dir = Path(settings.DOCS_DIR) if docs_dir is None else Path(docs_dir)
+        candidate_roots: list[Path] = [
+            docs_dir,
+            Path(settings.POLICY_DOCS_DIR),
+            Path(settings.KNOWLEDGE_DOCS_DIR),
+        ]
+
+        root_dirs: list[Path] = []
+        for root in candidate_roots:
+            try:
+                resolved = root.resolve()
+            except Exception:
+                resolved = root
+            if resolved in root_dirs:
+                continue
+            if not resolved.exists() or not resolved.is_dir():
+                continue
+            root_dirs.append(resolved)
 
         if force:
             print("\n⚠  Force mode — deleting existing collections...")
@@ -499,56 +566,62 @@ class DocumentIngestionPipeline:
                     pass
             self._ensure_collections()
 
-        # Discover PDFs from org policy and SOP folders.
+        # Discover PDFs from org policy/SOP folders across all configured roots.
         pdf_files: list[tuple[str, str]] = []  # (pdf_path, org_name)
         seen_paths: set[str] = set()
 
-        # Discover PDFs from expected org subfolders, with root fallback.
-        for org_dir in sorted(docs_dir.iterdir()):
-            if not org_dir.is_dir():
-                continue
-
-            discovered_in_subdirs = False
-            for candidate in (org_dir / "policy-docs", org_dir / "sop-procedures"):
-                if not candidate.is_dir():
+        for root in root_dirs:
+            for org_dir in sorted(root.iterdir()):
+                if not org_dir.is_dir():
                     continue
 
-                discovered_in_subdirs = True
-                for pattern in ("*.pdf", "*.PDF"):
-                    for pdf in sorted(candidate.glob(pattern)):
-                        key = str(pdf.resolve())
-                        if key in seen_paths:
-                            continue
-                        seen_paths.add(key)
-                        pdf_files.append((str(pdf), org_dir.name))
+                discovered_in_subdirs = False
+                for candidate in (
+                    org_dir / "policy-docs",
+                    org_dir / "sop-procedures",
+                    org_dir / "faq-docs",
+                ):
+                    if not candidate.is_dir():
+                        continue
 
-            # Fallback: also check org root for direct PDFs.
-            if not discovered_in_subdirs:
-                for pattern in ("*.pdf", "*.PDF"):
-                    for pdf in sorted(org_dir.glob(pattern)):
-                        key = str(pdf.resolve())
-                        if key in seen_paths:
-                            continue
-                        seen_paths.add(key)
-                        pdf_files.append((str(pdf), org_dir.name))
+                    discovered_in_subdirs = True
+                    for pattern in ("*.pdf", "*.PDF"):
+                        for pdf in sorted(candidate.glob(pattern)):
+                            key = str(pdf.resolve())
+                            if key in seen_paths:
+                                continue
+                            seen_paths.add(key)
+                            pdf_files.append((str(pdf), org_dir.name))
+
+                # Fallback: also check org root for direct PDFs.
+                if not discovered_in_subdirs:
+                    for pattern in ("*.pdf", "*.PDF"):
+                        for pdf in sorted(org_dir.glob(pattern)):
+                            key = str(pdf.resolve())
+                            if key in seen_paths:
+                                continue
+                            seen_paths.add(key)
+                            pdf_files.append((str(pdf), org_dir.name))
 
         if not pdf_files:
-            for pdf in sorted(docs_dir.rglob("*")):
-                if not pdf.is_file() or pdf.suffix.lower() != ".pdf":
-                    continue
-                key = str(pdf.resolve())
-                if key in seen_paths:
-                    continue
-                seen_paths.add(key)
-                try:
-                    rel = pdf.relative_to(docs_dir)
-                    org_name = rel.parts[0] if len(rel.parts) > 1 else "Unknown"
-                except Exception:
-                    org_name = "Unknown"
-                pdf_files.append((str(pdf), org_name))
+            for root in root_dirs:
+                for pdf in sorted(root.rglob("*")):
+                    if not pdf.is_file() or pdf.suffix.lower() != ".pdf":
+                        continue
+                    key = str(pdf.resolve())
+                    if key in seen_paths:
+                        continue
+                    seen_paths.add(key)
+                    try:
+                        rel = pdf.relative_to(root)
+                        org_name = rel.parts[0] if len(rel.parts) > 1 else "Unknown"
+                    except Exception:
+                        org_name = "Unknown"
+                    pdf_files.append((str(pdf), org_name))
 
         if not pdf_files:
-            print(f"\nNo PDFs found in '{docs_dir}' (checked subfolders and root).")
+            checked = ", ".join(str(root) for root in root_dirs) or "(no existing roots)"
+            print(f"\nNo PDFs found in configured roots: {checked}.")
             return []
 
         print(f"\nFound {len(pdf_files)} PDF(s). Starting pipeline...\n")

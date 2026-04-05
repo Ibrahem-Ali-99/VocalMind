@@ -36,8 +36,8 @@ describe('LandingPage', () => {
             </MemoryRouter>
         )
 
-        expect(screen.getByText('Enter Manager Portal →').closest('a')).toHaveAttribute('href', '/manager')
-        expect(screen.getByText('Enter Agent Portal →').closest('a')).toHaveAttribute('href', '/agent')
+        expect(screen.getByRole('link', { name: /Enter Manager Portal/i })).toHaveAttribute('href', '/manager')
+        expect(screen.getByRole('link', { name: /Enter Agent Portal/i })).toHaveAttribute('href', '/agent')
     })
 
     it('renders feature descriptions for each portal', () => {

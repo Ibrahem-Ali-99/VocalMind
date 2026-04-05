@@ -11,19 +11,38 @@ if (!HTMLElement.prototype.scrollIntoView) {
 
 // Mock Lucide Icons
 vi.mock('lucide-react', () => {
-    const icons = [
-        'BarChart2', 'Phone', 'CheckCircle', 'AlertTriangle', 'Star', 'TrendingUp', 'TrendingDown',
-        'Target', 'Zap', 'Search', 'ArrowLeft', 'Play', 'ThumbsUp', 'ThumbsDown', 'XCircle', 'Flag',
-        'BookOpen', 'HelpCircle', 'Info', 'ChevronDown', 'FileText', 'Calendar', 'Clock', 'PhoneCall', 'Pause',
-        'Mic', 'UserCircle', 'Shield', 'ArrowRight', 'MessageSquare', 'Send', 'Activity',
-        'LayoutDashboard', 'Settings', 'ChevronLeft', 'ChevronRight', 'Bell', 'Download',
-        'Loader2', 'Headphones', 'AlertCircle', 'ChevronUp', 'Quote', 'ShieldAlert',
-    ]
-    const mock: any = {}
-    icons.forEach(icon => {
-        mock[icon] = () => <span data-testid={`icon-${icon.toLowerCase()}`} />
-    })
-    return mock
+    const makeIcon = (iconName: string) => () => <span data-testid={`icon-${iconName.toLowerCase()}`} />
+    return new Proxy(
+        {},
+        {
+            get(_target, prop) {
+                if (prop === 'then') {
+                    return undefined
+                }
+                if (prop === '__esModule') {
+                    return true
+                }
+                if (typeof prop !== 'string') {
+                    return undefined
+                }
+                return makeIcon(prop)
+            },
+            has(_target, prop) {
+                return typeof prop === 'string' && prop !== 'then'
+            },
+            getOwnPropertyDescriptor(_target, prop) {
+                if (typeof prop !== 'string' || prop === 'then') {
+                    return undefined
+                }
+                return {
+                    configurable: true,
+                    enumerable: true,
+                    value: makeIcon(prop),
+                    writable: false,
+                }
+            },
+        }
+    )
 })
 
 // Mock UI components

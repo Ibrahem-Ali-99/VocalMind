@@ -1,45 +1,72 @@
-describe('Knowledge Base', () => {
+describe("Knowledge Base", () => {
   beforeEach(() => {
-    cy.visitAs('manager', '/manager/knowledge');
-    cy.wait('@getPolicies');
-    cy.wait('@getFaqs');
+    cy.visit("/manager/knowledge");
+    cy.wait(["@getPolicies", "@getFaqs"]);
   });
 
-  it('filters the policy list from the search field', () => {
-    cy.get('input[placeholder="Search policies..."]').type('Greeting');
-
-    cy.contains('Greeting Protocol').should('be.visible');
-    cy.contains('Escalation Procedure').should('not.exist');
+  it("renders the info banner", () => {
+    cy.contains("Knowledge Engine");
+    cy.contains("Define the criteria and behavioral guardrails for your AI evaluation pipeline.");
   });
 
-  it('filters the faq list from the search field', () => {
-    cy.get('input[placeholder="Search FAQs..."]').type('refund');
-
-    cy.contains('What is the refund policy?').should('be.visible');
-    cy.contains("How do I reset a customer's password?").should('not.exist');
+  it("displays the Company Policies section", () => {
+    cy.contains("button", "Guidelines");
+    cy.contains("button", "SOP & Knowledge");
   });
 
-  it('toggles a policy from inactive to active', () => {
-    cy.get('[data-cy="policy-toggle-pol-003"]')
-      .siblings('span')
-      .should('contain', 'INACTIVE');
-
-    cy.get('[data-cy="policy-toggle-pol-003"]').click();
-
-    cy.get('[data-cy="policy-toggle-pol-003"]')
-      .siblings('span')
-      .should('contain', 'ACTIVE');
+  it("displays the FAQ Articles section", () => {
+    cy.contains("SOP Coverage");
+    cy.contains("Evaluation Hits");
   });
 
-  it('toggles an faq from active to inactive', () => {
-    cy.get('[data-cy="faq-toggle-faq-002"]')
-      .siblings('span')
-      .should('contain', 'ACTIVE');
+  it("lists all policies with titles and categories", () => {
+    cy.contains("Greeting Protocol");
+    cy.contains("Communication");
+    cy.contains("Data Privacy Guidelines");
+    cy.contains("Security");
+    cy.contains("Escalation Procedure");
+    cy.contains("Process");
+  });
 
-    cy.get('[data-cy="faq-toggle-faq-002"]').click();
+  it("lists all FAQ articles with questions and categories", () => {
+    cy.contains("button", "SOP & Knowledge").click();
+    cy.contains("How do I reset a customer's password?");
+    cy.contains("Account Management");
+    cy.contains("What is the refund policy?");
+    cy.contains("Billing");
+  });
 
-    cy.get('[data-cy="faq-toggle-faq-002"]')
-      .siblings('span')
-      .should('contain', 'INACTIVE');
+  it("shows active/inactive status labels for policies", () => {
+    cy.contains("Active Policies");
+    cy.contains("SOP Coverage");
+    cy.contains("Evaluation Hits");
+  });
+
+  it("has toggle switches for policies", () => {
+    // Radix UI Switch renders with role="switch"
+    cy.get('button[role="switch"]').should("have.length.at.least", 3);
+  });
+
+  it("filters policies by search", () => {
+    cy.get('input[placeholder="Search guidelines..."]').type("Greeting");
+    cy.contains("Greeting Protocol").should("be.visible");
+    cy.contains("Data Privacy Guidelines").should("not.exist");
+    cy.contains("Escalation Procedure").should("not.exist");
+  });
+
+  it("filters FAQ articles by search", () => {
+    cy.contains("button", "SOP & Knowledge").click();
+    cy.get('input[placeholder="Search SOP & knowledge..."]').type("refund");
+    cy.contains("What is the refund policy?").should("be.visible");
+    cy.contains("How do I reset a customer's password?").should("not.exist");
+  });
+
+  it("clears search to show all items again", () => {
+    cy.get('input[placeholder="Search guidelines..."]').type("Greeting");
+    cy.contains("Greeting Protocol").should("be.visible");
+    cy.get('input[placeholder="Search guidelines..."]').clear();
+    cy.contains("Greeting Protocol").should("be.visible");
+    cy.contains("Data Privacy Guidelines").should("be.visible");
+    cy.contains("Escalation Procedure").should("be.visible");
   });
 });

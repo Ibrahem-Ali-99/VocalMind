@@ -5,6 +5,7 @@ services:
     image: postgres:17
     container_name: vocalmind-db
     restart: unless-stopped
+    cpus: 1.0
     ports:
       - "5432:5432"
     environment:
@@ -26,6 +27,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: vocalmind-backend
+    cpus: 2.0
     ports:
       - "8000:8000"
     depends_on:
@@ -33,14 +35,34 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://vocalmind:vocalmind_dev@db:5432/vocalmind
+      - SECRET_KEY=${SECRET_KEY:-vocalmind_local_dev_secret_change_in_env}
+      - IS_LOCAL=true
       - EMOTION_API_URL=http://emotion:8000
       - VAD_API_URL=http://vad:8002
       - WHISPERX_API_URL=http://whisperx:8000
       - FRONTEND_URL=http://localhost:3000
+      - LOCAL_AUDIO_STORAGE_DIR=/app/storage/uploads
+      # LLM / Groq
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.0}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
+      # RAG — point at Docker service names, not localhost
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION_SOP_PARENTS=${QDRANT_COLLECTION_SOP_PARENTS:-sop_parents}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-snowflake-arctic-embed2}
+      - SOP_RETRIEVAL_TOP_K=${SOP_RETRIEVAL_TOP_K:-3}
+      # Text emotion
+      - TEXT_EMOTION_PROVIDER=${TEXT_EMOTION_PROVIDER:-rule_based}
+      - TEXT_EMOTION_MODEL=${TEXT_EMOTION_MODEL:-j-hartmann/emotion-english-distilroberta-base}
     volumes:
       - ./backend/app:/app/app
+      - ./backend/storage:/app/storage
+      - ./sop-standards:/app/sop-standards
+      - ./AudioData:/AudioData
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,7 +74,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:8000
     container_name: vocalmind-frontend
+    cpus: 1.0
     ports:
       - "3000:3000"
     depends_on:
@@ -64,8 +89,9 @@ services:
 
   # ── Ollama ──────────────────────────────────────────────────────────────────
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.3.4
     container_name: vocalmind-ollama
+    cpus: 4.0
     ports:
       - "11434:11434"
     volumes:
@@ -80,8 +106,9 @@ services:
 
   # ── Qdrant ──────────────────────────────────────────────────────────────────
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.11.1
     container_name: vocalmind-qdrant
+    cpus: 1.0
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -101,29 +128,35 @@ services:
       context: ./services/rag
       dockerfile: Dockerfile
     container_name: vocalmind-ingestion
+    cpus: 2.0
     depends_on:
       ollama:
         condition: service_healthy
       qdrant:
         condition: service_healthy
     volumes:
-      - ./services/rag/NA_docs:/app/NA_docs
-      - ./services/rag/parsed_docs:/app/parsed_docs
+      - ./sop-standards:/app/sop-standards
+      - ./storage/guidelines:/app/storage/guidelines
+      - ./storage/knowledge:/app/storage/knowledge
     environment:
-      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://ollama:11434
       - QDRANT_URL=http://qdrant:6333
-      - EMBEDDING_MODEL=nomic-embed-text
-    restart: "no"
+      - EMBEDDING_MODEL=snowflake-arctic-embed2
+      - DOCS_DIR=/app/sop-standards
+      - POLICY_DOCS_DIR=/app/storage/guidelines
+      - KNOWLEDGE_DOCS_DIR=/app/storage/knowledge
+    restart: unless-stopped
 
   # ── VAD Preprocessing ──────────────────────────────────────────────────────
   vad:
     build:
       context: ./services/vad
     container_name: vocalmind-vad
+    cpus: 2.0
     ports:
       - "8002:8002"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -135,10 +168,11 @@ services:
     build:
       context: ./services/emotion
     container_name: vocalmind-emotion
+    cpus: 2.0
     ports:
       - "8001:8000"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -150,10 +184,15 @@ services:
     build:
       context: ./services/whisperx
     container_name: vocalmind-whisperx
+    cpus: 4.0
+    gpus: all
     ports:
       - "8003:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      - WHISPER_MODEL_SIZE=tiny
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

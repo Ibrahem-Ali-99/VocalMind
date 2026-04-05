@@ -66,6 +66,10 @@ export function AgentDashboard() {
     );
   }
 
+  const displayAvgResponseTime = data.avgResponseTime.trim().toLowerCase().endsWith("s")
+    ? data.avgResponseTime.trim()
+    : `${data.avgResponseTime}s`;
+
   return (
     <div className="p-6 space-y-6">
       {/* Hero Card */}
@@ -189,7 +193,7 @@ export function AgentDashboard() {
             </div>
           </div>
           <div className="text-[40px] leading-none text-warning mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
-            {data.avgResponseTime}s
+            {displayAvgResponseTime}
           </div>
           <div className="text-[12px] text-muted-foreground">
             response time

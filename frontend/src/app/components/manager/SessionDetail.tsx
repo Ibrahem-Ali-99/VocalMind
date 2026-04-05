@@ -1,25 +1,25 @@
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Play, Headphones, Loader2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
-import { useState, useEffect, useMemo, useRef } from "react";
-import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
-import { formatResponseTime } from "../../utils/interactionFormat";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { getInteractionDetail, getAudioUrl, reprocessInteraction, type InteractionDetail } from "../../services/api";
 
-const emotionTheme: Record<string, { label: string; color: string; surface: string; score: number }> = {
-  neutral: { label: "Neutral", color: "#64748B", surface: "rgba(100, 116, 139, 0.16)", score: 54 },
-  happy: { label: "Happy", color: "#16A34A", surface: "rgba(22, 163, 74, 0.18)", score: 90 },
-  grateful: { label: "Grateful", color: "#059669", surface: "rgba(5, 150, 105, 0.16)", score: 84 },
-  interested: { label: "Interested", color: "#0EA5E9", surface: "rgba(14, 165, 233, 0.16)", score: 72 },
-  calmer: { label: "Calmer", color: "#14B8A6", surface: "rgba(20, 184, 166, 0.16)", score: 70 },
-  curious: { label: "Curious", color: "#8B5CF6", surface: "rgba(139, 92, 246, 0.18)", score: 66 },
-  surprised: { label: "Surprised", color: "#F59E0B", surface: "rgba(245, 158, 11, 0.18)", score: 61 },
-  professional: { label: "Professional", color: "#4F46E5", surface: "rgba(79, 70, 229, 0.16)", score: 65 },
-  informative: { label: "Informative", color: "#2563EB", surface: "rgba(37, 99, 235, 0.16)", score: 67 },
-  empathetic: { label: "Empathetic", color: "#7C3AED", surface: "rgba(124, 58, 237, 0.16)", score: 82 },
-  helpful: { label: "Helpful", color: "#0891B2", surface: "rgba(8, 145, 178, 0.16)", score: 78 },
-  warm: { label: "Warm", color: "#EA580C", surface: "rgba(234, 88, 12, 0.16)", score: 76 },
-  frustrated: { label: "Frustrated", color: "#DC2626", surface: "rgba(220, 38, 38, 0.18)", score: 30 },
-  angry: { label: "Angry", color: "#B91C1C", surface: "rgba(185, 28, 28, 0.18)", score: 22 },
-  sad: { label: "Sad", color: "#475569", surface: "rgba(71, 85, 105, 0.18)", score: 35 },
+const emotionTheme: Record<string, { label: string; color: string; surface: string }> = {
+  neutral: { label: "Neutral", color: "#64748B", surface: "rgba(100, 116, 139, 0.16)" },
+  happy: { label: "Happy", color: "#16A34A", surface: "rgba(22, 163, 74, 0.18)" },
+  grateful: { label: "Grateful", color: "#059669", surface: "rgba(5, 150, 105, 0.16)" },
+  interested: { label: "Interested", color: "#0EA5E9", surface: "rgba(14, 165, 233, 0.16)" },
+  calmer: { label: "Calmer", color: "#14B8A6", surface: "rgba(20, 184, 166, 0.16)" },
+  curious: { label: "Curious", color: "#8B5CF6", surface: "rgba(139, 92, 246, 0.18)" },
+  surprised: { label: "Surprised", color: "#F59E0B", surface: "rgba(245, 158, 11, 0.18)" },
+  professional: { label: "Professional", color: "#4F46E5", surface: "rgba(79, 70, 229, 0.16)" },
+  informative: { label: "Informative", color: "#2563EB", surface: "rgba(37, 99, 235, 0.16)" },
+  empathetic: { label: "Empathetic", color: "#7C3AED", surface: "rgba(124, 58, 237, 0.16)" },
+  helpful: { label: "Helpful", color: "#0891B2", surface: "rgba(8, 145, 178, 0.16)" },
+  warm: { label: "Warm", color: "#EA580C", surface: "rgba(234, 88, 12, 0.16)" },
+  frustrated: { label: "Frustrated", color: "#DC2626", surface: "rgba(220, 38, 38, 0.18)" },
+  angry: { label: "Angry", color: "#B91C1C", surface: "rgba(185, 28, 28, 0.18)" },
+  sad: { label: "Sad", color: "#475569", surface: "rgba(71, 85, 105, 0.18)" },
+  unknown: { label: "Unknown", color: "#94A3B8", surface: "rgba(148, 163, 184, 0.16)" },
 };
 
 function normalizeEmotionLabel(value?: string): string {
@@ -27,17 +27,65 @@ function normalizeEmotionLabel(value?: string): string {
   if (emotionTheme[key]) {
     return key;
   }
+  if (key.includes("fear")) {
+    return "frustrated";
+  }
+  if (key.includes("disgust")) {
+    return "frustrated";
+  }
   if (key.includes("frustr")) {
     return "frustrated";
   }
   if (key.includes("calm")) {
     return "calmer";
   }
+  if (key.includes("surpris")) {
+    return "surprised";
+  }
+  if (key.includes("other") || key.includes("unk")) {
+    return "unknown";
+  }
   return "neutral";
 }
 
 function getEmotionMeta(value?: string) {
   return emotionTheme[normalizeEmotionLabel(value)] || emotionTheme.neutral;
+}
+
+function normalizeConfidence(value?: number): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0.5;
+  }
+  return Math.max(0, Math.min(1, numeric));
+}
+
+const emotionValence: Record<string, number> = {
+  happy: 0.95,
+  grateful: 0.82,
+  interested: 0.35,
+  calmer: 0.2,
+  curious: 0.22,
+  surprised: 0.1,
+  professional: 0.12,
+  informative: 0.08,
+  empathetic: 0.25,
+  helpful: 0.3,
+  warm: 0.35,
+  neutral: 0,
+  unknown: 0,
+  frustrated: -0.72,
+  angry: -0.95,
+  sad: -0.58,
+};
+
+function emotionSignal(value?: string, confidence?: number): number {
+  const label = normalizeEmotionLabel(value);
+  const valence = emotionValence[label] ?? 0;
+  const normalizedConfidence = normalizeConfidence(confidence);
+  // Keep direction from emotion while confidence controls distance from neutral.
+  const strength = 0.55 + (normalizedConfidence * 0.45);
+  return valence * strength;
 }
 
 function formatClock(seconds: number): string {
@@ -74,7 +122,9 @@ export function SessionDetail() {
   const { id } = useParams();
   const [data, setData] = useState<InteractionDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
   const [activeUtteranceId, setActiveUtteranceId] = useState<string | null>(null);
   const [windowedUtteranceId, setWindowedUtteranceId] = useState<string | null>(null);
   const [currentTimeSeconds, setCurrentTimeSeconds] = useState(0);
@@ -176,6 +226,61 @@ export function SessionDetail() {
     return null;
   }, [data]);
 
+  const interactionStatus = (data?.interaction.status || "").toLowerCase();
+  const isProcessing = ["pending", "processing"].includes(interactionStatus);
+
+  const refreshDetail = useCallback(async (initialLoad = false) => {
+    if (!id) {
+      return;
+    }
+
+    if (initialLoad) {
+      setLoading(true);
+    }
+
+    try {
+      const detail = await getInteractionDetail(id, { includeLLMTriggers: true });
+      setData(detail);
+      setLoadError(null);
+    } catch (err) {
+      if (initialLoad) {
+        setLoadError(err instanceof Error ? err.message : "Failed to load session");
+      }
+    } finally {
+      if (initialLoad) {
+        setLoading(false);
+      }
+    }
+  }, [id]);
+
+  const handleReprocess = async () => {
+    if (!id || reprocessing) {
+      return;
+    }
+
+    setReprocessing(true);
+    setActionError(null);
+    try {
+      await reprocessInteraction(id);
+      await refreshDetail(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to reprocess interaction";
+      if (message.includes("409")) {
+        try {
+          await reprocessInteraction(id, { force: true });
+          await refreshDetail(false);
+          return;
+        } catch {
+          setActionError("This interaction is already being processed. Wait a few seconds and try again.");
+        }
+      } else {
+        setActionError(message);
+      }
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
   const ragCompliance = useMemo(() => {
     if (data?.ragCompliance) {
       return data.ragCompliance;
@@ -202,12 +307,20 @@ export function SessionDetail() {
   };
 
   useEffect(() => {
-    if (!id) return;
-    getInteractionDetail(id, { includeLLMTriggers: true })
-      .then(setData)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [id]);
+    void refreshDetail(true);
+  }, [refreshDetail]);
+
+  useEffect(() => {
+    if (!id || !data || !isProcessing) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshDetail(false);
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [data, id, isProcessing, refreshDetail]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -272,10 +385,11 @@ export function SessionDetail() {
     const agentPoints: Array<{ x: number; y: number }> = [];
     const clientPoints: Array<{ x: number; y: number }> = [];
     
-    // Map score 0-100 to Y coordinates (inverted: 100 is top, 0 is bottom).
-    const mapScoreToY = (score: number) => {
+    // Map emotion signal -1..1 to Y coordinates (1 is top/positive, -1 is bottom/negative).
+    const mapSignalToY = (signal: number) => {
       const range = height - padding * 2;
-      return height - padding - (score / 100) * range;
+      const bounded = Math.max(-1, Math.min(1, signal));
+      return height - padding - (((bounded + 1) / 2) * range);
     };
 
     const markers = utterances.map((u) => {
@@ -283,8 +397,10 @@ export function SessionDetail() {
       const timelinePct = totalDurationSeconds > 0 ? (start / totalDurationSeconds) * 100 : 0;
       const leftPct = plotLeftPct + (timelinePct / 100) * plotWidthPct;
       const emotion = getEmotionMeta(u.fusedEmotion || u.emotion);
+      const confidence = normalizeConfidence(u.fusedConfidence ?? u.confidence ?? u.textConfidence);
+      const signal = emotionSignal(u.fusedEmotion || u.emotion, confidence);
       const x = (leftPct / 100) * width;
-      const y = mapScoreToY(emotion.score);
+      const y = mapSignalToY(signal);
 
       if (u.speaker === "agent") {
         agentPoints.push({ x, y });
@@ -299,6 +415,8 @@ export function SessionDetail() {
         speaker: u.speaker,
         color: emotion.color,
         label: emotion.label,
+        confidence,
+        signal,
         timestamp: u.timestamp,
       };
     });
@@ -335,13 +453,13 @@ export function SessionDetail() {
     );
   }
 
-  if (error || !data) {
+  if (loadError || !data) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <AlertTriangleIcon className="w-10 h-10 text-warning mx-auto mb-3" />
           <p className="text-foreground text-sm">Failed to load session</p>
-          <p className="text-muted-foreground/80 text-xs mt-1">{error}</p>
+          <p className="text-muted-foreground/80 text-xs mt-1">{loadError}</p>
         </div>
       </div>
     );
@@ -359,14 +477,15 @@ export function SessionDetail() {
     return "var(--destructive)";
   };
 
-  const responseTimeText = formatResponseTime(interaction.responseTime);
+  const responseTimeText = interaction.responseTime.endsWith("s") ? interaction.responseTime : `${interaction.responseTime}s`;
   const progressPercent = Math.max(0, Math.min(100, (currentTimeSeconds / totalDurationSeconds) * 100));
-  const processAdherenceResolved = Boolean(ragCompliance?.processAdherence?.isResolved);
-  const processAdherenceAccentClass = processAdherenceResolved ? "before:bg-success" : "before:bg-destructive";
-  const processAdherenceBadgeClass = processAdherenceResolved
-    ? "bg-success/10 text-success"
-    : "bg-destructive/10 text-destructive";
-  const processAdherenceBadgeText = processAdherenceResolved ? "Resolved" : "Unresolved";
+  const statusBadgeClass = isProcessing
+    ? "border-amber-200 text-amber-700 bg-amber-50"
+    : interactionStatus === "failed"
+      ? "border-destructive/30 text-destructive bg-destructive/10"
+      : interactionStatus === "completed"
+        ? "border-emerald-200 text-emerald-700 bg-emerald-50"
+        : "border-slate-200 text-slate-600 bg-slate-100";
 
   const handleProgressChange = (value: number) => {
     if (!audioRef.current) {
@@ -389,10 +508,31 @@ export function SessionDetail() {
           <ArrowLeft className="w-4 h-4" />
           Back to Sessions
         </Link>
-        <div className="px-4 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-bold text-slate-400 dark:text-slate-300 font-mono">
-          ID: {id?.padEnd(32, '0')}
+        <div className="flex items-center gap-3">
+          {interactionStatus && (
+            <div className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${statusBadgeClass}`}>
+              {interactionStatus}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleReprocess()}
+            disabled={reprocessing || !id}
+            className="h-9 px-4 rounded-full bg-slate-900 text-white text-[12px] font-bold hover:bg-slate-800 transition-colors disabled:opacity-50"
+          >
+            {reprocessing ? "Reprocessing..." : "Reprocess"}
+          </button>
+          <div className="px-4 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-bold text-slate-400 dark:text-slate-300 font-mono">
+            ID: {id?.padEnd(32, '0')}
+          </div>
         </div>
       </div>
+
+      {actionError && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-[12px] font-semibold text-destructive">
+          {actionError}
+        </div>
+      )}
 
       {/* Top Header Card */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-border dark:border-slate-700 p-8 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8">
@@ -616,7 +756,7 @@ export function SessionDetail() {
                           boxShadow: isActive ? `0 0 0 4px ${marker.color}40, 0 4px 12px rgba(0,0,0,0.3)` : "0 2px 4px rgba(0,0,0,0.15)",
                           zIndex
                         }}
-                        title={`${marker.timestamp} • ${marker.speaker} • ${marker.label}`}
+                        title={`${marker.timestamp} • ${marker.speaker} • ${marker.label} • ${Math.round(marker.confidence * 100)}% confidence • ${marker.signal.toFixed(2)} intensity`}
                       />
                     );
                   })}
@@ -643,6 +783,7 @@ export function SessionDetail() {
                 const isAgent = u.speaker === "agent";
                 const isActive = activeUtteranceId === u.id;
                 const emotionMeta = getEmotionMeta(u.fusedEmotion || u.emotion);
+                const emotionConfidence = normalizeConfidence(u.fusedConfidence ?? u.confidence ?? u.textConfidence);
                 return (
                   <div 
                     key={u.id} 
@@ -669,13 +810,15 @@ export function SessionDetail() {
                           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: emotionMeta.color }}></span>
                           {emotionMeta.label}
                         </span>
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-300">
+                          {Math.round(emotionConfidence * 100)}% confidence
+                        </span>
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
                             setWindowedUtteranceId(u.id);
                           }}
-                          data-cy="transcript-window-trigger"
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-slate-500 dark:text-slate-300 hover:text-primary"
                         >
                           Open Window
@@ -711,15 +854,17 @@ export function SessionDetail() {
             <div className="p-6 space-y-8">
               {!ragCompliance?.available ? (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 text-[13px] text-slate-500 dark:text-slate-300 font-medium">
-                  RAG compliance analysis unavailable.{ragCompliance?.error ? ` ${ragCompliance.error}` : ""}
+                  {isProcessing
+                    ? "Processing audio. RAG compliance will appear once transcription completes."
+                    : `RAG compliance analysis unavailable.${ragCompliance?.error ? ` ${ragCompliance.error}` : ""}`}
                 </div>
               ) : (
                 <>
                   {ragCompliance.processAdherence && (
-                    <div className={`relative pl-5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:rounded-full space-y-5 ${processAdherenceAccentClass}`}>
+                    <div className={`relative pl-5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:rounded-full space-y-5 ${ragCompliance.processAdherence.isResolved ? "before:bg-success" : "before:bg-destructive"}`}>
                       <div className="flex items-center justify-between">
                         <h4 className="text-[16px] font-extrabold text-slate-800 dark:text-slate-100">Process Adherence</h4>
-                        <span className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md uppercase tracking-wider ${processAdherenceBadgeClass}`}>{processAdherenceBadgeText}</span>
+                        <span className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md uppercase tracking-wider ${ragCompliance.processAdherence.isResolved ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>{ragCompliance.processAdherence.isResolved ? "Resolved" : "Unresolved"}</span>
                       </div>
 
                       <div className="grid grid-cols-[100px_1fr] gap-3 text-[13px]">
@@ -800,13 +945,16 @@ export function SessionDetail() {
               <div className="p-6">
                 {!emotionTriggers.available ? (
                   <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-[13px] text-destructive font-medium">
-                    Emotion trigger analysis unavailable.{emotionTriggers.error ? ` ${emotionTriggers.error}` : ""}
+                    {isProcessing
+                      ? "Processing audio. Emotion reasoning will appear once transcription completes."
+                      : `Emotion trigger analysis unavailable.${emotionTriggers.error ? ` ${emotionTriggers.error}` : ""}`}
                   </div>
                 ) : emotionTriggers.emotionShift && (
                   <div className="space-y-6">
+                    {/* Customer Emotion Banner */}
                     <div className="rounded-xl border border-purple-200 dark:border-purple-900/50 bg-purple-50 dark:bg-purple-900/20 p-4">
-                      <span className="text-[10px] text-purple-700 dark:text-purple-300 uppercase font-extrabold tracking-widest block mb-1">Current Customer Emotion</span>
-                      <p className="text-[13px] font-bold text-purple-800 dark:text-purple-200 capitalize">
+                      <span className="text-[10px] text-purple-700 dark:text-purple-300 uppercase font-extrabold tracking-widest block mb-1">Full-Call Customer Emotion</span>
+                      <p className="text-[15px] font-bold text-purple-800 dark:text-purple-200 capitalize">
                         {emotionTriggers.emotionShift.currentCustomerEmotion || "unknown"}
                       </p>
                       <p className="text-[12px] text-purple-700/90 dark:text-purple-200/90 mt-1 leading-relaxed">
@@ -814,6 +962,19 @@ export function SessionDetail() {
                       </p>
                     </div>
 
+                    {/* Dissonance Detection */}
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider border ${emotionTriggers.emotionShift.isDissonanceDetected ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800" : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"}`}>
+                        {emotionTriggers.emotionShift.isDissonanceDetected ? `⚡ ${emotionTriggers.emotionShift.dissonanceType || "Dissonance"}` : "✓ No Dissonance"}
+                      </span>
+                      {emotionTriggers.emotionShift.insufficientEvidence && (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                          Limited Evidence
+                        </span>
+                      )}
+                    </div>
+
+                    {/* AI Reasoning */}
                     <div className="relative pl-5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-purple-500 before:rounded-full">
                       <span className="text-[11px] font-extrabold text-purple-600 uppercase tracking-wider mb-2 block">AI REASONING</span>
                       <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
@@ -821,11 +982,39 @@ export function SessionDetail() {
                       </p>
                     </div>
 
+                    {/* Evidence Quotes */}
+                    {emotionTriggers.emotionShift.evidenceQuotes?.length > 0 && (
+                      <div>
+                        <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2 block">Evidence Quotes</span>
+                        <div className="space-y-2">
+                          {emotionTriggers.emotionShift.evidenceQuotes.map((q: string, i: number) => (
+                            <div key={i} className="pl-4 border-l-2 border-slate-200 dark:border-slate-700 py-1">
+                              <p className="text-[12px] italic text-slate-600 dark:text-slate-300">&ldquo;{q}&rdquo;</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Correction */}
                     <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                       <span className="text-[10px] text-slate-500 dark:text-slate-300 uppercase font-extrabold tracking-widest block mb-1">Recommended Correction</span>
                       <p className="text-[13px] italic text-slate-800 dark:text-slate-200">{emotionTriggers.emotionShift.counterfactualCorrection}</p>
                     </div>
-                    
+
+                    {/* Derived Signals */}
+                    {emotionTriggers.derived && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Acoustic</span>
+                          <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 capitalize">{emotionTriggers.derived.acousticEmotion}</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Fused</span>
+                          <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 capitalize">{emotionTriggers.derived.fusedEmotion}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -836,10 +1025,7 @@ export function SessionDetail() {
       </div>
 
       {windowedUtterance && (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4"
-          data-cy="conversation-window"
-        >
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4">
           <div className="w-full max-w-3xl max-h-[82vh] overflow-hidden rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F131C] shadow-2xl">
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
               <div>
@@ -849,7 +1035,6 @@ export function SessionDetail() {
               <button
                 type="button"
                 onClick={() => setWindowedUtteranceId(null)}
-                data-cy="transcript-window-close"
                 className="text-[12px] font-bold text-slate-500 dark:text-slate-300 hover:text-primary"
               >
                 Close

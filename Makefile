@@ -1,4 +1,4 @@
-.PHONY: help up down build logs support-up support-down be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install llm-trigger-test seed migrate clean test-all
+.PHONY: help up down build build-retry logs support-up support-down be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install llm-trigger-test seed migrate clean test-all
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -19,6 +19,9 @@ support-down: ## Stop supporting services used by local backend/frontend develop
 
 build: ## Build all Docker images
 	docker compose build
+
+build-retry: ## Build/start with retry logic for transient Docker daemon EOF/500 errors (Windows PowerShell)
+	powershell -ExecutionPolicy Bypass -File infra/scripts/docker_compose_retry.ps1 -ComposeArgs "up -d --build"
 
 logs: ## Follow logs for all services
 	docker compose logs -f

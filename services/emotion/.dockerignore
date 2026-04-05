@@ -1,0 +1,9 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+test.py
+test_short.py

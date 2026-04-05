@@ -17,4 +17,4 @@ class InteractionScore(SQLModel, table=True):
     total_silence_seconds: Optional[float] = None
     avg_response_time_seconds: Optional[float] = None
     was_resolved: Optional[bool] = None
-    scored_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    scored_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

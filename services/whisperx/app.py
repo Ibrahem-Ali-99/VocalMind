@@ -13,6 +13,7 @@ import gc
 import time
 import tempfile
 import warnings
+import inspect
 from pathlib import Path
 from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
@@ -79,8 +80,16 @@ from whisperx.diarize import DiarizationPipeline
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
+
+_ALIGNMENT_CHECKPOINT = Path("/root/.cache/torch/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth")
+
+if not torch.cuda.is_available():
+    raise RuntimeError(
+        "CUDA GPU is required for WhisperX. Enable NVIDIA Container Toolkit and GPU passthrough on the host."
+    )
+
+DEVICE = "cuda"
+COMPUTE_TYPE = "float16"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Overlap detection (from main_v5_final.py)
@@ -116,10 +125,23 @@ def load_models():
 
     if not HF_TOKEN:
         print("⚠ WARNING: HF_TOKEN not set — diarization will fail")
-    Models.diarize_model = DiarizationPipeline(
-        use_auth_token=HF_TOKEN, device=DEVICE
-    )
-    print("[OK] Diarization pipeline loaded")
+
+    diarize_kwargs = {"device": DEVICE}
+    try:
+        signature = inspect.signature(DiarizationPipeline)
+        if HF_TOKEN:
+            if "use_auth_token" in signature.parameters:
+                diarize_kwargs["use_auth_token"] = HF_TOKEN
+            elif "token" in signature.parameters:
+                diarize_kwargs["token"] = HF_TOKEN
+            elif "hf_token" in signature.parameters:
+                diarize_kwargs["hf_token"] = HF_TOKEN
+
+        Models.diarize_model = DiarizationPipeline(**diarize_kwargs)
+        print("[OK] Diarization pipeline loaded")
+    except Exception as exc:
+        Models.diarize_model = None
+        print(f"⚠ WARNING: diarization unavailable ({exc.__class__.__name__}: {exc})")
 
 def unload_models():
     Models.asr_model = None
@@ -171,6 +193,19 @@ def _numpy_to_python(obj):
     return obj
 
 
+def _load_align_model_with_retry(language_code: str):
+    """Load WhisperX alignment model and recover once from a corrupted torch checkpoint."""
+    try:
+        return whisperx.load_align_model(language_code=language_code, device=DEVICE)
+    except Exception as exc:
+        message = str(exc)
+        if "PytorchStreamReader failed reading zip archive" not in message:
+            raise
+        if _ALIGNMENT_CHECKPOINT.exists():
+            _ALIGNMENT_CHECKPOINT.unlink()
+        return whisperx.load_align_model(language_code=language_code, device=DEVICE)
+
+
 @app.post("/transcribe")
 async def transcribe(
     file: UploadFile = File(...),
@@ -202,22 +237,27 @@ async def transcribe(
         detected_language = result["language"]
 
         # Step 2 — Align
-        model_a, metadata = whisperx.load_align_model(
-            language_code=detected_language, device=DEVICE
-        )
-        result = whisperx.align(
-            result["segments"], model_a, metadata, audio, DEVICE,
-            return_char_alignments=False,
-        )
-        # Free alignment model right away
-        del model_a, metadata
-        gc.collect()
-        if DEVICE == "cuda":
-            torch.cuda.empty_cache()
+        try:
+            model_a, metadata = _load_align_model_with_retry(detected_language)
+            result = whisperx.align(
+                result["segments"], model_a, metadata, audio, DEVICE,
+                return_char_alignments=False,
+            )
+            # Free alignment model right away
+            del model_a, metadata
+            gc.collect()
+            if DEVICE == "cuda":
+                torch.cuda.empty_cache()
+        except Exception as align_exc:
+            print(f"⚠ WARNING: alignment unavailable ({align_exc.__class__.__name__}: {align_exc})")
 
         # Step 3 — Diarize
-        diarize_segments = Models.diarize_model(audio)
-        result = whisperx.assign_word_speakers(diarize_segments, result)
+        if Models.diarize_model is not None:
+            diarize_segments = Models.diarize_model(audio)
+            result = whisperx.assign_word_speakers(diarize_segments, result)
+        else:
+            for segment in result["segments"]:
+                segment.setdefault("speaker", "UNKNOWN")
 
         # Step 4 — Overlap detection
         result["segments"] = detect_overlaps(result["segments"])
