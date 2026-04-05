@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Any
 
+from app.core.emotion_fusion import build_deterministic_emotion_analysis
+
 
 SUPPORTED_AUDIO_EXTENSIONS = (".wav", ".mp3")
 
@@ -21,7 +23,34 @@ def audio_content_type(filename: str | None) -> str:
 def normalize_emotion_label(label: str | None) -> str:
     if not label:
         return "unknown"
-    return label.split("/")[-1].strip() if "/" in label else label
+
+    value = label.split("/")[-1].strip().lower() if "/" in label else label.strip().lower()
+    if not value:
+        return "unknown"
+
+    alias_map = {
+        "joy": "happy",
+        "happiness": "happy",
+        "happy": "happy",
+        "anger": "angry",
+        "angry": "angry",
+        "sadness": "sad",
+        "sad": "sad",
+        "fear": "frustrated",
+        "fearful": "frustrated",
+        "frustration": "frustrated",
+        "frustrated": "frustrated",
+        "disgust": "frustrated",
+        "disgusted": "frustrated",
+        "surprise": "surprised",
+        "surprised": "surprised",
+        "neutral": "neutral",
+        "calm": "neutral",
+        "other": "unknown",
+        "<unk>": "unknown",
+        "unknown": "unknown",
+    }
+    return alias_map.get(value, value)
 
 
 def normalize_emotion_scores(emotions: list[dict[str, Any]] | None) -> list[dict[str, float | str]]:
@@ -36,7 +65,50 @@ def normalize_emotion_scores(emotions: list[dict[str, Any]] | None) -> list[dict
     return normalized
 
 
+def normalize_segment_emotion_analysis(data: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in data or []:
+        if not isinstance(item, dict):
+            continue
+
+        emotion_scores = normalize_emotion_scores(item.get("emotion_scores") or item.get("emotions"))
+        emotion = normalize_emotion_label(item.get("emotion") or item.get("top_emotion") or item.get("label"))
+
+        score_value = item.get("confidence")
+        if score_value is None:
+            score_value = item.get("top_score")
+        if score_value is None:
+            score_value = item.get("score")
+        if score_value is None and emotion_scores:
+            score_value = emotion_scores[0].get("score")
+
+        try:
+            confidence = float(score_value or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        if emotion == "unknown" and emotion_scores:
+            emotion = normalize_emotion_label(str(emotion_scores[0].get("label")))
+
+        if not emotion_scores and emotion != "unknown":
+            emotion_scores = [{"label": emotion, "score": confidence}]
+
+        normalized.append(
+            {
+                "emotion": emotion,
+                "confidence": confidence,
+                "emotion_scores": emotion_scores,
+            }
+        )
+
+    return normalized
+
+
 def normalize_emotion_analysis(data: dict[str, Any]) -> dict[str, Any]:
+    segment_emotions = normalize_segment_emotion_analysis(
+        data.get("segment_emotions") or data.get("segments")
+    )
+
     if "top_emotion" in data or "emotions" in data:
         emotions = normalize_emotion_scores(data.get("emotions"))
         top_emotion = normalize_emotion_label(data.get("top_emotion"))
@@ -47,6 +119,7 @@ def normalize_emotion_analysis(data: dict[str, Any]) -> dict[str, Any]:
             "top_emotion": top_emotion,
             "top_score": float(top_score or 0.0),
             "emotions": emotions,
+            "segment_emotions": segment_emotions,
         }
 
     raw = data.get("raw_result", {})
@@ -63,6 +136,7 @@ def normalize_emotion_analysis(data: dict[str, Any]) -> dict[str, Any]:
         "top_emotion": top_emotion,
         "top_score": top_score,
         "emotions": emotions,
+        "segment_emotions": segment_emotions,
     }
 
 
@@ -169,17 +243,38 @@ def build_local_full_response(
 ) -> dict[str, Any]:
     normalized_transcription = normalize_transcription_response(transcription)
     normalized_emotion = normalize_emotion_analysis(emotion_analysis)
+    segment_emotions = normalized_emotion.get("segment_emotions") or []
 
     segments = []
-    for item in normalized_transcription["segments"]:
+    for index, item in enumerate(normalized_transcription["segments"]):
+        segment_emotion_data = segment_emotions[index] if index < len(segment_emotions) else {}
+        segment_emotion = normalize_emotion_label(segment_emotion_data.get("emotion"))
+        segment_scores = normalize_emotion_scores(segment_emotion_data.get("emotion_scores"))
+
+        # Local emotion service can return clip-level emotion only; derive per-turn labels from text.
+        if segment_emotion == "unknown" or not segment_scores:
+            text_fallback = build_deterministic_emotion_analysis(item["text"])
+            fallback_emotion = normalize_emotion_label(text_fallback.get("top_emotion"))
+            fallback_scores = normalize_emotion_scores(text_fallback.get("emotions"))
+
+            if segment_emotion == "unknown" and fallback_emotion != "unknown":
+                segment_emotion = fallback_emotion
+            if not segment_scores and fallback_scores:
+                segment_scores = fallback_scores
+
+        if segment_emotion == "unknown":
+            segment_emotion = normalized_emotion["top_emotion"]
+        if not segment_scores:
+            segment_scores = list(normalized_emotion["emotions"])
+
         segments.append(
             {
                 "start": item["start"],
                 "end": item["end"],
                 "text": item["text"],
                 "speaker": item.get("speaker", "UNKNOWN"),
-                "emotion": normalized_emotion["top_emotion"],
-                "emotion_scores": normalized_emotion["emotions"],
+                "emotion": segment_emotion,
+                "emotion_scores": segment_scores,
             }
         )
 

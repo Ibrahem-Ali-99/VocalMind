@@ -1,12 +1,27 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Search, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
-import { getInteractions, type InteractionSummary } from "../../services/api";
+import {
+  createInteraction,
+  getAgents,
+  getInteractions,
+  reprocessInteraction,
+  type AgentSummary,
+  type InteractionSummary,
+} from "../../services/api";
 
 export function SessionInspector() {
+  const navigate = useNavigate();
   const [interactions, setInteractions] = useState<InteractionSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
+  const [selectedUploadAgentId, setSelectedUploadAgentId] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("All Agents");
@@ -15,12 +30,69 @@ export function SessionInspector() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  useEffect(() => {
+  const loadInteractions = () => {
+    setLoading(true);
+    setLoadError(null);
     getInteractions()
       .then(setInteractions)
-      .catch((err) => setError(err.message))
+      .catch((err) => setLoadError(err.message))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadInteractions();
+    getAgents().then(setAgents).catch(() => setAgents([]));
   }, []);
+
+  const handleUploadInteraction = async () => {
+    if (!selectedAudioFile) {
+      setActionError("Please select an audio file (.wav or .mp3)");
+      return;
+    }
+
+    setUploading(true);
+    setActionError(null);
+    try {
+      const result = await createInteraction(selectedAudioFile, selectedUploadAgentId || undefined);
+      setShowUploadModal(false);
+      setSelectedAudioFile(null);
+      setSelectedUploadAgentId("");
+      await loadInteractions();
+      navigate(`/manager/inspector/${result.interactionId}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to upload interaction");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleReprocess = async (interactionId: string) => {
+    setActionError(null);
+    setReprocessingIds((prev) => new Set(prev).add(interactionId));
+    try {
+      await reprocessInteraction(interactionId);
+      await loadInteractions();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to reprocess interaction";
+      if (message.includes("409")) {
+        try {
+          await reprocessInteraction(interactionId, { force: true });
+          await loadInteractions();
+          return;
+        } catch {
+          setActionError("This interaction is already being processed. Wait a few seconds and try again.");
+        }
+      } else {
+        setActionError(message);
+      }
+    } finally {
+      setReprocessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(interactionId);
+        return next;
+      });
+    }
+  };
 
   const handleSort = (field: "score" | "date" | "duration") => {
     if (sortField === field) {
@@ -41,13 +113,13 @@ export function SessionInspector() {
     );
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <AlertTriangle className="w-10 h-10 text-destructive mx-auto mb-3" />
           <p className="text-foreground text-sm">Failed to load interactions</p>
-          <p className="text-muted-foreground/80 text-xs mt-1">{error}</p>
+          <p className="text-muted-foreground/80 text-xs mt-1">{loadError}</p>
         </div>
       </div>
     );
@@ -88,19 +160,29 @@ export function SessionInspector() {
   const paginatedInteractions = sortedInteractions.slice(startIndex, startIndex + itemsPerPage);
 
   return (
-    <div className="p-6">
-      {/* Top Controls */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-[20px] font-bold text-foreground mb-2">Session Inspector</h2>
-          <p className="text-[13px] text-muted-foreground">
-            {totalItems} interaction{totalItems !== 1 ? "s" : ""} · sorted by score
-          </p>
+    <div className="p-4 md:p-8 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-[26px] font-extrabold text-foreground tracking-tight">Session Inspector</h2>
+            <p className="text-[13px] text-muted-foreground mt-1">
+              {totalItems} interaction{totalItems !== 1 ? "s" : ""} found
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowUploadModal(true)}
+            className="h-11 px-6 rounded-2xl bg-primary text-primary-foreground text-[13px] font-bold hover:bg-primary/90 transition-all shadow-[0_4px_12px_rgba(59,130,246,0.3)] hover:shadow-[0_6px_20px_rgba(59,130,246,0.4)]"
+          >
+            + Upload Audio
+          </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        {/* Filters Row */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[180px] max-w-[280px]">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search agent, date, ID…"
@@ -109,7 +191,7 @@ export function SessionInspector() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-[200px] h-10 pl-9 pr-3 bg-muted/20 border border-border rounded-[10px] text-[13px] focus:outline-none focus:ring-1 focus:ring-primary/40"
+              className="w-full h-10 pl-10 pr-3 bg-card border border-border rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
             />
           </div>
 
@@ -120,7 +202,7 @@ export function SessionInspector() {
                 setSelectedAgent(e.target.value);
                 setCurrentPage(1);
               }}
-              className="appearance-none flex items-center gap-2 h-10 pl-4 pr-10 bg-card border border-border rounded-[10px] text-[13px] hover:bg-muted transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40 cursor-pointer"
+              className="appearance-none h-10 pl-4 pr-10 bg-card border border-border rounded-xl text-[13px] hover:bg-muted/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
             >
               <option value="All Agents">All Agents</option>
               {uniqueAgents.map(agent => (
@@ -130,43 +212,132 @@ export function SessionInspector() {
             <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
           </div>
 
-          <div className="flex items-center border border-border rounded-[10px] overflow-hidden bg-card">
-            <button
-              onClick={() => handleSort("score")}
-              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${sortField === "score" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              Score ↓
-            </button>
-            <button
-              onClick={() => handleSort("date")}
-              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${sortField === "date" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              Date
-            </button>
-            <button
-              onClick={() => handleSort("duration")}
-              className={`px-3 h-10 text-[11px] font-semibold transition-colors ${sortField === "duration" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              Duration
-            </button>
+          <div className="flex items-center border border-border rounded-xl overflow-hidden bg-card shadow-sm">
+            {(["score", "date", "duration"] as const).map((field) => (
+              <button
+                key={field}
+                onClick={() => handleSort(field)}
+                className={`px-4 h-10 text-[11px] font-bold uppercase tracking-wider transition-all ${sortField === field ? "bg-primary text-primary-foreground shadow-inner" : "text-muted-foreground hover:bg-muted/40"}`}
+              >
+                {field} {sortField === field ? (sortOrder === "desc" ? "↓" : "↑") : ""}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
+      {actionError && (
+        <div className="mb-4 rounded-[10px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[12px] font-medium text-destructive">
+          {actionError}
+        </div>
+      )}
+
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h3 className="text-[18px] font-bold text-foreground mb-2">Upload Real Audio Interaction</h3>
+            <p className="text-[13px] text-muted-foreground mb-6">Select an agent and upload one call at a time to run the full pipeline.</p>
+
+            <div className="space-y-6">
+              {/* Agent Selection */}
+              <div>
+                <label className="block text-[12px] font-semibold text-foreground mb-3">Select Agent</label>
+                {agents.length === 0 ? (
+                  <div className="p-4 bg-muted/20 rounded-[10px] text-[13px] text-muted-foreground text-center">
+                    No agents available. Create agents first in the organization settings.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUploadAgentId("")}
+                      className={`p-3 rounded-[12px] border-2 transition-all text-left ${
+                        selectedUploadAgentId === ""
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-muted/20 hover:border-primary/50"
+                      }`}
+                    >
+                      <div className="text-[13px] font-semibold text-foreground">Auto-Select</div>
+                      <div className="text-[11px] text-muted-foreground mt-1">Use first active agent</div>
+                    </button>
+                    {agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => setSelectedUploadAgentId(agent.id)}
+                        className={`p-3 rounded-[12px] border-2 transition-all text-left ${
+                          selectedUploadAgentId === agent.id
+                            ? "border-primary bg-primary/5"
+                            : "border-border bg-muted/20 hover:border-primary/50"
+                        }`}
+                      >
+                        <div className="text-[13px] font-semibold text-foreground">{agent.name}</div>
+                        <div className="text-[11px] text-muted-foreground mt-1">{agent.role || "Agent"}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Audio File */}
+              <div>
+                <label className="block text-[12px] font-semibold text-foreground mb-2">Audio File (.wav or .mp3)</label>
+                <input
+                  type="file"
+                  accept=".wav,.mp3,audio/wav,audio/mpeg"
+                  onChange={(e) => setSelectedAudioFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-[13px] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[13px] file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                />
+                {selectedAudioFile && (
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    ✓ Selected: {selectedAudioFile.name}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!uploading) {
+                    setShowUploadModal(false);
+                    setSelectedAudioFile(null);
+                    setSelectedUploadAgentId("");
+                  }
+                }}
+                className="h-10 px-4 rounded-[10px] border border-border text-[13px] font-semibold hover:bg-muted transition-colors"
+                disabled={uploading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleUploadInteraction()}
+                className="h-10 px-4 rounded-[10px] bg-primary text-primary-foreground text-[13px] font-semibold disabled:opacity-60 hover:bg-primary/90 transition-colors"
+                disabled={uploading || !selectedAudioFile}
+              >
+                {uploading ? "Uploading..." : "Upload & Process"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table Card */}
-      <div className="bg-card rounded-[14px] border border-border overflow-hidden">
+      <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-muted/10 border-b border-border">
-              <th className="px-6 py-4 text-left text-label">Agent</th>
-              <th className="px-6 py-4 text-left text-label">Date & Time</th>
-              <th className="px-6 py-4 text-left text-label">Duration</th>
-              <th className="px-6 py-4 text-left text-label">Score</th>
-              <th className="px-6 py-4 text-left text-label">Empathy</th>
-              <th className="px-6 py-4 text-left text-label">Policy</th>
-              <th className="px-6 py-4 text-left text-label">Resolution</th>
-              <th className="px-6 py-4 text-left text-label">Status</th>
-              <th className="px-6 py-4 text-left text-label">Actions</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Agent</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Date & Time</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Duration</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Score</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Empathy</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Policy</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Resolution</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Status</th>
+              <th className="px-6 py-4 text-left text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
@@ -180,53 +351,78 @@ export function SessionInspector() {
                   </div>
                 </td>
               </tr>
-            ) : paginatedInteractions.map((row) => (
-              <tr key={row.id} className="hover:bg-muted/5 transition-colors">
+            ) : paginatedInteractions.map((row) => {
+              const scoreColor = row.overallScore >= 85 ? "var(--success)" : row.overallScore >= 75 ? "var(--primary)" : "var(--destructive)";
+              const rowStatus = (row.status || "").toLowerCase();
+              const isRowProcessing = ["pending", "processing"].includes(rowStatus);
+              const statusBadge = rowStatus === "failed"
+                ? { className: "bg-destructive/5 text-destructive border-destructive/20", label: "⚠ Failed" }
+                : isRowProcessing
+                  ? { className: "bg-amber-50 text-amber-700 border-amber-200", label: "⟳ Processing" }
+                  : row.resolved
+                    ? { className: "bg-success/5 text-success border-success/20", label: "✓ Resolved" }
+                    : { className: "bg-destructive/5 text-destructive border-destructive/20", label: "✗ Unresolved" };
+              return (
+              <tr key={row.id} className="group hover:bg-primary/[0.03] transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-semibold text-foreground">{row.agentName}</span>
-                    {row.hasViolation && (
-                      <span className="px-2 py-0.5 bg-destructive/10 text-destructive rounded-full text-[11px] font-medium">
-                        ⚠ Violation
-                      </span>
-                    )}
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-extrabold text-primary shrink-0">
+                      {row.agentName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="text-[13px] font-bold text-foreground block">{row.agentName}</span>
+                      {row.hasViolation && (
+                        <span className="px-1.5 py-0.5 bg-destructive/10 text-destructive rounded text-[9px] font-bold">
+                          ⚠ Violation
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-muted-foreground">
-                  {row.date} · {row.time}
+                <td className="px-6 py-4 whitespace-nowrap text-[12px] text-muted-foreground font-medium">
+                  <div>{row.date}</div>
+                  <div className="text-[11px] opacity-70">{row.time}</div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-muted-foreground">
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-foreground/70">
                   {row.duration}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div
-                    className="text-[18px] font-bold"
-                    style={{
-                      fontFamily: "var(--font-serif)",
-                      color: row.overallScore >= 85 ? "var(--success)" : row.overallScore >= 75 ? "var(--primary)" : "var(--destructive)",
-                    }}
+                    className="text-[20px] font-extrabold tabular-nums"
+                    style={{ color: scoreColor }}
                   >
                     {row.overallScore}%
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-foreground">{row.empathyScore}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-foreground">{row.policyScore}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-[13px] text-foreground">{row.resolutionScore}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-foreground">{row.empathyScore}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-foreground">{row.policyScore}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-[13px] font-bold text-foreground">{row.resolutionScore}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${row.resolved ? "bg-success/5 text-success border-success/20" : "bg-destructive/5 text-destructive border-destructive/20"}`}>
-                    {row.resolved ? "✓ Resolved" : "✗ Unresolved"}
+                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusBadge.className}`}>
+                    {statusBadge.label}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <Link
-                    to={`/manager/inspector/${row.id}`}
-                    className="text-primary hover:text-primary/80 font-semibold text-[13px] transition-colors"
-                  >
-                    Inspect →
-                  </Link>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      disabled={reprocessingIds.has(row.id) || isRowProcessing}
+                      onClick={() => void handleReprocess(row.id)}
+                      className="text-[12px] font-bold text-foreground/60 hover:text-foreground disabled:opacity-40 transition-colors"
+                    >
+                      {isRowProcessing ? "Processing..." : reprocessingIds.has(row.id) ? "Reprocessing..." : "Reprocess"}
+                    </button>
+                    <Link
+                      to={`/manager/inspector/${row.id}`}
+                      className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-bold text-[12px] transition-all"
+                    >
+                      Inspect →
+                    </Link>
+                  </div>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
 
@@ -239,14 +435,17 @@ export function SessionInspector() {
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="h-9 px-4 rounded-xl border border-border bg-background text-[13px] font-semibold text-foreground hover:bg-muted disabled:opacity-40 transition-all flex items-center gap-2"
+              className="h-9 px-4 rounded-xl border border-border bg-background text-[13px] font-bold text-foreground hover:bg-muted disabled:opacity-40 transition-all"
             >
               ← Prev
             </button>
+            <span className="px-3 text-[12px] font-bold text-muted-foreground tabular-nums">
+              {currentPage} / {totalPages}
+            </span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages || totalItems === 0}
-              className="h-9 px-4 rounded-xl border border-border bg-background text-[13px] font-semibold text-foreground hover:bg-muted disabled:opacity-40 transition-all flex items-center gap-2"
+              className="h-9 px-4 rounded-xl border border-border bg-background text-[13px] font-bold text-foreground hover:bg-muted disabled:opacity-40 transition-all"
             >
               Next →
             </button>

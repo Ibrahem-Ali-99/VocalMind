@@ -3,16 +3,20 @@
  * All functions point at the backend's /api/v1 endpoints.
  */
 
-const API_BASE = "http://localhost:8000/api/v1";
+const API_ROOT = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE = `${API_ROOT.replace(/\/$/, "")}/api/v1`;
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
+  const headers = new Headers(options?.headers || {});
+  if (!isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
     ...options,
+    headers,
   });
 
   if (!res.ok) {
@@ -73,6 +77,49 @@ export interface InteractionSummary {
 
 export function getInteractions(): Promise<InteractionSummary[]> {
   return apiFetch<InteractionSummary[]>("/interactions");
+}
+
+export interface CreateInteractionResult {
+  interactionId: string;
+  status: string;
+  audioFilePath: string;
+  agentId: string;
+  uploadedBy: string;
+  processingJobs: Array<{
+    stage: string;
+    status: string;
+    retryCount: number;
+    errorMessage?: string | null;
+  }>;
+}
+
+export function createInteraction(file: File, agentId?: string): Promise<CreateInteractionResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (agentId) {
+    formData.append("agent_id", agentId);
+  }
+  return apiFetch<CreateInteractionResult>("/interactions", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export interface ProcessingStatusResult {
+  interactionId: string;
+  status: string;
+  jobs: Array<{
+    stage: string;
+    status: string;
+    retryCount: number;
+    errorMessage?: string | null;
+    startedAt?: string | null;
+    completedAt?: string | null;
+  }>;
+}
+
+export function getInteractionProcessingStatus(id: string): Promise<ProcessingStatusResult> {
+  return apiFetch<ProcessingStatusResult>(`/interactions/${id}/processing-status`);
 }
 
 export interface UtteranceData {
@@ -276,33 +323,156 @@ export function getAudioUrl(interactionId: string): string {
   return `${API_BASE}/interactions/${interactionId}/audio`;
 }
 
+export interface ReprocessResult {
+  interactionId: string;
+  status: string;
+  queued: boolean;
+  processingJobs: Array<{
+    stage: string;
+    status: string;
+    retryCount: number;
+    errorMessage?: string | null;
+  }>;
+}
+
+export function reprocessInteraction(id: string, options?: { force?: boolean }): Promise<ReprocessResult> {
+  const suffix = options?.force ? "?force=true" : "";
+  return apiFetch<ReprocessResult>(`/interactions/${id}/reprocess${suffix}`, {
+    method: "POST",
+  });
+}
+
 // ── Knowledge Base ───────────────────────────────────────────────────────────
 
 export interface PolicyData {
   id: string;
+  documentType: "policy";
   title: string;
   category: string;
   content: string;
   preview: string;
   lastUpdated: string;
   isActive: boolean;
+  usageCount: number;
 }
 
 export function getPolicies(): Promise<PolicyData[]> {
   return apiFetch<PolicyData[]>("/knowledge/policies");
 }
 
+export function uploadPolicyDocument(data: { title?: string; category?: string; file: File }): Promise<{ id: string }> {
+  const formData = new FormData();
+  if (data.title) formData.append("title", data.title);
+  if (data.category) formData.append("category", data.category);
+  formData.append("file", data.file);
+
+  return apiFetch<{ id: string }>("/knowledge/policies/upload", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function replacePolicyDocument(id: string, data: { title?: string; category?: string; file: File }): Promise<{ id: string }> {
+  const formData = new FormData();
+  if (data.title) formData.append("title", data.title);
+  if (data.category) formData.append("category", data.category);
+  formData.append("file", data.file);
+
+  return apiFetch<{ id: string }>(`/knowledge/policies/${id}/upload`, {
+    method: "PATCH",
+    body: formData,
+  });
+}
+
+export function createPolicy(data: { title: string; category: string; content: string }): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>("/knowledge/policies", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updatePolicy(id: string, data: { title?: string; category?: string; content?: string }): Promise<void> {
+  return apiFetch<void>(`/knowledge/policies/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function togglePolicy(id: string): Promise<{ isActive: boolean }> {
+  return apiFetch<{ isActive: boolean }>(`/knowledge/policies/${id}/toggle`, {
+    method: "POST",
+  });
+}
+
+export function deletePolicy(id: string): Promise<void> {
+  return apiFetch<void>(`/knowledge/policies/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export interface FAQData {
   id: string;
+  documentType: "faq";
   question: string;
   answer: string;
   preview: string;
   category: string;
   isActive: boolean;
+  usageCount: number;
 }
 
 export function getFaqs(): Promise<FAQData[]> {
   return apiFetch<FAQData[]>("/knowledge/faqs");
+}
+
+export function uploadFaqDocument(data: { question?: string; category?: string; file: File }): Promise<{ id: string }> {
+  const formData = new FormData();
+  if (data.question) formData.append("question", data.question);
+  if (data.category) formData.append("category", data.category);
+  formData.append("file", data.file);
+
+  return apiFetch<{ id: string }>("/knowledge/faqs/upload", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function replaceFaqDocument(id: string, data: { question?: string; category?: string; file: File }): Promise<{ id: string }> {
+  const formData = new FormData();
+  if (data.question) formData.append("question", data.question);
+  if (data.category) formData.append("category", data.category);
+  formData.append("file", data.file);
+
+  return apiFetch<{ id: string }>(`/knowledge/faqs/${id}/upload`, {
+    method: "PATCH",
+    body: formData,
+  });
+}
+
+export function createFaq(data: { question: string; answer: string; category: string }): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>("/knowledge/faqs", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateFaq(id: string, data: { question?: string; answer?: string; category?: string }): Promise<void> {
+  return apiFetch<void>(`/knowledge/faqs/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function toggleFaq(id: string): Promise<{ isActive: boolean }> {
+  return apiFetch<{ isActive: boolean }>(`/knowledge/faqs/${id}/toggle`, {
+    method: "POST",
+  });
+}
+
+export function deleteFaq(id: string): Promise<void> {
+  return apiFetch<void>(`/knowledge/faqs/${id}`, {
+    method: "DELETE",
+  });
 }
 
 // ── Agents ───────────────────────────────────────────────────────────────────

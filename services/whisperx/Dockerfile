@@ -12,17 +12,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System dependencies ──────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3.10-venv \
+    python3.11 \
+    python3.11-venv \
     python3-pip \
     ffmpeg \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Make python3.10 the default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+# Make python3.11 the default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 # ── Install uv ───────────────────────────────────────────────────────────────
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
@@ -30,12 +30,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 # ── App setup ─────────────────────────────────────────────────────────────────
 WORKDIR /app
 
-# Copy project files
+# Copy dependency metadata first for better layer caching
 COPY pyproject.toml .
-COPY app.py .
 
 # Install dependencies with uv
 RUN uv sync
+
+# Copy application code after dependencies are installed
+COPY app.py .
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 EXPOSE 8000

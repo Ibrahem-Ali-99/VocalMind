@@ -4,12 +4,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SessionInspector } from '../app/components/manager/SessionInspector'
 import { MemoryRouter } from 'react-router'
 
-const { getInteractionsMock } = vi.hoisted(() => ({
+const { getInteractionsMock, getAgentsMock } = vi.hoisted(() => ({
     getInteractionsMock: vi.fn(),
+    getAgentsMock: vi.fn(),
 }))
 
 vi.mock('../app/services/api', () => ({
     getInteractions: getInteractionsMock,
+    getAgents: getAgentsMock,
 }))
 
 describe('SessionInspector Component', () => {
@@ -43,6 +45,11 @@ describe('SessionInspector Component', () => {
                 hasViolation: true,
                 status: 'completed',
             },
+        ])
+
+        getAgentsMock.mockResolvedValue([
+            { id: 'agent-1', name: 'Sarah M.', role: 'Agent' },
+            { id: 'agent-2', name: 'John D.', role: 'Agent' },
         ])
     })
 

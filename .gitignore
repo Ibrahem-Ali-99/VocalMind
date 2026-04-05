@@ -134,6 +134,7 @@ frontend/.pytest_cache/
 *.ogg
 # *.mp3
 # *.wav
+backend/storage/uploads/
 
 # ── Research & Experiments ──────────────────────────────────────────────
 research/voice-gen/generated_audio/
@@ -143,6 +144,10 @@ Experiments/
 # ── RAG & Services ───────────────────────────────────────────────────────
 services/rag/parsed_docs/
 services/rag/logs/
+sop-standards/**/parsed-docs/
+
+# ── Docker Build Cache ───────────────────────────────────────────────────
+.docker/buildx-cache/
 
 # ── Lockfiles & Build Info ──────────────────────────────────────────────
 uv.lock

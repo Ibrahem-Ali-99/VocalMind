@@ -1,0 +1,13 @@
+node_modules
+coverage
+dist
+.next
+.nyc_output
+.pytest_cache
+cypress/screenshots
+cypress/videos
+*.log
+.git
+.gitignore
+Dockerfile
+README.md

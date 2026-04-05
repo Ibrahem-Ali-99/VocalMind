@@ -4,7 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import create_db_and_tables
+from app.core.interaction_processing import start_processing_worker, stop_processing_worker
 from app.api.main import api_router
+from scripts.seed_nexalink import main as seed_nexalink_main
 
 
 from app.api.routes.dashboard import prewarm_dashboard_cache
@@ -12,10 +14,15 @@ from app.api.routes.dashboard import prewarm_dashboard_cache
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
+    await seed_nexalink_main()
+    await start_processing_worker()
     # Pre-warm the dashboard cache so the first manager load is instantaneous
     import asyncio
     asyncio.create_task(prewarm_dashboard_cache())
-    yield
+    try:
+        yield
+    finally:
+        await stop_processing_worker()
 
 
 app = FastAPI(

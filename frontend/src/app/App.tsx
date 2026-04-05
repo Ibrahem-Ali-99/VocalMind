@@ -1,3 +1,4 @@
+import { Toaster } from 'sonner';
 import { RouterProvider } from 'react-router';
 import { router } from './routes';
 import { AuthProvider } from './contexts/AuthContext';
@@ -8,6 +9,7 @@ export default function App() {
     <ThemeProvider defaultTheme="light" storageKey="vocalmind-theme">
       <AuthProvider>
         <RouterProvider router={router} />
+        <Toaster richColors position="bottom-right" />
       </AuthProvider>
     </ThemeProvider>
   );

@@ -10,7 +10,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev --locked \
+	&& uv pip install --python /app/.venv/bin/python pypdf
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM python:3.13-slim
@@ -22,6 +23,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
 COPY app/ ./app/
+COPY scripts/ ./scripts/
 
 # Add venv to PATH
 ENV PATH="/app/.venv/bin:$PATH"

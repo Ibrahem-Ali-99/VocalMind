@@ -7,16 +7,21 @@ remain isolated from production data.
 """
 
 import pytest
+import importlib
 from typing import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+from app.api.deps import get_session, get_supabase, get_db
 from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, SQLModel
 
-# Mock database creation and cache pre-warm to avoid lifespan errors
-with patch("app.core.database.create_db_and_tables", return_value=None), \
-     patch("app.api.routes.dashboard.prewarm_dashboard_cache", return_value=None):
-    from app.main import app
-from app.api.deps import get_session, get_supabase, get_db
+# Stub startup/lifespan hooks to keep tests isolated and fast.
+app_main = importlib.import_module("app.main")
+app_main.create_db_and_tables = AsyncMock(return_value=None)
+app_main.prewarm_dashboard_cache = AsyncMock(return_value=None)
+app_main.seed_nexalink_main = AsyncMock(return_value=None)
+app_main.start_processing_worker = AsyncMock(return_value=None)
+app_main.stop_processing_worker = AsyncMock(return_value=None)
+app = app_main.app
 
 # --- Fixtures ---
 

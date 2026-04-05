@@ -1,19 +1,28 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:20 AS builder
 
 WORKDIR /app
 
-# Copy dependency files
-COPY package.json package-lock.json ./
+ARG VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=${VITE_API_URL}
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
 
-# Install dependencies
-RUN npm ci
+# Use corepack-managed pnpm for deterministic and cache-friendly installs
+RUN corepack enable
+
+# Copy dependency files
+COPY pnpm-lock.yaml package.json ./
+
+# Install dependencies using persistent pnpm store cache
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+	pnpm install --prefer-offline --frozen-lockfile
 
 # Copy source code
 COPY . .
 
 # Build
-RUN npm run build
+RUN pnpm run build
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM node:20-alpine

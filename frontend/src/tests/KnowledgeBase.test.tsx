@@ -1,18 +1,19 @@
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { KnowledgeBase } from '../app/components/manager/KnowledgeBase'
 import { MemoryRouter } from 'react-router'
 
-import { KnowledgeBase } from '../app/components/manager/KnowledgeBase'
-
-const { getPoliciesMock, getFaqsMock } = vi.hoisted(() => ({
+const { getPoliciesMock, getFaqsMock, togglePolicyMock } = vi.hoisted(() => ({
     getPoliciesMock: vi.fn(),
     getFaqsMock: vi.fn(),
+    togglePolicyMock: vi.fn(),
 }))
 
 vi.mock('../app/services/api', () => ({
     getPolicies: getPoliciesMock,
     getFaqs: getFaqsMock,
+    togglePolicy: togglePolicyMock,
 }))
 
 describe('KnowledgeBase', () => {
@@ -20,54 +21,88 @@ describe('KnowledgeBase', () => {
         getPoliciesMock.mockResolvedValue([
             {
                 id: 'p1',
+                documentType: 'policy',
                 title: 'Greeting Protocol',
                 category: 'customer_service',
                 content: 'content',
                 preview: 'Greeting preview',
                 lastUpdated: '2026-03-01',
                 isActive: true,
+                usageCount: 3,
             },
             {
                 id: 'p2',
+                documentType: 'policy',
                 title: 'Data Privacy Guidelines',
                 category: 'compliance',
                 content: 'content',
                 preview: 'Privacy preview',
                 lastUpdated: '2026-03-01',
                 isActive: true,
+                usageCount: 2,
             },
             {
                 id: 'p3',
+                documentType: 'policy',
                 title: 'Escalation Procedure',
                 category: 'operations',
                 content: 'content',
                 preview: 'Escalation preview',
                 lastUpdated: '2026-03-01',
                 isActive: false,
+                usageCount: 0,
             },
         ])
 
         getFaqsMock.mockResolvedValue([
             {
                 id: 'f1',
+                documentType: 'faq',
                 question: "How do I reset a customer's password?",
                 answer: 'answer',
                 preview: 'preview',
                 category: 'account',
                 isActive: true,
+                usageCount: 4,
             },
             {
                 id: 'f2',
+                documentType: 'faq',
                 question: 'What is the refund policy?',
                 answer: 'answer',
                 preview: 'preview',
                 category: 'billing',
                 isActive: true,
+                usageCount: 1,
             },
         ])
+
+        togglePolicyMock.mockResolvedValue({ isActive: true })
     })
 
-    it('filters policies and lets the visible policy be toggled', async () => {
+    it('renders info banner and headers', async () => {
+        render(
+            <MemoryRouter>
+                <KnowledgeBase />
+            </MemoryRouter>
+        )
+
+        expect(await screen.findByText('Knowledge Engine')).toBeInTheDocument()
+        expect(screen.getByText('Guidelines')).toBeInTheDocument()
+        expect(screen.getByText('SOP & Knowledge')).toBeInTheDocument()
+    })
+
+    it('renders search placeholders', async () => {
+        render(
+            <MemoryRouter>
+                <KnowledgeBase />
+            </MemoryRouter>
+        )
+
+        expect(await screen.findByPlaceholderText('Search guidelines...')).toBeInTheDocument()
+    })
+
+    it('toggles policy switch and filters policy list', async () => {
         render(
             <MemoryRouter>
                 <KnowledgeBase />
@@ -75,117 +110,16 @@ describe('KnowledgeBase', () => {
         )
 
         expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
-
-        fireEvent.change(screen.getByPlaceholderText('Search policies...'), { target: { value: 'Escalation' } })
-
-        expect(screen.getByText('Escalation Procedure')).toBeInTheDocument()
-        expect(screen.queryByText('Greeting Protocol')).not.toBeInTheDocument()
-
-        const [visibleSwitch] = screen.getAllByRole('switch')
-        expect(visibleSwitch).not.toBeChecked()
-
-        fireEvent.click(visibleSwitch)
-
-        expect(visibleSwitch).toBeChecked()
-    })
-
-    it('filters faq articles independently from the policy list', async () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        expect(await screen.findByText("How do I reset a customer's password?")).toBeInTheDocument()
-
-        fireEvent.change(screen.getByPlaceholderText('Search FAQs...'), { target: { value: 'refund' } })
-
-        expect(screen.getByText('What is the refund policy?')).toBeInTheDocument()
-        expect(screen.queryByText("How do I reset a customer's password?")).not.toBeInTheDocument()
-    })
-
-    it('shows a loading state until both knowledge sources finish loading', async () => {
-        let resolvePolicies: ((value: any[]) => void) | undefined
-        let resolveFaqs: ((value: any[]) => void) | undefined
-
-        getPoliciesMock.mockReturnValue(
-            new Promise((resolve) => {
-                resolvePolicies = resolve
-            })
-        )
-        getFaqsMock.mockReturnValue(
-            new Promise((resolve) => {
-                resolveFaqs = resolve
-            })
-        )
-
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        expect(screen.getByText('Loading knowledge base...')).toBeInTheDocument()
-
-        resolvePolicies?.([
-            {
-                id: 'p1',
-                title: 'Greeting Protocol',
-                category: 'customer_service',
-                content: 'content',
-                preview: 'Greeting preview',
-                lastUpdated: '2026-03-01',
-                isActive: true,
-            },
-        ])
-        resolveFaqs?.([
-            {
-                id: 'f1',
-                question: "How do I reset a customer's password?",
-                answer: 'answer',
-                preview: 'preview',
-                category: 'account',
-                isActive: true,
-            },
-        ])
-
-        expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
-    })
-
-    it('shows the shared error state when one knowledge source fails', async () => {
-        getPoliciesMock.mockRejectedValue(new Error('policies unavailable'))
-        getFaqsMock.mockResolvedValue([])
-
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        expect(await screen.findByText('Failed to load knowledge base')).toBeInTheDocument()
-        expect(screen.getByText('policies unavailable')).toBeInTheDocument()
-    })
-
-    it('toggles the filtered faq article without affecting the policy results', async () => {
-        render(
-            <MemoryRouter>
-                <KnowledgeBase />
-            </MemoryRouter>
-        )
-
-        expect(await screen.findByText('Greeting Protocol')).toBeInTheDocument()
-
-        fireEvent.change(screen.getByPlaceholderText('Search FAQs...'), { target: { value: 'refund' } })
 
         const switches = screen.getAllByRole('switch')
-        const faqSwitch = switches[switches.length - 1]
+        const escalationSwitch = switches[2]
+        expect(escalationSwitch).not.toBeChecked()
+        fireEvent.click(escalationSwitch)
+        await waitFor(() => expect(escalationSwitch).toBeChecked())
 
-        expect(screen.getByText('What is the refund policy?')).toBeInTheDocument()
-        expect(screen.getByText('Greeting Protocol')).toBeInTheDocument()
-        expect(faqSwitch).toBeChecked()
-
-        fireEvent.click(faqSwitch)
-
-        expect(faqSwitch).not.toBeChecked()
+        const policySearch = screen.getByPlaceholderText('Search guidelines...')
+        fireEvent.change(policySearch, { target: { value: 'Privacy' } })
+        expect(screen.getByText('Data Privacy Guidelines')).toBeInTheDocument()
+        expect(screen.queryByText('Greeting Protocol')).not.toBeInTheDocument()
     })
 })

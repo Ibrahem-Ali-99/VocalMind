@@ -1,4 +1,5 @@
 import warnings
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
 
     # Database (Docker Postgres)
     DATABASE_URL: str = "postgresql+asyncpg://vocalmind:vocalmind_dev@localhost:5432/vocalmind"
+    LOCAL_AUDIO_STORAGE_DIR: str = "storage/uploads"
 
     # AI service routing: True = Docker containers, False = Kaggle server
     IS_LOCAL: bool = True
@@ -52,8 +54,11 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "snowflake-arctic-embed2"
     EMBEDDING_TIMEOUT_SECONDS: float = 60.0
     SOP_RETRIEVAL_TOP_K: int = 4
-    SOP_DOCS_ROOT: str = "sop-standards"
-    SOP_PARSED_DOCS_ROOT: str = "sop-standards"
+    POLICY_DOCS_ROOT: str = str(Path.cwd() / "storage" / "guidelines")
+    SOP_DOCS_ROOT: str = str(Path.cwd() / "sop-standards")
+    KNOWLEDGE_DOCS_ROOT: str = str(Path.cwd() / "storage" / "knowledge")
+    POLICY_PARSED_DOCS_ROOT: str = str(Path.cwd() / "sop-standards")
+    SOP_PARSED_DOCS_ROOT: str = str(Path.cwd() / "sop-standards")
 
     # Text emotion model used in text+acoustic fusion
     TEXT_EMOTION_PROVIDER: str = "rule_based"  # rule_based | hf_transformers
@@ -61,6 +66,7 @@ class Settings(BaseSettings):
 
     # OpenAI API Key for Assistant
     OPENAI_API_KEY: str = ""
+    SEED_MOCK_INTERACTIONS: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 

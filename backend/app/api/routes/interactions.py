@@ -2,7 +2,8 @@
 # Performance: violation flags via LEFT JOIN subquery (no N+1 loops).
 
 from collections import Counter
-from fastapi import APIRouter, HTTPException
+from datetime import datetime, timezone
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlmodel import select, func
 from uuid import UUID
@@ -10,19 +11,196 @@ import httpx
 import io
 import wave
 
-from app.api.deps import SessionDep
+from app.api.deps import SessionDep, CurrentUser
 from app.core.config import settings
 from app.core.emotion_fusion import fuse_emotion_signals
+from pathlib import Path
+from app.core.inference_contracts import is_supported_audio_filename
+from app.core.interaction_processing import (
+    enqueue_interaction_processing,
+    create_processing_jobs,
+    interaction_has_active_jobs,
+    reset_interaction_for_reprocess,
+    save_audio_upload,
+)
 from app.llm_trigger.service import evaluate_interaction_triggers
 from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
 from app.models.organization import Organization
+from app.models.processing import ProcessingJob
+from app.models.transcript import Transcript
 from app.models.utterance import Utterance
 from app.models.emotion_event import EmotionEvent
 from app.models.policy import CompanyPolicy, PolicyCompliance
 from app.models.user import User as UserModel
+from app.models.enums import ProcessingStatus, UserRole
 
 router = APIRouter()
+
+
+@router.post("")
+async def create_interaction(
+    session: SessionDep,
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+    agent_id: UUID | None = Form(default=None),
+):
+    """Upload a real audio call, persist it locally, and enqueue processing."""
+    if not is_supported_audio_filename(file.filename):
+        raise HTTPException(status_code=400, detail="Only .wav and .mp3 files are supported.")
+
+    agent_query = select(UserModel).where(
+        UserModel.organization_id == current_user.organization_id,
+        UserModel.role == UserRole.agent,
+        UserModel.is_active.is_(True),
+    )
+    if agent_id:
+        agent_query = agent_query.where(UserModel.id == agent_id)
+    agent_result = await session.exec(agent_query)
+    agent = agent_result.first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found for current organization")
+
+    org_result = await session.exec(select(Organization).where(Organization.id == current_user.organization_id))
+    organization = org_result.first()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded audio file is empty")
+
+    interaction = Interaction(
+        organization_id=current_user.organization_id,
+        agent_id=agent.id,
+        uploaded_by=current_user.id,
+        audio_file_path="",
+        file_size_bytes=len(content),
+        duration_seconds=0,
+        file_format=Path(file.filename).suffix.lstrip(".").lower() or "wav",
+        interaction_date=datetime.now(timezone.utc).replace(tzinfo=None),
+        processing_status=ProcessingStatus.pending,
+        language_detected=None,
+        has_overlap=False,
+        channel_count=1,
+    )
+    session.add(interaction)
+    await session.flush()
+
+    saved_audio_path = await save_audio_upload(organization.slug, interaction.id, file.filename, content)
+    interaction.audio_file_path = str(saved_audio_path)
+    session.add(interaction)
+
+    transcript = Transcript(interaction_id=interaction.id, full_text="", overall_confidence=None)
+    session.add(transcript)
+    await create_processing_jobs(session, interaction.id)
+    await session.commit()
+    await session.refresh(interaction)
+
+    await enqueue_interaction_processing(interaction.id)
+
+    jobs_result = await session.exec(
+        select(ProcessingJob).where(ProcessingJob.interaction_id == interaction.id)
+    )
+    jobs = [
+        {
+            "stage": job.stage.value,
+            "status": job.status.value,
+            "retryCount": job.retry_count,
+            "errorMessage": job.error_message,
+        }
+        for job in jobs_result.all()
+    ]
+
+    return {
+        "interactionId": str(interaction.id),
+        "status": interaction.processing_status.value,
+        "audioFilePath": interaction.audio_file_path,
+        "agentId": str(agent.id),
+        "uploadedBy": str(current_user.id),
+        "processingJobs": jobs,
+    }
+
+
+@router.get("/{interaction_id}/processing-status")
+async def get_interaction_processing_status(
+    interaction_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+):
+    interaction_result = await session.exec(
+        select(Interaction).where(
+            Interaction.id == interaction_id,
+            Interaction.organization_id == current_user.organization_id,
+        )
+    )
+    interaction = interaction_result.first()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+
+    jobs_result = await session.exec(
+        select(ProcessingJob).where(ProcessingJob.interaction_id == interaction_id)
+    )
+    jobs = [
+        {
+            "stage": job.stage.value,
+            "status": job.status.value,
+            "retryCount": job.retry_count,
+            "errorMessage": job.error_message,
+            "startedAt": job.started_at.isoformat() if job.started_at else None,
+            "completedAt": job.completed_at.isoformat() if job.completed_at else None,
+        }
+        for job in jobs_result.all()
+    ]
+    return {
+        "interactionId": str(interaction_id),
+        "status": interaction.processing_status.value,
+        "jobs": jobs,
+    }
+
+
+@router.post("/{interaction_id}/reprocess")
+async def reprocess_interaction(
+    interaction_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    force: bool = False,
+):
+    interaction_result = await session.exec(
+        select(Interaction).where(
+            Interaction.id == interaction_id,
+            Interaction.organization_id == current_user.organization_id,
+        )
+    )
+    interaction = interaction_result.first()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+
+    if not force and await interaction_has_active_jobs(session, interaction_id):
+        raise HTTPException(status_code=409, detail="Interaction is already processing")
+
+    await reset_interaction_for_reprocess(session, interaction_id)
+    await enqueue_interaction_processing(interaction_id)
+
+    jobs_result = await session.exec(
+        select(ProcessingJob).where(ProcessingJob.interaction_id == interaction_id)
+    )
+    jobs = [
+        {
+            "stage": job.stage.value,
+            "status": job.status.value,
+            "retryCount": job.retry_count,
+            "errorMessage": job.error_message,
+        }
+        for job in jobs_result.all()
+    ]
+    return {
+        "interactionId": str(interaction_id),
+        "status": ProcessingStatus.pending.value,
+        "processingJobs": jobs,
+        "queued": True,
+        "forced": force,
+    }
 
 
 def _compact_distribution(labels: list[str]) -> list[dict[str, float | int | str]]:
@@ -235,7 +413,7 @@ async def _resolve_llm_org_filter(
 
 
 @router.get("")
-async def list_interactions(session: SessionDep):
+async def list_interactions(session: SessionDep, current_user: CurrentUser):
     """List all interactions with agent name and scores."""
 
     # Subquery: count violations per interaction (eliminates N+1)
@@ -271,6 +449,7 @@ async def list_interactions(session: SessionDep):
         .join(UserModel, UserModel.id == Interaction.agent_id)
         .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
         .outerjoin(violation_subq, violation_subq.c.interaction_id == Interaction.id)
+        .where(Interaction.organization_id == current_user.organization_id)
         .order_by(Interaction.interaction_date.desc())
     )
     result = await session.exec(stmt)
@@ -308,6 +487,7 @@ async def list_interactions(session: SessionDep):
 async def get_interaction_detail(
     interaction_id: UUID,
     session: SessionDep,
+    current_user: CurrentUser,
     include_llm_triggers: bool = False,
     llm_org_filter: str | None = None,
     llm_force_rerun: bool = False,
@@ -335,7 +515,10 @@ async def get_interaction_detail(
         )
         .join(UserModel, UserModel.id == Interaction.agent_id)
         .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
-        .where(Interaction.id == interaction_id)
+        .where(
+            Interaction.id == interaction_id,
+            Interaction.organization_id == current_user.organization_id
+        )
     )
     result = await session.exec(stmt)
     row = result.first()
@@ -349,7 +532,11 @@ async def get_interaction_detail(
     # ── Utterances ──
     utt_result = await session.exec(
         select(Utterance)
-        .where(Utterance.interaction_id == interaction_id)
+        .join(Interaction, Utterance.interaction_id == Interaction.id)
+        .where(
+            Utterance.interaction_id == interaction_id,
+            Interaction.organization_id == current_user.organization_id
+        )
         .order_by(Utterance.start_time_seconds)
     )
     utterances_rows = utt_result.all()
@@ -385,7 +572,11 @@ async def get_interaction_detail(
     # ── Emotion Events ──
     event_result = await session.exec(
         select(EmotionEvent)
-        .where(EmotionEvent.interaction_id == interaction_id)
+        .join(Interaction, EmotionEvent.interaction_id == Interaction.id)
+        .where(
+            EmotionEvent.interaction_id == interaction_id,
+            Interaction.organization_id == current_user.organization_id
+        )
         .order_by(EmotionEvent.jump_to_seconds)
     )
     events_rows = event_result.all()
@@ -421,8 +612,10 @@ async def get_interaction_detail(
             PolicyCompliance.evidence_text,
         )
         .join(CompanyPolicy, CompanyPolicy.id == PolicyCompliance.policy_id)
+        .join(Interaction, PolicyCompliance.interaction_id == Interaction.id)
         .where(
             PolicyCompliance.interaction_id == interaction_id,
+            Interaction.organization_id == current_user.organization_id,
             PolicyCompliance.is_compliant == False,  # noqa: E712
         )
     )
@@ -454,7 +647,11 @@ async def get_interaction_detail(
     llm_triggers = None
     emotion_triggers = None
     rag_compliance = None
-    if include_llm_triggers:
+    is_processing = row.processing_status in {
+        ProcessingStatus.pending,
+        ProcessingStatus.processing,
+    }
+    if include_llm_triggers and not is_processing:
         try:
             resolved_org_filter = await _resolve_llm_org_filter(
                 session=session,
@@ -489,6 +686,20 @@ async def get_interaction_detail(
                 "available": False,
                 "error": str(exc),
             }
+    elif include_llm_triggers and is_processing:
+        processing_message = "Interaction is still processing. LLM trigger analysis will be available once processing completes."
+        emotion_triggers = {
+            "available": False,
+            "error": processing_message,
+        }
+        rag_compliance = {
+            "available": False,
+            "error": processing_message,
+        }
+        llm_triggers = {
+            "available": False,
+            "error": processing_message,
+        }
 
     return {
         "interaction": {
@@ -521,10 +732,13 @@ async def get_interaction_detail(
 
 
 @router.get("/{interaction_id}/emotion-comparison")
-async def get_interaction_emotion_comparison(interaction_id: UUID, session: SessionDep):
+async def get_interaction_emotion_comparison(interaction_id: UUID, session: SessionDep, current_user: CurrentUser):
     """Return compact acoustic vs text vs fused emotion comparison for manager panel."""
     interaction_result = await session.exec(
-        select(Interaction.id).where(Interaction.id == interaction_id)
+        select(Interaction.id).where(
+            Interaction.id == interaction_id,
+            Interaction.organization_id == current_user.organization_id
+        )
     )
     if not interaction_result.first():
         raise HTTPException(status_code=404, detail="Interaction not found")
@@ -557,12 +771,15 @@ def generate_dummy_wav(duration_seconds: int) -> bytes:
 
 
 @router.get("/{interaction_id}/audio")
-async def get_interaction_audio(interaction_id: UUID, session: SessionDep):
-    """Stream the audio file for an interaction from Supabase Storage."""
+async def get_interaction_audio(interaction_id: UUID, session: SessionDep, current_user: CurrentUser):
+    """Stream the audio file for an interaction from Supabase Storage or local path."""
 
     # Get the audio path and duration
     result = await session.exec(
-        select(Interaction.audio_file_path, Interaction.duration_seconds).where(Interaction.id == interaction_id)
+        select(Interaction.audio_file_path, Interaction.duration_seconds).where(
+            Interaction.id == interaction_id,
+            Interaction.organization_id == current_user.organization_id
+        )
     )
     row = result.first()
 
@@ -570,6 +787,24 @@ async def get_interaction_audio(interaction_id: UUID, session: SessionDep):
         raise HTTPException(status_code=404, detail="Interaction not found")
 
     audio_path, duration = row
+
+    # Prefer local audio when a filesystem path was seeded (e.g. ../AudioData/nexalink/*.mp3).
+    backend_dir = Path(__file__).resolve().parents[3]
+    candidates = [Path(audio_path), backend_dir / audio_path]
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        if resolved.exists() and resolved.is_file():
+            ext = resolved.suffix.lower()
+            media_type = "audio/mpeg" if ext == ".mp3" else "audio/wav"
+            content = resolved.read_bytes()
+            return StreamingResponse(
+                iter([content]),
+                media_type=media_type,
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(len(content)),
+                },
+            )
 
     # Fallback to dummy generated audio if Supabase is not configured yet
     if not settings.SUPABASE_URL or not audio_path:
