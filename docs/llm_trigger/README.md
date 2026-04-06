@@ -7,7 +7,10 @@ This folder is intentionally minimal.
 1. `LLM_TRIGGER_FEATURE_GUIDE.md`
 	- Single comprehensive guide for architecture, data flow, SOP/PDF flow, API behavior, testing, and troubleshooting.
 
-2. `README.md`
+2. `../explainability/EVIDENCE_ANCHORED_EXPLAINABILITY_LAYER.md`
+	- Shared contract for span-level trigger attribution, claim provenance, API fields, and manager Evidence Card behavior.
+
+3. `README.md`
 	- This index and usage note.
 
 ## Test source of truth

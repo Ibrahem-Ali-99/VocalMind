@@ -65,6 +65,61 @@ vi.mock("../app/services/api", () => {
         evidenceQuotes: [],
         citations: [],
       },
+      explainability: {
+        triggerAttributions: [
+          {
+            attributionId: "sop-1",
+            family: "sop",
+            triggerType: "SOP Violation",
+            title: "Confirm account details",
+            verdict: "Contradiction",
+            confidence: 0.73,
+            evidenceSpan: {
+              utteranceIndex: 0,
+              speaker: "agent",
+              quote: "Let me look up the billing record.",
+              timestamp: "00:15",
+              startSeconds: 15,
+              endSeconds: 18,
+            },
+            policyReference: {
+              source: "sop",
+              reference: "Billing SOP",
+              clause: "Verify account and charge details before lookup.",
+              provenance: "SOP retrieval context",
+            },
+            reasoning: "The agent moved to account lookup before verification.",
+            evidenceChain: ["Expected SOP step: Confirm account details."],
+            supportingQuotes: ["Let me look up the billing record."],
+          },
+        ],
+        claimProvenance: [
+          {
+            claimId: "claim-1",
+            claimText: "The refund will clear today.",
+            claimSpan: {
+              utteranceIndex: 0,
+              speaker: "agent",
+              quote: "The refund will clear today.",
+              timestamp: "00:15",
+              startSeconds: 15,
+              endSeconds: 18,
+            },
+            retrievedPolicy: {
+              source: "policy",
+              reference: "Refund Policy",
+              clause: "Standard refunds take 3-5 business days.",
+              provenance: "Refund Timelines",
+            },
+            semanticSimilarity: 0.79,
+            nliVerdict: "Contradiction",
+            confidence: 0.81,
+            reasoning: "The promise contradicts the retrieved policy clause.",
+            provenance: "Refund Policy • Refund Timelines",
+            supportingQuotes: ["The refund will clear today."],
+          },
+        ],
+      },
     },
   };
 
@@ -86,7 +141,8 @@ describe("LLM trigger sections", () => {
 
     expect(await screen.findByText("Emotion Trigger Reasoning")).toBeInTheDocument();
     expect(screen.getByText(/billing_issue/)).toBeInTheDocument();
-    expect(screen.getByText(/Contradiction/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Contradiction/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Evidence-Anchored Explainability")).toBeInTheDocument();
   });
 
   it("renders agent llm coaching section", async () => {
@@ -100,6 +156,6 @@ describe("LLM trigger sections", () => {
 
     expect(await screen.findByText("LLM Coaching Insights")).toBeInTheDocument();
     expect(screen.getByText("billing_issue")).toBeInTheDocument();
-    expect(screen.getByText("Contradiction")).toBeInTheDocument();
+    expect(screen.getAllByText("Contradiction").length).toBeGreaterThan(0);
   });
 });

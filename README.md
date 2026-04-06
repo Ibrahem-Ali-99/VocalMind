@@ -15,6 +15,7 @@ VocalMind is a modular AI ecosystem integrating speech processing (ASR, Diarizat
 | **Emotion**  | Transformers, FastAPI | Speech emotion recognition microservice. |
 | **RAG**      | LlamaIndex, Qdrant, Groq, Ollama | Retrieval-Augmented Generation for knowledge queries. |
 | **Ingestion**| LlamaIndex | Automated pipeline for RAG document ingestion. |
+| **Explainability** | FastAPI, React, LLM/NLI attribution | Evidence-anchored layer that links triggers and compliance verdicts to transcript spans and retrieved policy/SOP evidence. |
 | **Research** | Jupyter | Reference experiments for speech pipelines and voice generation. |
 
 ---
@@ -133,6 +134,13 @@ make clean            # Remove caches and build artifacts
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+## Key Docs
+
+- [Documentation Index](docs/README.md)
+- [Evidence-Anchored Explainability Layer](docs/explainability/EVIDENCE_ANCHORED_EXPLAINABILITY_LAYER.md)
+- [LLM Trigger Feature Guide](docs/llm_trigger/LLM_TRIGGER_FEATURE_GUIDE.md)
+- [RAG Overview](docs/rag/RAG_OVERVIEW.md)
 
 ---
 

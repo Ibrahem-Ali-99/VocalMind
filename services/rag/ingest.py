@@ -31,7 +31,10 @@ from langchain_text_splitters import (
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, FieldCondition, Filter, FilterSelector, MatchValue, PointStruct, VectorParams
 
-from config import settings
+try:
+    from .config import settings
+except ImportError:  # pragma: no cover - allows direct script/test imports
+    from config import settings
 
 
 # ── Docling Singleton ─────────────────────────────────────────────────────────

@@ -72,3 +72,5 @@ def test_map_llm_trigger_report_contains_process_and_nli_fields():
     assert payload["processAdherence"]["missingSopSteps"] == ["Confirm account details"]
     assert payload["nliPolicy"]["nliCategory"] == "Contradiction"
     assert payload["nliPolicy"]["justification"]
+    assert payload["explainability"]["triggerAttributions"] == []
+    assert payload["explainability"]["claimProvenance"] == []

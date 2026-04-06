@@ -23,6 +23,7 @@ A robust Retrieval-Augmented Generation (RAG) system for policy document analysi
 - **Policy Compliance & Answer Scoring**: Built-in evaluators for both transcript compliance and answer correctness
 - **Detailed Logging**: All queries and evaluations are logged as JSON in `logs/`
 - **Evaluation Suite**: Automated scoring and reporting for compliance and answer accuracy
+- **Explainability Hooks**: Retrieval provenance can be surfaced to manager UI and API consumers
 
 ## Documentation
 
@@ -30,6 +31,7 @@ Team-facing RAG documentation is maintained in:
 
 1. `docs/rag/RAG_OVERVIEW.md`
 2. `docs/rag/INGESTION_PIPELINE.md`
+3. `docs/explainability/EVIDENCE_ANCHORED_EXPLAINABILITY_LAYER.md`
 
 ---
 

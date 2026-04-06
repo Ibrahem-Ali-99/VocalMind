@@ -5,25 +5,23 @@ describe("Session Inspector", () => {
 
   it("renders the page heading and subtitle", () => {
     cy.contains("h2", "Session Inspector");
-    cy.contains(/interaction(s)? found/i);
+    cy.contains(/Review live processing/i);
   });
 
   it("displays search input and filter controls", () => {
-    cy.get('input[placeholder="Search agent, date, ID…"]').should("exist");
+    cy.get('input[placeholder="Search agent, date, ID..."]').should("exist");
     cy.get("select").find("option").contains("All Agents");
-    cy.contains("button", /score\s*↓/i);
+    cy.contains("button", /score/i);
     cy.contains("button", /date/i);
     cy.contains("button", /duration/i);
   });
 
   it("renders table headers", () => {
     cy.contains("Agent");
-    cy.contains("Date & Time");
+    cy.contains(/Date and time/i);
     cy.contains("Duration");
     cy.contains("Score");
-    cy.contains("Empathy");
-    cy.contains("Policy");
-    cy.contains("Resolution");
+    cy.contains("Signals");
     cy.contains("Status");
     cy.contains("Actions");
   });
@@ -37,24 +35,24 @@ describe("Session Inspector", () => {
   });
 
   it("displays resolved and unresolved statuses", () => {
-    cy.contains("✓ Resolved");
-    cy.contains("✗ Unresolved");
+    cy.contains("Resolved");
+    cy.contains("Needs review");
   });
 
   it("shows violation badges for flagged interactions", () => {
-    cy.contains("⚠ Violation");
+    cy.contains("Violation");
   });
 
   it("has Inspect links that navigate to session detail", () => {
-    cy.contains("a", "Inspect →").first().click();
+    cy.contains("a", /^Inspect$/).first().click();
     cy.url().should("match", /\/manager\/inspector\/.+/);
   });
 
   it("displays pagination footer", () => {
-    cy.contains(/Showing 1–\d+ of \d+/);
-    cy.contains("button", "← Prev").should("be.disabled");
+    cy.contains(/Showing\s+\d+\s+to\s+\d+\s+of\s+\d+/);
+    cy.contains("button", "Prev").should("be.disabled");
     // Based on whether there's more than 10 mock interactions 
     // it could be disabled or not. Let's just check it exists.
-    cy.contains("button", "Next →").should("exist");
+    cy.contains("button", "Next").should("exist");
   });
 });

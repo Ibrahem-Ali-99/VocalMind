@@ -6,6 +6,16 @@ from pydantic import BaseModel, Field, field_validator
 
 CitationSource = Literal["transcript", "policy", "sop", "acoustic"]
 CitationSpeaker = Literal["customer", "agent", "system", "unknown"]
+ExplainabilityFamily = Literal["emotion", "sop", "policy"]
+ExplainabilityVerdict = Literal[
+    "Supported",
+    "Partial Attempt",
+    "Neutral",
+    "Contradiction",
+    "Cross-Modal Mismatch",
+    "No Trigger",
+    "Insufficient Evidence",
+]
 
 
 class EvidenceCitation(BaseModel):
@@ -17,6 +27,66 @@ class EvidenceCitation(BaseModel):
         ge=0,
         description="Utterance index for transcript citations when known.",
     )
+
+
+class EvidenceSpan(BaseModel):
+    utterance_index: int | None = Field(
+        default=None,
+        ge=0,
+        description="Sequence index for the supporting utterance when the evidence comes from the transcript.",
+    )
+    speaker: CitationSpeaker = Field(default="unknown")
+    quote: str = Field(description="Span quote shown to supervisors.")
+    timestamp: str | None = Field(default=None, description="Clock timestamp for the supporting span.")
+    start_seconds: float | None = Field(default=None, ge=0, description="Audio jump target in seconds.")
+    end_seconds: float | None = Field(default=None, ge=0, description="Span end time in seconds.")
+
+
+class PolicyReference(BaseModel):
+    source: Literal["policy", "sop"] = Field(description="Whether the reference came from a policy or SOP document.")
+    reference: str = Field(description="Human-readable document or section reference.")
+    clause: str = Field(description="Policy or SOP clause used as evidence.")
+    version: str | None = Field(default=None, description="Version or policy token when available.")
+    category: str | None = Field(default=None, description="Policy category when available.")
+    provenance: str | None = Field(
+        default=None,
+        description="Retrieval provenance such as document path, parent section, or chunk label.",
+    )
+
+
+class TriggerAttribution(BaseModel):
+    attribution_id: str = Field(description="Stable identifier for the trigger attribution card.")
+    family: ExplainabilityFamily = Field(description="High-level explainability family.")
+    trigger_type: str = Field(description="Trigger class such as Acoustic-Transcript Dissonance or SOP Violation.")
+    title: str = Field(description="Short manager-facing title.")
+    verdict: ExplainabilityVerdict = Field(description="Final explainability verdict.")
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence_span: EvidenceSpan | None = Field(default=None)
+    policy_reference: PolicyReference | None = Field(default=None)
+    reasoning: str = Field(description="Plain-English reason for the verdict.")
+    evidence_chain: list[str] = Field(
+        default_factory=list,
+        description="Structured reasoning steps that connect the span to the verdict.",
+    )
+    supporting_quotes: list[str] = Field(default_factory=list)
+
+
+class ClaimProvenance(BaseModel):
+    claim_id: str = Field(description="Stable identifier for the claim provenance card.")
+    claim_text: str = Field(description="Agent claim or answer sentence.")
+    claim_span: EvidenceSpan | None = Field(default=None)
+    retrieved_policy: PolicyReference | None = Field(default=None)
+    semantic_similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    nli_verdict: ExplainabilityVerdict = Field(description="Policy-grounded verdict for the claim.")
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    reasoning: str = Field(description="Manager-facing explanation of how the claim was judged.")
+    provenance: str = Field(description="Compact retrieval provenance trail.")
+    supporting_quotes: list[str] = Field(default_factory=list)
+
+
+class EvidenceAnchoredExplainability(BaseModel):
+    trigger_attributions: list[TriggerAttribution] = Field(default_factory=list)
+    claim_provenance: list[ClaimProvenance] = Field(default_factory=list)
 
 
 def _normalize_quote_list(value: list[str] | str | None) -> list[str]:
@@ -71,6 +141,12 @@ class EmotionShiftAnalysis(BaseModel):
         default=False,
         description="True when the analysis had to be downgraded due to missing or unmapped evidence.",
     )
+    confidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Model or signal confidence for the dissonance verdict when available.",
+    )
 
     @field_validator("counterfactual_correction", mode="before")
     @classmethod
@@ -121,6 +197,12 @@ class ProcessAdherenceReport(BaseModel):
         default=False,
         description="True when process verdict could not be grounded to transcript evidence.",
     )
+    confidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Model confidence for the process adherence assessment when available.",
+    )
 
     @field_validator("evidence_quotes", mode="before")
     @classmethod
@@ -167,6 +249,18 @@ class NLIEvaluation(BaseModel):
         default=False,
         description="True when NLI verdict had insufficient policy-grounded evidence.",
     )
+    confidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Model confidence for the final NLI category when available.",
+    )
+    policy_alignment_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="How strongly the statement is supported by policy. Low values imply contradiction or hallucination.",
+    )
 
     @field_validator("evidence_quotes", mode="before")
     @classmethod
@@ -183,3 +277,4 @@ class InteractionLLMTriggerReport(BaseModel):
     derived_acoustic_emotion: str
     derived_fused_emotion: str
     derived_agent_statement: str
+    explainability: EvidenceAnchoredExplainability = Field(default_factory=EvidenceAnchoredExplainability)

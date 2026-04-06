@@ -10,6 +10,23 @@ The LLM Trigger feature evaluates customer-agent interactions and returns coachi
 
 This guide documents architecture, data flow, folder structure, runtime behavior, and testing so the team can maintain and extend the feature safely.
 
+## Evidence-Anchored Explainability
+
+The trigger pipeline now emits a shared explainability layer instead of returning only session-level verdicts.
+
+Manager-facing output is split into:
+
+1. Span-Level Trigger Attribution
+- Anchors emotion, SOP, and policy triggers to a specific utterance span.
+- Adds `evidenceSpan`, `policyReference`, `reasoning`, and `evidenceChain`.
+- Uses the same payload family for both emotion-trigger and RAG-driven findings.
+
+2. Retrieval Provenance Scoring
+- Anchors factual or compliance claims to the retrieved policy/SOP chunk used for review.
+- Adds `claimSpan`, `retrievedPolicy`, `semanticSimilarity`, `nliVerdict`, and `provenance`.
+
+See `docs/explainability/EVIDENCE_ANCHORED_EXPLAINABILITY_LAYER.md` for the full shared contract.
+
 ## High-Level Architecture
 
 1. Backend interaction detail endpoint can request LLM trigger evaluation.
@@ -19,6 +36,7 @@ This guide documents architecture, data flow, folder structure, runtime behavior
    - Qdrant retrieval fallback
 4. Results are mapped into a frontend-friendly payload.
 5. Manager and Agent views render diagnostics and coaching insights.
+6. Manager detail view renders evidence cards that connect claim -> evidence -> verdict.
 
 ## Core Backend Files
 
@@ -55,8 +73,13 @@ This guide documents architecture, data flow, folder structure, runtime behavior
 2. `frontend/src/app/components/manager/SessionDetail.tsx`
 - Renders manager-focused trigger diagnostics.
 - Supports LLM refresh action.
+- Hosts the Evidence-Anchored Explainability panel.
 
-3. `frontend/src/app/components/agent/AgentCallDetail.tsx`
+3. `frontend/src/app/components/manager/EvidenceAnchoredExplainabilityPanel.tsx`
+- Renders trigger attribution cards and claim provenance cards.
+- Supports timestamp jump-to-audio interactions.
+
+4. `frontend/src/app/components/agent/AgentCallDetail.tsx`
 - Renders coaching-focused trigger insights.
 - Supports LLM refresh action.
 
@@ -128,6 +151,25 @@ Interaction detail supports these query options:
 
 If `llm_org_filter` is omitted, backend resolves org slug from interaction -> organization relation.
 
+## Explainability Payload Surface
+
+The interaction detail response now exposes:
+
+1. `utterances[].sequenceIndex`
+- Stable utterance index used by evidence cards.
+
+2. `emotionTriggers.explainability.triggerAttributions`
+- Emotion-side span attributions.
+
+3. `ragCompliance.explainability.triggerAttributions`
+- SOP and policy trigger attributions derived from compliance review.
+
+4. `ragCompliance.explainability.claimProvenance`
+- Claim-level retrieval provenance for policy-grounded verdicts.
+
+5. `llmTriggers.explainability`
+- Combined manager-friendly aggregation of all trigger attributions plus claim provenance.
+
 ## Retrieval Priority
 
 When process adherence analysis needs SOP context:
@@ -175,6 +217,7 @@ This runs:
 
 2. `test_interactions_llm_triggers.py`
 - API payload mapper shape and field mapping
+- Includes explainability mapping assertions
 
 3. `test_sop_retrieval.py`
 - PDF-first SOP retrieval from parsed docs
@@ -191,6 +234,9 @@ This runs:
 
 1. `LLMTriggerSections.test.tsx`
 - Manager and Agent views render trigger sections correctly
+
+2. `SessionDetail.test.tsx`
+- Manager detail page renders evidence-anchored explainability cards and provenance details
 
 ## Operational Runbook
 

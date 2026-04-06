@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { SessionDetail } from '../app/components/manager/SessionDetail'
 import { MemoryRouter, Routes, Route } from 'react-router'
@@ -95,6 +95,83 @@ const detail = {
             evidenceQuotes: [],
             citations: [],
         },
+        explainability: {
+            triggerAttributions: [
+                {
+                    attributionId: 'emotion-1',
+                    family: 'emotion',
+                    triggerType: 'Acoustic-Transcript Dissonance',
+                    title: 'Sarcasm',
+                    verdict: 'Cross-Modal Mismatch',
+                    confidence: 0.82,
+                    evidenceSpan: {
+                        utteranceIndex: 1,
+                        speaker: 'customer',
+                        quote: 'This has been going on for days and I am frustrated.',
+                        timestamp: '00:04',
+                        startSeconds: 4,
+                        endSeconds: 8,
+                    },
+                    reasoning: 'Customer wording and fused emotion disagree.',
+                    evidenceChain: [
+                        'Acoustic emotion signal resolved to frustrated.',
+                        'Transcript span used for review: This has been going on for days and I am frustrated.',
+                    ],
+                    supportingQuotes: ['This has been going on for days and I am frustrated.'],
+                },
+                {
+                    attributionId: 'sop-1',
+                    family: 'sop',
+                    triggerType: 'SOP Violation',
+                    title: 'Confirm account details',
+                    verdict: 'Contradiction',
+                    confidence: 0.74,
+                    evidenceSpan: {
+                        utteranceIndex: 0,
+                        speaker: 'agent',
+                        quote: 'Hello, I can help with billing.',
+                        timestamp: '00:00',
+                        startSeconds: 0,
+                        endSeconds: 3,
+                    },
+                    policyReference: {
+                        source: 'sop',
+                        reference: 'billing-issue SOP',
+                        clause: 'Verify account and charge details before lookup.',
+                        provenance: 'SOP retrieval context',
+                    },
+                    reasoning: 'Agent skipped verification before continuing.',
+                    evidenceChain: ['Expected SOP step: Confirm account details.'],
+                    supportingQuotes: ['Hello, I can help with billing.'],
+                },
+            ],
+            claimProvenance: [
+                {
+                    claimId: 'claim-1',
+                    claimText: 'Your refund will arrive within 24 hours.',
+                    claimSpan: {
+                        utteranceIndex: 0,
+                        speaker: 'agent',
+                        quote: 'Your refund will arrive within 24 hours.',
+                        timestamp: '00:00',
+                        startSeconds: 0,
+                        endSeconds: 3,
+                    },
+                    retrievedPolicy: {
+                        source: 'policy',
+                        reference: 'Refunds Policy v2.3',
+                        clause: 'Standard refunds take 3-5 business days.',
+                        provenance: 'Refund Timelines • v2.3',
+                    },
+                    semanticSimilarity: 0.81,
+                    nliVerdict: 'Contradiction',
+                    confidence: 0.8,
+                    reasoning: 'The promise contradicts the active refund timeline.',
+                    provenance: 'Refunds Policy v2.3 • Refund Timelines • v2.3',
+                    supportingQuotes: ['Your refund will arrive within 24 hours.'],
+                },
+            ],
+        },
     },
 }
 
@@ -125,7 +202,20 @@ describe('SessionDetail', () => {
         expect(screen.getByText(/Process Adherence/)).toBeInTheDocument()
         expect(screen.getByText(/Policy Inference/)).toBeInTheDocument()
         expect(screen.getByText(/billing_issue/)).toBeInTheDocument()
-        expect(screen.getByText(/Contradiction/)).toBeInTheDocument()
+        expect(screen.getAllByText(/Contradiction/).length).toBeGreaterThan(0)
+    })
+
+    it('renders evidence-anchored explainability cards', async () => {
+        getInteractionDetailMock.mockResolvedValue(detail)
+        renderWithId()
+
+        expect(await screen.findByText('Evidence-Anchored Explainability')).toBeInTheDocument()
+        expect(screen.getByText('Claim to evidence to verdict')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /Retrieval Provenance Scoring/i }))
+        expect(screen.getByText('Retrieval Provenance Scoring')).toBeInTheDocument()
+        expect(screen.getByText('Your refund will arrive within 24 hours.')).toBeInTheDocument()
+        expect(screen.getByText('Standard refunds take 3-5 business days.')).toBeInTheDocument()
     })
 
     it('normalizes non-canonical emotions instead of treating them as neutral', async () => {

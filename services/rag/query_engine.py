@@ -20,7 +20,10 @@ from llama_index.llms.groq import Groq as LlamaGroq
 from qdrant_client import QdrantClient
 from qdrant_client.models import ScoredPoint
 
-from config import settings
+try:
+    from .config import settings
+except ImportError:  # pragma: no cover - allows direct script/test imports
+    from config import settings
 
 
 class RAGQueryEngine:

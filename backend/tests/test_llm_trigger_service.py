@@ -3,11 +3,14 @@ from unittest.mock import patch
 
 import pytest
 
+from app.llm_trigger.retrieval import RetrievedChunk
 from app.llm_trigger.schemas import EmotionShiftAnalysis, ProcessAdherenceReport
 from app.llm_trigger.service import (
+    _build_emotion_transition_attributions,
     _build_rolling_windows,
     _detect_cross_modal_dissonance,
     _detect_topic,
+    _detect_topic_from_sop_chunks,
     _derive_llm_inputs,
     _render_window_bundle,
     _trajectory_missing_steps,
@@ -107,6 +110,19 @@ def test_topic_and_trajectory_mapping_helpers():
     assert "Close with summary and next steps" in missing
 
 
+def test_detect_topic_from_sop_chunk_reference_prefers_matched_document():
+    chunks = [
+        RetrievedChunk(
+            text="[01-refund-request-processing.pdf]\nStep 1 - Open the Call & Verify Identity",
+            metadata={"source_file": "01-refund-request-processing.pdf"},
+            source="manual",
+        )
+    ]
+
+    topic = _detect_topic_from_sop_chunks(chunks)
+    assert topic == "refund_request"
+
+
 @pytest.mark.asyncio
 async def test_evaluate_process_adherence_merges_deterministic_and_llm_steps():
     transcript = (
@@ -128,6 +144,80 @@ async def test_evaluate_process_adherence_merges_deterministic_and_llm_steps():
     assert len(result.missing_sop_steps) >= 1
     assert result.evidence_quotes
     assert result.citations
+
+
+@pytest.mark.asyncio
+async def test_evaluate_process_adherence_uses_sop_file_hint_for_topic():
+    transcript = (
+        "customer: My bill jumped after the promo expired and I want a refund.\n"
+        "agent: I can check the billing error and apply the credit timeline."
+    )
+    chunks = [
+        RetrievedChunk(
+            text="[01-refund-request-processing.pdf]\nStep 1 - Open the Call & Verify Identity\nStep 7 - Apply Credit & Communicate Timeline",
+            metadata={"source_file": "01-refund-request-processing.pdf"},
+            source="manual",
+        )
+    ]
+
+    with patch("app.llm_trigger.service.build_process_adherence_chain", return_value=_FakeProcessChain()):
+        result = await evaluate_process_adherence(
+            transcript_text=transcript,
+            retrieved_sop_from_pinecone="",
+            org_filter="nexalink",
+            retrieved_sop_chunks=chunks,
+        )
+
+    assert result.detected_topic == "refund_request"
+
+
+def test_build_emotion_transition_attributions_tracks_each_speaker_change():
+    utterances = [
+        SimpleNamespace(
+            sequence_index=0,
+            speaker_role=SimpleNamespace(value="customer"),
+            text="I am very upset about this.",
+            emotion="frustrated",
+            emotion_confidence=0.82,
+            start_time_seconds=0.0,
+            end_time_seconds=2.0,
+        ),
+        SimpleNamespace(
+            sequence_index=1,
+            speaker_role=SimpleNamespace(value="customer"),
+            text="Thank you, that helps a lot.",
+            emotion="happy",
+            emotion_confidence=0.88,
+            start_time_seconds=18.0,
+            end_time_seconds=21.0,
+        ),
+        SimpleNamespace(
+            sequence_index=2,
+            speaker_role=SimpleNamespace(value="agent"),
+            text="Let me explain the next step.",
+            emotion="neutral",
+            emotion_confidence=0.55,
+            start_time_seconds=22.0,
+            end_time_seconds=24.0,
+        ),
+        SimpleNamespace(
+            sequence_index=3,
+            speaker_role=SimpleNamespace(value="agent"),
+            text="Great, we have fully resolved it.",
+            emotion="helpful",
+            emotion_confidence=0.74,
+            start_time_seconds=30.0,
+            end_time_seconds=33.0,
+        ),
+    ]
+
+    attributions = _build_emotion_transition_attributions(utterances)
+
+    assert len(attributions) == 2
+    assert attributions[0].family == "emotion"
+    assert attributions[0].trigger_type == "Emotion Change"
+    assert "customer" in attributions[0].title.lower()
+    assert "agent" in attributions[1].title.lower()
 
 
 @pytest.mark.asyncio

@@ -44,7 +44,10 @@ def _snapshot_documents(docs_dirs: list[Path]) -> dict[str, tuple[int, int]]:
 
 def cmd_ingest(args: argparse.Namespace) -> None:
     """Run document ingestion pipeline."""
-    from ingest import DocumentIngestionPipeline
+    try:
+        from .ingest import DocumentIngestionPipeline
+    except ImportError:  # pragma: no cover - direct script execution
+        from ingest import DocumentIngestionPipeline
 
     print("=" * 60)
     print("VocalMind Final RAG — Document Ingestion")
@@ -58,8 +61,12 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 
 def cmd_watch(args: argparse.Namespace) -> None:
     """Keep the ingestion service alive and reprocess documents on change."""
-    from config import settings
-    from ingest import DocumentIngestionPipeline
+    try:
+        from .config import settings
+        from .ingest import DocumentIngestionPipeline
+    except ImportError:  # pragma: no cover - direct script execution
+        from config import settings
+        from ingest import DocumentIngestionPipeline
 
     print("=" * 60)
     print("VocalMind Final RAG — Watch Mode")
@@ -98,8 +105,12 @@ def cmd_watch(args: argparse.Namespace) -> None:
 
 def cmd_query(args: argparse.Namespace) -> None:
     """Execute a single query."""
-    from config import settings
-    from query_engine import RAGQueryEngine
+    try:
+        from .config import settings
+        from .query_engine import RAGQueryEngine
+    except ImportError:  # pragma: no cover - direct script execution
+        from config import settings
+        from query_engine import RAGQueryEngine
 
     engine = RAGQueryEngine()
 
@@ -121,7 +132,10 @@ def cmd_query(args: argparse.Namespace) -> None:
 
 def cmd_compliance(args: argparse.Namespace) -> None:
     """Run a policy compliance check."""
-    from evaluator import PolicyComplianceEvaluator
+    try:
+        from .evaluator import PolicyComplianceEvaluator
+    except ImportError:  # pragma: no cover - direct script execution
+        from evaluator import PolicyComplianceEvaluator
 
     print("=" * 60)
     print("VocalMind Final RAG — Policy Compliance Check")
@@ -150,7 +164,10 @@ def cmd_compliance(args: argparse.Namespace) -> None:
 
 def cmd_check_answer(args: argparse.Namespace) -> None:
     """Run an answer correctness check."""
-    from evaluator import AnswerCorrectnessEvaluator
+    try:
+        from .evaluator import AnswerCorrectnessEvaluator
+    except ImportError:  # pragma: no cover - direct script execution
+        from evaluator import AnswerCorrectnessEvaluator
 
     print("=" * 60)
     print("VocalMind Final RAG — Answer Correctness Check")
@@ -176,8 +193,12 @@ def cmd_check_answer(args: argparse.Namespace) -> None:
 
 def cmd_interactive(args: argparse.Namespace) -> None:
     """Interactive query session."""
-    from config import settings
-    from query_engine import RAGQueryEngine
+    try:
+        from .config import settings
+        from .query_engine import RAGQueryEngine
+    except ImportError:  # pragma: no cover - direct script execution
+        from config import settings
+        from query_engine import RAGQueryEngine
 
     print("=" * 60)
     print("VocalMind Final RAG — Interactive Mode")

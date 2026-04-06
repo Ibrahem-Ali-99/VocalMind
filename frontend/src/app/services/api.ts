@@ -126,6 +126,7 @@ export interface UtteranceData {
   id: string;
   interactionId: string;
   speaker: string;
+  sequenceIndex?: number;
   text: string;
   startTime: number;
   endTime: number;
@@ -212,6 +213,70 @@ export interface LLMEvidenceCitation {
   utteranceIndex?: number | null;
 }
 
+export interface ExplainabilitySpan {
+  utteranceIndex?: number | null;
+  speaker?: "customer" | "agent" | "system" | "unknown";
+  quote: string;
+  timestamp?: string | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
+}
+
+export interface ExplainabilityPolicyReference {
+  source: "policy" | "sop";
+  reference: string;
+  clause: string;
+  version?: string | null;
+  category?: string | null;
+  provenance?: string | null;
+}
+
+export interface TriggerAttribution {
+  attributionId: string;
+  family: "emotion" | "sop" | "policy";
+  triggerType: string;
+  title: string;
+  verdict:
+    | "Supported"
+    | "Partial Attempt"
+    | "Neutral"
+    | "Contradiction"
+    | "Cross-Modal Mismatch"
+    | "No Trigger"
+    | "Insufficient Evidence";
+  confidence?: number | null;
+  evidenceSpan?: ExplainabilitySpan | null;
+  policyReference?: ExplainabilityPolicyReference | null;
+  reasoning: string;
+  evidenceChain: string[];
+  supportingQuotes: string[];
+}
+
+export interface ClaimProvenance {
+  claimId: string;
+  claimText: string;
+  claimSpan?: ExplainabilitySpan | null;
+  retrievedPolicy?: ExplainabilityPolicyReference | null;
+  semanticSimilarity?: number | null;
+  nliVerdict:
+    | "Supported"
+    | "Partial Attempt"
+    | "Neutral"
+    | "Contradiction"
+    | "Cross-Modal Mismatch"
+    | "No Trigger"
+    | "Insufficient Evidence";
+  confidence?: number | null;
+  reasoning: string;
+  provenance: string;
+  supportingQuotes: string[];
+}
+
+export interface EvidenceAnchoredExplainability {
+  triggerAttributions: TriggerAttribution[];
+  claimProvenance: ClaimProvenance[];
+}
+
 export interface LLMEmotionShift {
   isDissonanceDetected: boolean;
   dissonanceType: string;
@@ -222,6 +287,7 @@ export interface LLMEmotionShift {
   evidenceQuotes: string[];
   citations: LLMEvidenceCitation[];
   insufficientEvidence?: boolean;
+  confidenceScore?: number | null;
 }
 
 export interface LLMProcessAdherence {
@@ -233,6 +299,7 @@ export interface LLMProcessAdherence {
   evidenceQuotes: string[];
   citations: LLMEvidenceCitation[];
   insufficientEvidence?: boolean;
+  confidenceScore?: number | null;
 }
 
 export interface LLMNliPolicy {
@@ -245,6 +312,8 @@ export interface LLMNliPolicy {
   policyCategory?: string | null;
   conflictResolutionApplied?: boolean;
   insufficientEvidence?: boolean;
+  confidenceScore?: number | null;
+  policyAlignmentScore?: number | null;
 }
 
 export interface LLMTriggerReport {
@@ -256,6 +325,7 @@ export interface LLMTriggerReport {
   emotionShift?: LLMEmotionShift;
   processAdherence?: LLMProcessAdherence;
   nliPolicy?: LLMNliPolicy;
+  explainability?: EvidenceAnchoredExplainability;
   derived?: {
     customerText: string;
     acousticEmotion: string;
@@ -271,6 +341,7 @@ export interface EmotionTriggerReport {
   forcedRerun?: boolean;
   interactionId?: string;
   emotionShift?: LLMEmotionShift;
+  explainability?: EvidenceAnchoredExplainability;
   derived?: {
     customerText: string;
     acousticEmotion: string;
@@ -287,6 +358,7 @@ export interface RagComplianceReport {
   interactionId?: string;
   processAdherence?: LLMProcessAdherence;
   nliPolicy?: LLMNliPolicy;
+  explainability?: EvidenceAnchoredExplainability;
   policyViolations?: PolicyViolationData[];
 }
 
