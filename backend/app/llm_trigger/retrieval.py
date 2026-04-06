@@ -1,15 +1,125 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import httpx
 from pathlib import Path
+import re
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
 from app.core.config import settings
 
 
-class SOPRetriever:
-    """Minimal Qdrant retriever for SOP snippets used by llm_trigger chains."""
+@dataclass
+class RetrievedChunk:
+    text: str
+    score: float | None = None
+    metadata: dict[str, str] = field(default_factory=dict)
+    source: str = "qdrant"
+    collection: str | None = None
+
+    @property
+    def reference(self) -> str:
+        for key in ("source_file", "doc_id", "Header 1", "Header 2", "Header 3"):
+            value = self.metadata.get(key)
+            if value:
+                return str(value)
+        return self.source
+
+    @property
+    def provenance(self) -> str:
+        parts = [
+            self.metadata.get("source_file"),
+            self.metadata.get("doc_id"),
+            " > ".join(
+                str(self.metadata.get(key)).strip()
+                for key in ("Header 1", "Header 2", "Header 3")
+                if self.metadata.get(key)
+            ) or None,
+        ]
+        return " • ".join(part for part in parts if part)
+
+
+@dataclass
+class ResolvedRetrievalContext:
+    text: str
+    chunks: list[RetrievedChunk] = field(default_factory=list)
+    source: str = "unknown"
+
+
+def _tokenize(text: str) -> set[str]:
+    return {token for token in re.findall(r"[a-zA-Z]+", (text or "").lower()) if len(token) > 2}
+
+
+def _rank_manual_chunks(
+    transcript_text: str,
+    chunks: list[RetrievedChunk],
+    max_chunks: int = 1,
+) -> list[RetrievedChunk]:
+    if not chunks:
+        return []
+
+    query_tokens = _tokenize(transcript_text)
+    if not query_tokens:
+        return chunks[:max_chunks]
+
+    ranked: list[tuple[float, int, RetrievedChunk]] = []
+    for index, chunk in enumerate(chunks):
+        body_tokens = _tokenize(chunk.text)
+        source_tokens = _tokenize(chunk.metadata.get("source_file", ""))
+        header_tokens = _tokenize(
+            " ".join(
+                str(chunk.metadata.get(key, ""))
+                for key in ("Header 1", "Header 2", "Header 3")
+            )
+        )
+        overlap = (
+            len(query_tokens.intersection(body_tokens))
+            + (2 * len(query_tokens.intersection(source_tokens)))
+            + len(query_tokens.intersection(header_tokens))
+        )
+        if chunk.metadata.get("doc_type") == "sop-procedures":
+            overlap += 1
+        score = min(1.0, overlap / max(3, len(query_tokens)))
+        ranked.append((score, -index, RetrievedChunk(
+            text=chunk.text,
+            score=score,
+            metadata=chunk.metadata,
+            source=chunk.source,
+            collection=chunk.collection,
+        )))
+
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    best_score = ranked[0][0]
+    if best_score <= 0:
+        return [ranked[0][2]]
+    return [chunk for score, _, chunk in ranked if score == best_score][:max_chunks]
+
+
+def _rank_chunks_by_query(
+    query_text: str,
+    chunks: list[RetrievedChunk],
+    max_chunks: int,
+) -> list[RetrievedChunk]:
+    if not chunks:
+        return []
+    query_tokens = _tokenize(query_text)
+    ranked: list[tuple[float, int, RetrievedChunk]] = []
+    for index, chunk in enumerate(chunks):
+        overlap = _tokenize(chunk.text)
+        lexical_score = 0.0
+        if query_tokens and overlap:
+            lexical_score = len(query_tokens.intersection(overlap)) / len(query_tokens.union(overlap))
+        vector_score = float(chunk.score) if chunk.score is not None else 0.0
+        total_score = (vector_score * 0.75) + (lexical_score * 0.25)
+        ranked.append((total_score, -index, chunk))
+
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [chunk for _, _, chunk in ranked[:max_chunks]]
+
+
+class QdrantRetriever:
+    """Shared Qdrant retriever used by llm_trigger explainability paths."""
 
     def __init__(self) -> None:
         self._qdrant = QdrantClient(url=settings.QDRANT_URL)
@@ -37,8 +147,15 @@ class SOPRetriever:
 
         raise ValueError(f"Embedding API did not return vector: {last_error}")
 
-    def retrieve_sop(self, transcript_text: str, org_filter: str | None = None) -> str:
-        query_vector = self._embed_query(transcript_text)
+    def retrieve_chunks(
+        self,
+        query_text: str,
+        *,
+        collection_name: str,
+        top_k: int,
+        org_filter: str | None = None,
+    ) -> list[RetrievedChunk]:
+        query_vector = self._embed_query(query_text)
 
         query_filter = None
         if org_filter:
@@ -47,21 +164,58 @@ class SOPRetriever:
             )
 
         points = self._qdrant.query_points(
-            collection_name=settings.QDRANT_COLLECTION_SOP_PARENTS,
+            collection_name=collection_name,
             query=query_vector,
-            limit=settings.SOP_RETRIEVAL_TOP_K,
+            limit=top_k,
             query_filter=query_filter,
         ).points
 
-        snippets: list[str] = []
+        snippets: list[RetrievedChunk] = []
         for point in points:
             text = ""
+            metadata: dict[str, str] = {}
             if isinstance(point.payload, dict):
                 text = str(point.payload.get("text", "")).strip()
+                metadata = {str(key): str(value) for key, value in point.payload.items() if key != "text" and value is not None}
             if text:
-                snippets.append(text)
+                snippets.append(
+                    RetrievedChunk(
+                        text=text,
+                        score=float(point.score) if point.score is not None else None,
+                        metadata=metadata,
+                        source="qdrant",
+                        collection=collection_name,
+                    )
+                )
 
-        return "\n\n---\n\n".join(snippets)
+        return snippets
+
+
+class SOPRetriever(QdrantRetriever):
+    """Minimal Qdrant retriever for SOP snippets used by llm_trigger chains."""
+
+    def retrieve_sop_chunks(self, transcript_text: str, org_filter: str | None = None) -> list[RetrievedChunk]:
+        return self.retrieve_chunks(
+            query_text=transcript_text,
+            collection_name=settings.QDRANT_COLLECTION_SOP_PARENTS,
+            top_k=settings.SOP_RETRIEVAL_TOP_K,
+            org_filter=org_filter,
+        )
+
+    def retrieve_sop(self, transcript_text: str, org_filter: str | None = None) -> str:
+        return "\n\n---\n\n".join(chunk.text for chunk in self.retrieve_sop_chunks(transcript_text, org_filter))
+
+
+class PolicyRetriever(QdrantRetriever):
+    """Qdrant retriever for policy chunks used in claim provenance."""
+
+    def retrieve_policy_chunks(self, query_text: str, org_filter: str | None = None, top_k: int = 3) -> list[RetrievedChunk]:
+        return self.retrieve_chunks(
+            query_text=query_text,
+            collection_name=settings.QDRANT_COLLECTION_PARENTS,
+            top_k=top_k,
+            org_filter=org_filter,
+        )
 
 
 def _repo_root() -> Path:
@@ -95,9 +249,9 @@ def _resolve_org_parsed_docs_dir(org_filter: str) -> Path:
     return parsed_root / org_filter / "parsed-docs" / "sops"
 
 
-def _read_manual_org_sop_docs(org_filter: str | None) -> str:
+def _read_manual_org_sop_chunks(org_filter: str | None) -> list[RetrievedChunk]:
     if not org_filter:
-        return ""
+        return []
 
     # SOP source of truth is PDF. We read Docling-converted markdown from
     # sop-standards/{org}/parsed-docs by matching PDF basenames.
@@ -113,7 +267,7 @@ def _read_manual_org_sop_docs(org_filter: str | None) -> str:
             sop_dirs.append(candidate)
 
     if not sop_dirs:
-        return ""
+        return []
 
     pdf_paths: list[Path] = []
     seen_pdf_paths: set[Path] = set()
@@ -125,7 +279,7 @@ def _read_manual_org_sop_docs(org_filter: str | None) -> str:
             seen_pdf_paths.add(resolved)
             pdf_paths.append(path)
 
-    chunks: list[str] = []
+    chunks: list[RetrievedChunk] = []
 
     for pdf_path in pdf_paths:
         converted_md = parsed_docs_root / f"{pdf_path.stem}.md"
@@ -144,10 +298,20 @@ def _read_manual_org_sop_docs(org_filter: str | None) -> str:
             continue
         if not text:
             continue
-        chunks.append(f"[{pdf_path.name}]\n{text}")
+        chunks.append(
+            RetrievedChunk(
+                text=f"[{pdf_path.name}]\n{text}",
+                score=None,
+                metadata={
+                    "source_file": pdf_path.name,
+                    "doc_type": pdf_path.parent.name,
+                },
+                source="manual",
+            )
+        )
 
     if chunks:
-        return "\n\n---\n\n".join(chunks)
+        return chunks
 
     # Backward compatibility: allow direct text SOP files if present.
     allowed_suffixes = {".md", ".txt"}
@@ -162,9 +326,85 @@ def _read_manual_org_sop_docs(org_filter: str | None) -> str:
                 continue
             if not text:
                 continue
-            chunks.append(f"[{path.name}]\n{text}")
+            chunks.append(
+                RetrievedChunk(
+                    text=f"[{path.name}]\n{text}",
+                    score=None,
+                    metadata={
+                        "source_file": path.name,
+                        "doc_type": path.parent.name,
+                    },
+                    source="manual",
+                )
+            )
 
-    return "\n\n---\n\n".join(chunks)
+    return chunks
+
+
+def _join_chunks(chunks: list[RetrievedChunk]) -> str:
+    return "\n\n---\n\n".join(chunk.text for chunk in chunks if chunk.text)
+
+
+def _read_manual_org_sop_docs(org_filter: str | None) -> str:
+    return _join_chunks(_read_manual_org_sop_chunks(org_filter))
+
+
+def resolve_retrieved_sop_context(
+    transcript_text: str,
+    retrieved_sop_from_pinecone: str | None,
+    org_filter: str | None = None,
+) -> ResolvedRetrievalContext:
+    if retrieved_sop_from_pinecone and retrieved_sop_from_pinecone.strip():
+        chunk = RetrievedChunk(
+            text=retrieved_sop_from_pinecone.strip(),
+            score=None,
+            metadata={"source": "override"},
+            source="override",
+        )
+        return ResolvedRetrievalContext(text=chunk.text, chunks=[chunk], source="override")
+
+    manual_chunks = _read_manual_org_sop_chunks(org_filter)
+    if manual_chunks:
+        ranked_manual_chunks = _rank_manual_chunks(
+            transcript_text=transcript_text,
+            chunks=manual_chunks,
+            max_chunks=1,
+        )
+        return ResolvedRetrievalContext(
+            text=_join_chunks(ranked_manual_chunks),
+            chunks=ranked_manual_chunks,
+            source="manual",
+        )
+
+    qdrant_chunks: list[RetrievedChunk] = []
+    try:
+        retriever = SOPRetriever()
+        qdrant_chunks = retriever.retrieve_sop_chunks(transcript_text=transcript_text, org_filter=org_filter)
+    except Exception:
+        qdrant_chunks = []
+
+    if qdrant_chunks:
+        ranked_qdrant_chunks = _rank_chunks_by_query(
+            query_text=transcript_text,
+            chunks=qdrant_chunks,
+            max_chunks=1,
+        )
+        return ResolvedRetrievalContext(
+            text=_join_chunks(ranked_qdrant_chunks),
+            chunks=ranked_qdrant_chunks,
+            source="qdrant",
+        )
+
+    return ResolvedRetrievalContext(text="", chunks=[], source="none")
+
+
+def retrieve_policy_chunks(
+    query_text: str,
+    org_filter: str | None = None,
+    top_k: int = 3,
+) -> list[RetrievedChunk]:
+    retriever = PolicyRetriever()
+    return retriever.retrieve_policy_chunks(query_text=query_text, org_filter=org_filter, top_k=top_k)
 
 
 def resolve_retrieved_sop(
@@ -172,12 +412,8 @@ def resolve_retrieved_sop(
     retrieved_sop_from_pinecone: str | None,
     org_filter: str | None = None,
 ) -> str:
-    if retrieved_sop_from_pinecone and retrieved_sop_from_pinecone.strip():
-        return retrieved_sop_from_pinecone.strip()
-
-    manual_sop = _read_manual_org_sop_docs(org_filter)
-    if manual_sop:
-        return manual_sop
-
-    retriever = SOPRetriever()
-    return retriever.retrieve_sop(transcript_text=transcript_text, org_filter=org_filter)
+    return resolve_retrieved_sop_context(
+        transcript_text=transcript_text,
+        retrieved_sop_from_pinecone=retrieved_sop_from_pinecone,
+        org_filter=org_filter,
+    ).text

@@ -16,15 +16,21 @@ from app.llm_trigger.chains import (
     build_nli_policy_chain,
     build_process_adherence_chain,
 )
-from app.llm_trigger.retrieval import resolve_retrieved_sop
+from app.llm_trigger.retrieval import RetrievedChunk, resolve_retrieved_sop_context, retrieve_policy_chunks
 from app.llm_trigger.schemas import (
+    ClaimProvenance,
+    EvidenceAnchoredExplainability,
     EvidenceCitation,
+    EvidenceSpan,
     EmotionShiftAnalysis,
     InteractionLLMTriggerReport,
     NLIEvaluation,
+    PolicyReference,
     ProcessAdherenceReport,
+    TriggerAttribution,
 )
 from app.models.interaction import Interaction
+from app.models.llm_trigger_cache import InteractionLLMTriggerCache
 from app.models.policy import CompanyPolicy, OrganizationPolicy
 from app.models.transcript import Transcript
 from app.models.utterance import Utterance
@@ -92,6 +98,19 @@ class ResolvedPolicyContext:
     conflict_resolution_applied: bool = False
 
 
+def _join_retrieved_chunk_text(chunks: list[RetrievedChunk]) -> str:
+    return "\n\n---\n\n".join(chunk.text.strip() for chunk in chunks if chunk.text.strip())
+
+
+def _policy_chunk_reference(chunk: RetrievedChunk) -> str:
+    header_path = " > ".join(
+        str(chunk.metadata.get(key)).strip()
+        for key in ("Header 1", "Header 2", "Header 3")
+        if chunk.metadata.get(key)
+    )
+    return header_path or str(chunk.metadata.get("source_file") or chunk.metadata.get("doc_id") or "retrieved-policy")
+
+
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"[a-zA-Z]+", text.lower())
 
@@ -136,6 +155,37 @@ def _detect_topic(transcript_text: str, retrieved_sop: str) -> str:
         scores[topic] = sum(1 for keyword in keywords if keyword in source)
     best_topic = max(scores, key=scores.get)
     return best_topic if scores[best_topic] > 0 else "technical_support"
+
+
+def _detect_topic_from_sop_chunks(chunks: list[RetrievedChunk]) -> str | None:
+    if not chunks:
+        return None
+
+    source_text = " ".join(
+        str(value)
+        for chunk in chunks
+        for value in (
+            chunk.metadata.get("source_file"),
+            chunk.metadata.get("doc_id"),
+            chunk.metadata.get("Header 1"),
+            chunk.metadata.get("Header 2"),
+            chunk.metadata.get("Header 3"),
+            chunk.reference,
+            chunk.provenance,
+        )
+        if value
+    ).lower()
+
+    hint_map = {
+        "refund_request": ("01-refund", "refund request", "refund-request"),
+        "billing_issue": ("02-billing", "billing issue", "billing-issue"),
+        "technical_support": ("03-technical", "technical support", "technical-support"),
+        "account_access": ("04-account", "account access", "account-access"),
+    }
+    for topic, hints in hint_map.items():
+        if any(hint in source_text for hint in hints):
+            return topic
+    return None
 
 
 def _extract_sop_steps(retrieved_sop: str) -> list[str]:
@@ -190,6 +240,28 @@ def _trajectory_missing_steps(transcript_text: str, expected_steps: list[str]) -
         if overlap < threshold:
             missing.append(step)
     return missing
+
+
+def _merge_missing_steps(
+    deterministic_missing: list[str],
+    llm_missing: list[str],
+) -> list[str]:
+    if not llm_missing:
+        return deterministic_missing
+    if not deterministic_missing:
+        return deterministic_missing
+
+    normalized_deterministic = {step.lower(): step for step in deterministic_missing}
+    merged = list(deterministic_missing)
+    for llm_step in llm_missing:
+      llm_keywords = _step_keywords(llm_step)
+      for expected_lower, original_step in normalized_deterministic.items():
+          expected_keywords = _step_keywords(expected_lower)
+          if llm_keywords and expected_keywords and llm_keywords.intersection(expected_keywords):
+              if original_step not in merged:
+                  merged.append(original_step)
+              break
+    return merged
 
 
 def _is_resolved_heuristic(transcript_text: str) -> bool:
@@ -446,6 +518,8 @@ async def _resolve_active_policy_context(
     organization_id: UUID,
     ground_truth_policy: str,
     fallback_sop: str,
+    query_text: str,
+    org_filter: str | None,
 ) -> ResolvedPolicyContext:
     if ground_truth_policy.strip():
         return ResolvedPolicyContext(
@@ -454,6 +528,40 @@ async def _resolve_active_policy_context(
             category="override",
             conflict_resolution_applied=False,
         )
+
+    retrieval_query = query_text.strip() or fallback_sop.strip()
+    if retrieval_query:
+        try:
+            retrieved_policy_chunks = retrieve_policy_chunks(
+                query_text=retrieval_query,
+                org_filter=org_filter,
+                top_k=2,
+            )
+        except Exception:
+            retrieved_policy_chunks = []
+
+        if retrieved_policy_chunks:
+            primary_chunk = retrieved_policy_chunks[0]
+            primary_source = str(
+                primary_chunk.metadata.get("source_file")
+                or primary_chunk.metadata.get("doc_id")
+                or ""
+            ).strip()
+            contextual_chunks = [
+                chunk
+                for chunk in retrieved_policy_chunks
+                if not primary_source
+                or str(chunk.metadata.get("source_file") or chunk.metadata.get("doc_id") or "").strip() == primary_source
+            ] or [primary_chunk]
+            primary_reference = _policy_chunk_reference(primary_chunk)
+            reference_basis = str(primary_chunk.metadata.get("source_file") or primary_chunk.metadata.get("doc_id") or primary_reference)
+            unique_references = {_policy_chunk_reference(chunk) for chunk in contextual_chunks}
+            return ResolvedPolicyContext(
+                text=_join_retrieved_chunk_text(contextual_chunks),
+                version=f"retrieved:{reference_basis}",
+                category=str(primary_chunk.metadata.get("doc_type") or primary_chunk.metadata.get("category") or "retrieved"),
+                conflict_resolution_applied=len(unique_references) > 1,
+            )
 
     stmt = (
         select(
@@ -501,6 +609,568 @@ async def _resolve_active_policy_context(
 def _format_timestamp(seconds: float) -> str:
     seconds_int = max(0, int(seconds))
     return f"{seconds_int // 60:02d}:{seconds_int % 60:02d}"
+
+
+def _clamp_unit(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _utterance_speaker(utterance: Utterance | None) -> str:
+    if not utterance or not utterance.speaker_role:
+        return "unknown"
+    return utterance.speaker_role.value
+
+
+def _find_utterance_by_index(
+    utterances: list[Utterance],
+    utterance_index: int | None,
+) -> Utterance | None:
+    if utterance_index is None:
+        return None
+    for utterance in utterances:
+        if utterance.sequence_index == utterance_index:
+            return utterance
+    return None
+
+
+def _extract_reference_label(text: str, fallback: str) -> str:
+    for raw_line in text.splitlines():
+        line = _clean_display_text(raw_line)
+        if not line:
+            continue
+        bracket_match = re.match(r"^\[(.+?)\]$", line)
+        if bracket_match:
+            return bracket_match.group(1).strip()
+        if line.startswith("#"):
+            return line.lstrip("#").strip()
+        return line[:120]
+    return fallback
+
+
+def _clean_display_text(text: str | None) -> str:
+    cleaned = (text or "").replace("\r", "")
+    cleaned = re.sub(r"<!--.*?-->", " ", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"^\s*#{1,6}\s*", "", cleaned, flags=re.MULTILINE)
+    cleaned = cleaned.replace("â€¢", " / ").replace("Ã¢â‚¬Â¢", " / ")
+    cleaned = re.sub(r"\b(image|table)\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[_]{2,}", "_", cleaned)
+    cleaned = re.sub(r"[-|]{4,}", " ", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def _extract_display_clause(text: str, max_chars: int = 260) -> str:
+    preferred_lines: list[str] = []
+    fallback_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = _clean_display_text(raw_line)
+        if not line:
+            continue
+        if re.match(r"^\[.+\]$", line):
+            continue
+        lowered = line.lower()
+        if lowered.endswith(".pdf") or lowered in {
+            "overview",
+            "organization:",
+            "version:",
+            "effective date:",
+            "step-by-step procedure",
+            "related policies",
+            "key considerations",
+            "eligibility criteria",
+        }:
+            continue
+        fallback_lines.append(line)
+        if line.lower().startswith(("step ", "compliance:", "note:", "forbidden", "quote the correct timeline", "offer ", "provide ", "verify ", "apply ", "escalate ")):
+            preferred_lines.append(line)
+
+    candidate_lines = preferred_lines or fallback_lines
+    if not candidate_lines:
+        return _truncate_text(_clean_display_text(text), max_chars) or "No clause available."
+
+    snippet = " ".join(candidate_lines[:2])
+    return _truncate_text(snippet, max_chars) or "No clause available."
+
+
+def _span_from_citation(
+    citation: EvidenceCitation | None,
+    utterances: list[Utterance],
+) -> EvidenceSpan | None:
+    if not citation or not (citation.quote or "").strip():
+        return None
+
+    utterance = _find_utterance_by_index(utterances, citation.utterance_index)
+    speaker = citation.speaker
+    if speaker == "unknown" and utterance:
+        speaker = _utterance_speaker(utterance)  # type: ignore[assignment]
+
+    start_seconds = utterance.start_time_seconds if utterance else None
+    end_seconds = utterance.end_time_seconds if utterance else None
+
+    return EvidenceSpan(
+        utterance_index=citation.utterance_index,
+        speaker=speaker,
+        quote=citation.quote.strip(),
+        timestamp=_format_timestamp(start_seconds) if start_seconds is not None else None,
+        start_seconds=start_seconds,
+        end_seconds=end_seconds,
+    )
+
+
+def _best_citation(
+    citations: list[EvidenceCitation],
+    source: str,
+    speaker: str | None = None,
+) -> EvidenceCitation | None:
+    for citation in citations:
+        if citation.source != source:
+            continue
+        if speaker and citation.speaker != speaker:
+            continue
+        if (citation.quote or "").strip():
+            return citation
+    return None
+
+
+def _supporting_quotes(citations: list[EvidenceCitation], limit: int = 3) -> list[str]:
+    quotes: list[str] = []
+    seen: set[str] = set()
+    for citation in citations:
+        quote = (citation.quote or "").strip()
+        if not quote or quote in seen:
+            continue
+        seen.add(quote)
+        quotes.append(quote)
+        if len(quotes) >= limit:
+            break
+    return quotes
+
+
+def _best_retrieved_chunk(chunks: list[RetrievedChunk], query_text: str) -> RetrievedChunk | None:
+    if not chunks:
+        return None
+    return max(
+        chunks,
+        key=lambda chunk: (
+            float(chunk.score) if chunk.score is not None else -1.0,
+            _token_overlap_ratio(query_text, chunk.text),
+            len(chunk.text),
+        ),
+    )
+
+
+def _chunk_source_key(chunk: RetrievedChunk | None) -> str:
+    if not chunk:
+        return ""
+    return str(chunk.metadata.get("source_file") or chunk.metadata.get("doc_id") or "").strip().lower()
+
+
+def _filter_chunks_by_policy_context(
+    chunks: list[RetrievedChunk],
+    policy_context: ResolvedPolicyContext,
+) -> list[RetrievedChunk]:
+    version = (policy_context.version or "").strip()
+    if not version.startswith("retrieved:"):
+        return chunks
+    expected_key = version.split("retrieved:", 1)[1].strip().lower()
+    if not expected_key:
+        return chunks
+    filtered = [chunk for chunk in chunks if expected_key in _chunk_source_key(chunk)]
+    return filtered or chunks
+
+
+def _build_policy_reference(
+    citation: EvidenceCitation | None,
+    *,
+    source_kind: str,
+    source_text: str,
+    fallback_reference: str,
+    version: str | None = None,
+    category: str | None = None,
+    provenance: str | None = None,
+) -> PolicyReference | None:
+    clause = ""
+    if citation and (citation.quote or "").strip():
+        clause = _clean_display_text(citation.quote)
+    if not clause:
+        clause = _extract_display_clause(source_text)
+    if not clause:
+        return None
+
+    return PolicyReference(
+        source=source_kind,  # type: ignore[arg-type]
+        reference=_clean_display_text(_extract_reference_label(source_text, fallback_reference)),
+        clause=clause,
+        version=version,
+        category=category,
+        provenance=_clean_display_text(provenance),
+    )
+
+
+def _build_policy_reference_from_chunk(
+    chunk: RetrievedChunk | None,
+    *,
+    source_kind: str,
+    fallback_text: str,
+    fallback_reference: str,
+    version: str | None = None,
+    category: str | None = None,
+) -> PolicyReference | None:
+    if chunk and chunk.text.strip():
+        clause = _extract_display_clause(chunk.text)
+        return PolicyReference(
+            source=source_kind,  # type: ignore[arg-type]
+            reference=_clean_display_text(_extract_reference_label(chunk.text, chunk.reference or fallback_reference)),
+            clause=clause or _truncate_text(_clean_display_text(chunk.text), 220),
+            version=version,
+            category=category,
+            provenance=_clean_display_text(chunk.provenance or chunk.collection or chunk.source),
+        )
+    return _build_policy_reference(
+        None,
+        source_kind=source_kind,
+        source_text=fallback_text,
+        fallback_reference=fallback_reference,
+        version=version,
+        category=category,
+        provenance=None,
+    )
+
+
+def _token_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = set(_tokenize(left))
+    right_tokens = set(_tokenize(right))
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens.intersection(right_tokens)) / len(left_tokens.union(right_tokens))
+
+
+def _emotion_signal_confidence(
+    span: EvidenceSpan | None,
+    utterances: list[Utterance],
+) -> float | None:
+    acoustic_confidence: float | None = None
+    if span and span.utterance_index is not None:
+        utterance = _find_utterance_by_index(utterances, span.utterance_index)
+        if utterance and utterance.emotion_confidence is not None:
+            acoustic_confidence = float(utterance.emotion_confidence)
+
+    text_confidence: float | None = None
+    if span and span.quote.strip():
+        _label, text_confidence = infer_text_emotion_with_provider(span.quote)
+
+    available = [score for score in [acoustic_confidence, text_confidence] if score is not None]
+    if not available:
+        return None
+    return _clamp_unit(sum(available) / len(available))
+
+
+def _select_step_citation(
+    citations: list[EvidenceCitation],
+    step: str,
+) -> EvidenceCitation | None:
+    transcript_citations = [citation for citation in citations if citation.source == "transcript"]
+    if not transcript_citations:
+        return None
+    best = max(
+        transcript_citations,
+        key=lambda citation: _token_overlap_ratio(step, citation.quote),
+    )
+    if _token_overlap_ratio(step, best.quote) < 0.08:
+        return None
+    return best
+
+
+def _map_nli_verdict(category: str, insufficient_evidence: bool = False) -> str:
+    if insufficient_evidence:
+        return "Insufficient Evidence"
+    normalized = (category or "").strip().lower()
+    if normalized == "entailment":
+        return "Supported"
+    if normalized == "contradiction":
+        return "Contradiction"
+    if normalized == "policy hallucination":
+        return "Contradiction"
+    if normalized == "benign deviation":
+        return "Neutral"
+    return "Neutral"
+
+
+def _build_emotion_trigger_attribution(
+    emotion_shift: EmotionShiftAnalysis,
+    utterances: list[Utterance],
+    acoustic_emotion: str,
+) -> TriggerAttribution:
+    transcript_citation = _best_citation(emotion_shift.citations, "transcript", speaker="customer") or _best_citation(
+        emotion_shift.citations,
+        "transcript",
+    )
+    span = _span_from_citation(transcript_citation, utterances)
+    verdict = (
+        "Insufficient Evidence"
+        if emotion_shift.insufficient_evidence
+        else "Cross-Modal Mismatch"
+        if emotion_shift.is_dissonance_detected
+        else "No Trigger"
+    )
+    evidence_chain = [
+        f"Acoustic emotion signal resolved to {acoustic_emotion}.",
+        f"Transcript span used for review: {(span.quote if span else 'No mapped transcript span was available.')}",
+        emotion_shift.root_cause,
+    ]
+
+    return TriggerAttribution(
+        attribution_id="emotion-dissonance",
+        family="emotion",
+        trigger_type="Acoustic-Transcript Dissonance",
+        title=emotion_shift.dissonance_type or "Cross-Modal Dissonance",
+        verdict=verdict,  # type: ignore[arg-type]
+        confidence=emotion_shift.confidence_score or _emotion_signal_confidence(span, utterances),
+        evidence_span=span,
+        reasoning=emotion_shift.root_cause,
+        evidence_chain=evidence_chain,
+        supporting_quotes=emotion_shift.evidence_quotes or _supporting_quotes(emotion_shift.citations),
+    )
+
+
+def _build_emotion_transition_attributions(
+    utterances: list[Utterance],
+) -> list[TriggerAttribution]:
+    attributions: list[TriggerAttribution] = []
+    previous_by_speaker: dict[str, Utterance] = {}
+
+    for utterance in utterances:
+        if not (utterance.text or "").strip():
+            continue
+        speaker = _utterance_speaker(utterance)
+        previous = previous_by_speaker.get(speaker)
+        previous_by_speaker[speaker] = utterance
+        if previous is None:
+            continue
+
+        before = _normalize_acoustic_label(previous.emotion or "neutral")
+        after = _normalize_acoustic_label(utterance.emotion or "neutral")
+        if before == after:
+            continue
+
+        span = EvidenceSpan(
+            utterance_index=utterance.sequence_index,
+            speaker=speaker,  # type: ignore[arg-type]
+            quote=(utterance.text or "").strip(),
+            timestamp=_format_timestamp(utterance.start_time_seconds or 0.0),
+            start_seconds=utterance.start_time_seconds,
+            end_seconds=utterance.end_time_seconds,
+        )
+        evidence_chain = [
+            f"{speaker.title()} emotion changed from {before} to {after}.",
+            f"Previous span: {(previous.text or '').strip() or 'No prior span available.'}",
+            f"Current span: {(utterance.text or '').strip()}",
+        ]
+        reasoning = (
+            f"{speaker.title()} emotion shifted from {before} to {after} at {span.timestamp} "
+            "based on the detected emotion label for this utterance."
+        )
+        attributions.append(
+            TriggerAttribution(
+                attribution_id=f"emotion-change-{speaker}-{utterance.sequence_index}",
+                family="emotion",
+                trigger_type="Emotion Change",
+                title=f"{speaker.title()} emotion: {before} to {after}",
+                verdict="Neutral",
+                confidence=_clamp_unit(float(utterance.emotion_confidence or 0.5)),
+                evidence_span=span,
+                reasoning=reasoning,
+                evidence_chain=evidence_chain,
+                supporting_quotes=[
+                    quote
+                    for quote in [
+                        (previous.text or "").strip(),
+                        (utterance.text or "").strip(),
+                    ]
+                    if quote
+                ],
+            )
+        )
+
+    return attributions
+
+
+def _build_process_trigger_attributions(
+    process_adherence: ProcessAdherenceReport,
+    utterances: list[Utterance],
+    sop_context: str,
+    sop_chunks: list[RetrievedChunk],
+) -> list[TriggerAttribution]:
+    if not process_adherence.missing_sop_steps:
+        return []
+
+    attributions: list[TriggerAttribution] = []
+    for index, step in enumerate(process_adherence.missing_sop_steps, start=1):
+        transcript_citation = _select_step_citation(process_adherence.citations, step)
+        span = _span_from_citation(transcript_citation, utterances)
+        overlap = _token_overlap_ratio(step, transcript_citation.quote if transcript_citation else "")
+        sop_citation = _best_citation(process_adherence.citations, "sop")
+        best_sop_chunk = _best_retrieved_chunk(sop_chunks, step)
+        policy_reference = _build_policy_reference_from_chunk(
+            best_sop_chunk,
+            source_kind="sop",
+            fallback_text=sop_citation.quote if sop_citation else sop_context,
+            fallback_reference="Retrieved SOP",
+        )
+        verdict = "Partial Attempt" if overlap >= 0.18 else "Contradiction"
+        evidence_chain = [
+            f"Expected SOP step: {step}.",
+            f"Closest transcript evidence: {(span.quote if span else 'No matching utterance span was recovered.')}",
+            process_adherence.justification,
+        ]
+        reasoning = (
+            f"The review looked for explicit execution of the SOP step '{step}'. "
+            f"{('A nearby transcript span was found but did not fully satisfy the step. ' if span else 'No reliable transcript span matched this step. ')}"
+            f"{process_adherence.justification}"
+        )
+
+        attributions.append(
+            TriggerAttribution(
+                attribution_id=f"sop-step-{index}",
+                family="sop",
+                trigger_type="SOP Violation",
+                title=step,
+                verdict=verdict,  # type: ignore[arg-type]
+                confidence=process_adherence.confidence_score or (best_sop_chunk.score if best_sop_chunk else None),
+                evidence_span=span,
+                policy_reference=PolicyReference.model_validate(policy_reference.model_dump()) if policy_reference else None,
+                reasoning=reasoning,
+                evidence_chain=evidence_chain,
+                supporting_quotes=[quote for quote in [span.quote if span else None, step] if quote],
+            )
+        )
+
+    return attributions
+
+
+def _fallback_claim_citations(agent_statement: str) -> list[EvidenceCitation]:
+    return [
+        EvidenceCitation(source="transcript", speaker="agent", quote=quote)
+        for quote in _quote_candidates(agent_statement, max_quotes=2)
+    ]
+
+
+def _build_claim_provenance_cards(
+    nli_policy: NLIEvaluation,
+    utterances: list[Utterance],
+    policy_context: ResolvedPolicyContext,
+    agent_statement: str,
+    policy_chunks: list[RetrievedChunk],
+    org_filter: str | None,
+) -> list[ClaimProvenance]:
+    claim_citations = [
+        citation
+        for citation in nli_policy.citations
+        if citation.source == "transcript" and citation.speaker in {"agent", "unknown"}
+    ]
+    if not claim_citations:
+        claim_citations = _fallback_claim_citations(agent_statement)
+
+    cards: list[ClaimProvenance] = []
+    verdict = _map_nli_verdict(nli_policy.nli_category, nli_policy.insufficient_evidence)
+    for index, citation in enumerate(claim_citations[:2], start=1):
+        span = _span_from_citation(citation, utterances)
+        claim_text = (citation.quote or "").strip()
+        policy_citation = _best_citation(nli_policy.citations, "policy")
+        per_claim_chunks: list[RetrievedChunk] = []
+        if claim_text:
+            try:
+                per_claim_chunks = retrieve_policy_chunks(
+                    query_text=claim_text,
+                    org_filter=org_filter,
+                    top_k=2,
+                )
+            except Exception:
+                per_claim_chunks = []
+        candidate_chunks = _filter_chunks_by_policy_context(
+            per_claim_chunks or policy_chunks,
+            policy_context,
+        )
+        best_policy_chunk = _best_retrieved_chunk(candidate_chunks, claim_text)
+        policy_reference = _build_policy_reference_from_chunk(
+            best_policy_chunk,
+            source_kind="policy",
+            fallback_text=policy_citation.quote if policy_citation else policy_context.text,
+            fallback_reference=f"{policy_context.category or 'Policy'} reference",
+            version=policy_context.version,
+            category=policy_context.category,
+        )
+        if not policy_reference:
+            continue
+
+        provenance = " | ".join(
+            part
+            for part in [
+                policy_reference.reference,
+                policy_reference.provenance,
+            ]
+            if part
+        )
+
+        cards.append(
+            ClaimProvenance(
+                claim_id=f"claim-{index}",
+                claim_text=claim_text,
+                claim_span=span,
+                retrieved_policy=PolicyReference.model_validate(policy_reference.model_dump()),
+                semantic_similarity=_clamp_unit(best_policy_chunk.score) if best_policy_chunk and best_policy_chunk.score is not None else None,
+                nli_verdict=verdict,  # type: ignore[arg-type]
+                confidence=nli_policy.confidence_score,
+                reasoning=nli_policy.justification,
+                provenance=provenance or "Active policy context",
+                supporting_quotes=[quote for quote in [claim_text, policy_reference.clause] if quote],
+            )
+        )
+
+    return cards
+
+
+def _build_explainability_layer(
+    emotion_shift: EmotionShiftAnalysis,
+    process_adherence: ProcessAdherenceReport,
+    nli_policy: NLIEvaluation,
+    utterances: list[Utterance],
+    acoustic_emotion: str,
+    sop_context: str,
+    sop_chunks: list[RetrievedChunk],
+    policy_context: ResolvedPolicyContext,
+    policy_chunks: list[RetrievedChunk],
+    agent_statement: str,
+    org_filter: str | None,
+) -> EvidenceAnchoredExplainability:
+    trigger_attributions: list[TriggerAttribution] = [
+        _build_emotion_trigger_attribution(
+            emotion_shift=emotion_shift,
+            utterances=utterances,
+            acoustic_emotion=acoustic_emotion,
+        )
+    ]
+    trigger_attributions.extend(_build_emotion_transition_attributions(utterances))
+    trigger_attributions.extend(
+        _build_process_trigger_attributions(
+            process_adherence=process_adherence,
+            utterances=utterances,
+            sop_context=sop_context,
+            sop_chunks=sop_chunks,
+        )
+    )
+
+    return EvidenceAnchoredExplainability(
+        trigger_attributions=trigger_attributions,
+        claim_provenance=_build_claim_provenance_cards(
+            nli_policy=nli_policy,
+            utterances=utterances,
+            policy_context=policy_context,
+            policy_chunks=policy_chunks,
+            agent_statement=agent_statement,
+            org_filter=org_filter,
+        ),
+    )
 
 
 def _reconstruct_transcript(utterances: list[Utterance]) -> str:
@@ -635,6 +1305,7 @@ async def analyze_emotion_shift(
     acoustic_emotion: str,
 ) -> EmotionShiftAnalysis:
     inferred_emotion = _normalize_acoustic_label(acoustic_emotion)
+    _text_emotion, text_confidence = infer_text_emotion_with_provider(customer_text)
     if not _detect_cross_modal_dissonance(customer_text, acoustic_emotion):
         quotes = _quote_candidates(customer_text, max_quotes=2, target_emotion=inferred_emotion)
         return EmotionShiftAnalysis(
@@ -657,6 +1328,7 @@ async def analyze_emotion_shift(
                 )
                 for quote in quotes
             ],
+            confidence_score=_clamp_unit(text_confidence),
         )
 
     chain = build_emotion_shift_chain()
@@ -688,6 +1360,7 @@ async def analyze_emotion_shift(
                 quotes=quotes,
             ),
             insufficient_evidence=True,
+            confidence_score=None,
         )
     result.is_dissonance_detected = True
     if result.dissonance_type.strip().lower() == "none":
@@ -711,6 +1384,8 @@ async def analyze_emotion_shift(
         root_cause=result.root_cause,
         quotes=result.evidence_quotes,
     )
+    if result.confidence_score is None:
+        result.confidence_score = _clamp_unit(text_confidence)
     return result
 
 
@@ -718,20 +1393,29 @@ async def evaluate_process_adherence(
     transcript_text: str,
     retrieved_sop_from_pinecone: str,
     org_filter: str | None = None,
+    retrieved_sop_chunks: list[RetrievedChunk] | None = None,
 ) -> ProcessAdherenceReport:
-    try:
-        retrieved_sop = resolve_retrieved_sop(
-            transcript_text=transcript_text,
-            retrieved_sop_from_pinecone=retrieved_sop_from_pinecone,
-            org_filter=org_filter,
-        )
-    except Exception:
-        retrieved_sop = ""
+    if retrieved_sop_chunks is not None:
+        retrieved_sop = "\n\n---\n\n".join(chunk.text for chunk in retrieved_sop_chunks if chunk.text)
+    else:
+        try:
+            retrieved_sop_context = resolve_retrieved_sop_context(
+                transcript_text=transcript_text,
+                retrieved_sop_from_pinecone=retrieved_sop_from_pinecone,
+                org_filter=org_filter,
+            )
+            retrieved_sop = retrieved_sop_context.text
+            retrieved_sop_chunks = retrieved_sop_context.chunks
+        except Exception:
+            retrieved_sop = ""
+            retrieved_sop_chunks = []
 
-    topic_hint = _detect_topic(transcript_text, retrieved_sop)
-    expected_steps = RESOLUTION_GRAPHS.get(topic_hint, []).copy()
-    expected_steps.extend(step for step in _extract_sop_steps(retrieved_sop) if step not in expected_steps)
-    expected_steps = expected_steps[:8]
+    topic_hint = _detect_topic_from_sop_chunks(retrieved_sop_chunks or []) or _detect_topic(transcript_text, retrieved_sop)
+    extracted_sop_steps = _extract_sop_steps(retrieved_sop)
+    if extracted_sop_steps:
+        expected_steps = extracted_sop_steps[:8]
+    else:
+        expected_steps = RESOLUTION_GRAPHS.get(topic_hint, []).copy()[:8]
 
     deterministic_missing = _trajectory_missing_steps(transcript_text, expected_steps)
     deterministic_efficiency = _efficiency_score_heuristic(
@@ -777,13 +1461,16 @@ async def evaluate_process_adherence(
             evidence_quotes=evidence_quotes,
             citations=citations,
             insufficient_evidence=not bool(evidence_quotes),
+            confidence_score=None,
         )
 
     if not result.detected_topic.strip():
         result.detected_topic = topic_hint
 
-    merged_missing = list(dict.fromkeys(deterministic_missing + result.missing_sop_steps))
-    result.missing_sop_steps = merged_missing
+    result.missing_sop_steps = _merge_missing_steps(
+        deterministic_missing=deterministic_missing,
+        llm_missing=result.missing_sop_steps,
+    )
     result.efficiency_score = max(
         1,
         min(10, int(round((result.efficiency_score + deterministic_efficiency) / 2))),
@@ -801,6 +1488,10 @@ async def evaluate_process_adherence(
             result.citations.append(
                 EvidenceCitation(source="sop", speaker="system", quote=sop_quote[0])
             )
+    if result.confidence_score is None and retrieved_sop_chunks:
+        scored_chunks = [chunk.score for chunk in retrieved_sop_chunks if chunk.score is not None]
+        if scored_chunks:
+            result.confidence_score = _clamp_unit(max(scored_chunks))
     return result
 
 
@@ -836,6 +1527,8 @@ async def run_nli_policy_check(
             evidence_quotes=evidence_quotes,
             citations=citations,
             insufficient_evidence=not bool(citations),
+            confidence_score=None,
+            policy_alignment_score=None,
         )
     if not result.evidence_quotes:
         result.evidence_quotes = _quote_candidates(
@@ -855,6 +1548,14 @@ async def run_nli_policy_check(
                 EvidenceCitation(source="policy", speaker="system", quote=policy_quote[0])
             )
         result.citations = citations
+    if result.policy_alignment_score is None:
+        category = (result.nli_category or "").strip().lower()
+        if category == "entailment":
+            result.policy_alignment_score = 1.0
+        elif category == "benign deviation":
+            result.policy_alignment_score = 0.5
+        elif category in {"contradiction", "policy hallucination"}:
+            result.policy_alignment_score = 0.0
     return result
 
 
@@ -936,6 +1637,7 @@ async def _evaluate_emotion_pipeline(
 async def _evaluate_rag_pipeline(
     process_context_text: str,
     sop_context: str,
+    sop_chunks: list[RetrievedChunk],
     org_filter: str | None,
     agent_statement: str,
     policy_context: str,
@@ -944,6 +1646,7 @@ async def _evaluate_rag_pipeline(
         transcript_text=process_context_text,
         retrieved_sop_from_pinecone=sop_context,
         org_filter=org_filter,
+        retrieved_sop_chunks=sop_chunks,
     )
     nli_task = run_nli_policy_check(
         agent_statement=agent_statement,
@@ -952,13 +1655,70 @@ async def _evaluate_rag_pipeline(
     return await asyncio.gather(process_task, nli_task)
 
 
+async def _load_cached_trigger_report(
+    session: AsyncSession,
+    interaction_id: UUID,
+    org_filter: str | None,
+) -> InteractionLLMTriggerReport | None:
+    cached_result = await session.exec(
+        select(InteractionLLMTriggerCache).where(InteractionLLMTriggerCache.interaction_id == interaction_id)
+    )
+    cached = cached_result.first()
+    if not cached or not cached.report_payload:
+        return None
+    if org_filter and cached.org_filter and cached.org_filter != org_filter:
+        return None
+    try:
+        return InteractionLLMTriggerReport.model_validate(cached.report_payload)
+    except Exception:
+        logger.warning("Ignoring invalid cached LLM trigger payload for interaction %s", interaction_id, exc_info=True)
+        return None
+
+
+async def _persist_trigger_report(
+    session: AsyncSession,
+    report: InteractionLLMTriggerReport,
+    org_filter: str | None,
+    *,
+    commit: bool,
+) -> None:
+    cached_result = await session.exec(
+        select(InteractionLLMTriggerCache).where(InteractionLLMTriggerCache.interaction_id == report.interaction_id)
+    )
+    cached = cached_result.first() or InteractionLLMTriggerCache(interaction_id=report.interaction_id)
+    cached.org_filter = org_filter
+    cached.report_payload = report.model_dump(mode="json")
+    cached.computed_at = datetime.utcnow()
+    session.add(cached)
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
+
+
 async def evaluate_interaction_triggers(
     session: AsyncSession,
     interaction_id: UUID,
     retrieved_sop_from_pinecone: str = "",
     ground_truth_policy: str = "",
     org_filter: str | None = None,
+    force_rerun: bool = False,
+    commit_cache: bool = False,
 ) -> InteractionLLMTriggerReport:
+    use_cached_report = (
+        not force_rerun
+        and not retrieved_sop_from_pinecone.strip()
+        and not ground_truth_policy.strip()
+    )
+    if use_cached_report:
+        cached_report = await _load_cached_trigger_report(
+            session=session,
+            interaction_id=interaction_id,
+            org_filter=org_filter,
+        )
+        if cached_report is not None:
+            return cached_report
+
     interaction_result = await session.exec(
         select(Interaction).where(Interaction.id == interaction_id)
     )
@@ -1009,19 +1769,24 @@ async def evaluate_interaction_triggers(
         )
 
     try:
-        sop_context = resolve_retrieved_sop(
+        sop_resolution = resolve_retrieved_sop_context(
             transcript_text=transcript_text,
             retrieved_sop_from_pinecone=retrieved_sop_from_pinecone,
             org_filter=org_filter,
         )
+        sop_context = sop_resolution.text
+        sop_chunks = sop_resolution.chunks
     except Exception:
         sop_context = ""
+        sop_chunks = []
 
     policy_context = await _resolve_active_policy_context(
         session=session,
         organization_id=interaction.organization_id,
         ground_truth_policy=ground_truth_policy,
         fallback_sop=sop_context,
+        query_text=agent_statement or transcript_text,
+        org_filter=org_filter,
     )
 
     emotion_pipeline_task = _evaluate_emotion_pipeline(
@@ -1032,6 +1797,7 @@ async def evaluate_interaction_triggers(
     rag_pipeline_task = _evaluate_rag_pipeline(
         process_context_text=process_context_text,
         sop_context=sop_context,
+        sop_chunks=sop_chunks,
         org_filter=org_filter,
         agent_statement=agent_statement,
         policy_context=policy_context.text,
@@ -1083,8 +1849,29 @@ async def evaluate_interaction_triggers(
     nli_policy.policy_effective_at = policy_context.effective_at
     nli_policy.policy_category = policy_context.category
     nli_policy.conflict_resolution_applied = policy_context.conflict_resolution_applied
+    try:
+        policy_chunks = retrieve_policy_chunks(
+            query_text=agent_statement,
+            org_filter=org_filter,
+            top_k=3,
+        )
+    except Exception:
+        policy_chunks = []
+    explainability = _build_explainability_layer(
+        emotion_shift=emotion_shift,
+        process_adherence=process_adherence,
+        nli_policy=nli_policy,
+        utterances=utterances,
+        acoustic_emotion=acoustic_emotion,
+        sop_context=sop_context,
+        sop_chunks=sop_chunks,
+        policy_context=policy_context,
+        policy_chunks=policy_chunks,
+        agent_statement=agent_statement,
+        org_filter=org_filter,
+    )
 
-    return InteractionLLMTriggerReport(
+    report = InteractionLLMTriggerReport(
         interaction_id=interaction_id,
         emotion_shift=emotion_shift,
         process_adherence=process_adherence,
@@ -1093,4 +1880,15 @@ async def evaluate_interaction_triggers(
         derived_acoustic_emotion=acoustic_emotion,
         derived_fused_emotion=fused_emotion,
         derived_agent_statement=agent_statement,
+        explainability=explainability,
     )
+
+    if not retrieved_sop_from_pinecone.strip() and not ground_truth_policy.strip():
+        await _persist_trigger_report(
+            session=session,
+            report=report,
+            org_filter=org_filter,
+            commit=commit_cache,
+        )
+
+    return report

@@ -12,6 +12,7 @@ from app.models.enums import JobStatus, ProcessingStatus, SpeakerRole, UserRole
 from app.models.emotion_event import EmotionEvent
 from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
+from app.models.llm_trigger_cache import InteractionLLMTriggerCache
 from app.models.organization import Organization
 from app.models.policy import CompanyPolicy, PolicyCompliance
 from app.models.processing import ProcessingJob
@@ -235,6 +236,13 @@ def test_reprocess_resets_artifacts_and_jobs(client, seed_org_and_auth):
             compliance_score=0.9,
         )
     )
+    session.add(
+        InteractionLLMTriggerCache(
+            interaction_id=interaction_id,
+            org_filter="nexalink",
+            report_payload={"interaction_id": str(interaction_id), "cached": True},
+        )
+    )
 
     jobs = session.exec(
         select(ProcessingJob).where(ProcessingJob.interaction_id == interaction_id)
@@ -264,6 +272,9 @@ def test_reprocess_resets_artifacts_and_jobs(client, seed_org_and_auth):
     assert session.exec(select(EmotionEvent).where(EmotionEvent.interaction_id == interaction_id)).first() is None
     assert session.exec(select(InteractionScore).where(InteractionScore.interaction_id == interaction_id)).first() is None
     assert session.exec(select(PolicyCompliance).where(PolicyCompliance.interaction_id == interaction_id)).first() is None
+    assert session.exec(
+        select(InteractionLLMTriggerCache).where(InteractionLLMTriggerCache.interaction_id == interaction_id)
+    ).first() is None
 
     updated_jobs = session.exec(
         select(ProcessingJob).where(ProcessingJob.interaction_id == interaction_id)

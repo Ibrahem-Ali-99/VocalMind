@@ -12,3 +12,4 @@ from app.models.feedback import EmotionFeedback, ComplianceFeedback  # noqa: F40
 from app.models.faq import FAQArticle, OrganizationFAQArticle  # noqa: F401
 from app.models.snapshot import AgentPerformanceSnapshot  # noqa: F401
 from app.models.query import AssistantQuery  # noqa: F401
+from app.models.llm_trigger_cache import InteractionLLMTriggerCache  # noqa: F401

@@ -22,8 +22,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from config import settings
-from query_engine import RAGQueryEngine
+try:
+    from .config import settings
+    from .query_engine import RAGQueryEngine
+except ImportError:  # pragma: no cover - allows direct script/test imports
+    from config import settings
+    from query_engine import RAGQueryEngine
 
 
 # ── Result Models ─────────────────────────────────────────────────────────────

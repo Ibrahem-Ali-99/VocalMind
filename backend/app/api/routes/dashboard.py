@@ -189,10 +189,10 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
             return [
                 {
                     "name": row.name,
-                    "empathy": round(row.empathy * 10, 0) if row.empathy else 0,
-                    "policy": round(row.policy * 10, 0) if row.policy else 0,
-                    "resolution": round(row.resolution * 10, 0) if row.resolution else 0,
-                    "overallScore": round(row.overall * 10, 0) if row.overall else 0,
+                    "empathy": round(row.empathy * 100, 0) if row.empathy else 0,
+                    "policy": round(row.policy * 100, 0) if row.policy else 0,
+                    "resolution": round(row.resolution * 100, 0) if row.resolution else 0,
+                    "overallScore": round(row.overall * 100, 0) if row.overall else 0,
                     "trend": "up",
                 }
                 for row in agent_perf_result.all()
@@ -243,10 +243,10 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
                     "time": row.interaction_date.strftime("%I:%M %p") if row.interaction_date else "",
                     "duration": f"{mins}:{secs:02d}",
                     "language": row.language_detected or "Unknown",
-                    "overallScore": round(row.overall_score * 10, 0) if row.overall_score else 0,
-                    "empathyScore": round(row.empathy_score * 10, 0) if row.empathy_score else 0,
-                    "policyScore": round(row.policy_score * 10, 0) if row.policy_score else 0,
-                    "resolutionScore": round(row.resolution_score * 10, 0) if row.resolution_score else 0,
+                    "overallScore": round(row.overall_score * 100, 0) if row.overall_score else 0,
+                    "empathyScore": round(row.empathy_score * 100, 0) if row.empathy_score else 0,
+                    "policyScore": round(row.policy_score * 100, 0) if row.policy_score else 0,
+                    "resolutionScore": round(row.resolution_score * 100, 0) if row.resolution_score else 0,
                     "resolved": row.was_resolved or False,
                     "hasViolation": row.viol_count > 0,
                     "hasOverlap": row.has_overlap,

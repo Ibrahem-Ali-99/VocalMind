@@ -30,7 +30,7 @@ async def create_db_and_tables():
         Organization, User, Interaction, Transcript,
         Utterance, EmotionEvent, InteractionScore,
         CompanyPolicy, OrganizationPolicy, PolicyCompliance,
-        EmotionFeedback, ComplianceFeedback,
+        EmotionFeedback, ComplianceFeedback, InteractionLLMTriggerCache,
     )
 
     async with engine.begin() as conn:

@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router";
 import { ArrowLeft, Play, Headphones, Loader2, AlertTriangle as AlertTriangleIcon } from "lucide-react";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { getInteractionDetail, getAudioUrl, reprocessInteraction, type InteractionDetail } from "../../services/api";
+import { EvidenceAnchoredExplainabilityPanel } from "./EvidenceAnchoredExplainabilityPanel";
 
 const emotionTheme: Record<string, { label: string; color: string; surface: string }> = {
   neutral: { label: "Neutral", color: "#64748B", surface: "rgba(100, 116, 139, 0.16)" },
@@ -299,6 +300,19 @@ export function SessionDetail() {
     return null;
   }, [data]);
 
+  const explainability = useMemo(() => {
+    if (data?.llmTriggers?.explainability) {
+      return data.llmTriggers.explainability;
+    }
+    return {
+      triggerAttributions: [
+        ...(emotionTriggers?.explainability?.triggerAttributions || []),
+        ...(ragCompliance?.explainability?.triggerAttributions || []),
+      ],
+      claimProvenance: ragCompliance?.explainability?.claimProvenance || [],
+    };
+  }, [data, emotionTriggers, ragCompliance]);
+
   const handleJumpTo = (seconds: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = seconds;
@@ -486,6 +500,23 @@ export function SessionDetail() {
       : interactionStatus === "completed"
         ? "border-emerald-200 text-emerald-700 bg-emerald-50"
         : "border-slate-200 text-slate-600 bg-slate-100";
+  const explainabilityCardCount =
+    (explainability?.triggerAttributions?.length || 0) + (explainability?.claimProvenance?.length || 0);
+  const reviewSignals = [
+    { label: "Utterances", value: `${utterances.length}` },
+    { label: "Evidence cards", value: `${explainabilityCardCount}` },
+    { label: "Policy flags", value: `${policyCards.length}` },
+  ];
+  const processingSteps = [
+    { label: "Transcription", done: !isProcessing || utterances.length > 0 },
+    { label: "Explainability", done: !isProcessing || explainabilityCardCount > 0 },
+    { label: "Compliance", done: !isProcessing || Boolean(ragCompliance?.available) },
+  ];
+  const sessionNarrative = isProcessing
+    ? "This call is still moving through the evaluation pipeline. The page will refresh automatically as transcript, explainability, and policy analysis become available."
+    : explainabilityCardCount > 0
+      ? "This session now includes evidence-backed explainability, so supervisors can move from a score to the exact span and policy evidence behind it."
+      : "This session summary is ready. Use the transcript, evaluation cards, and evidence panel to review the conversation from playback through policy reasoning.";
 
   const handleProgressChange = (value: number) => {
     if (!audioRef.current) {
@@ -500,7 +531,7 @@ export function SessionDetail() {
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-[1600px] mx-auto bg-[#F8FAFC] dark:bg-[#090B10] min-h-screen text-slate-900 dark:text-slate-100">
       {/* Top Navigation */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <Link
           to="/manager/inspector"
           className="inline-flex items-center gap-2 text-[14px] font-semibold text-slate-500 dark:text-slate-300 hover:text-primary transition-colors"
@@ -508,7 +539,7 @@ export function SessionDetail() {
           <ArrowLeft className="w-4 h-4" />
           Back to Sessions
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {interactionStatus && (
             <div className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${statusBadgeClass}`}>
               {interactionStatus}
@@ -535,103 +566,159 @@ export function SessionDetail() {
       )}
 
       {/* Top Header Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-border dark:border-slate-700 p-8 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8">
-        <div>
-          <h2 className="text-[28px] font-extrabold text-slate-900 dark:text-slate-100 mb-2 tracking-tight">
-            {interaction.agentName}
-          </h2>
-          <div className="text-[13px] text-slate-500 dark:text-slate-300 font-medium flex items-center gap-3">
-            <span>{interaction.date}</span>
-            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-            <span>{interaction.time}</span>
-            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-            <span>{interaction.duration}</span>
-            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-            <span className="uppercase">{interaction.language}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-8 xl:gap-12 w-full xl:w-auto overflow-x-auto pb-4 xl:pb-0">
-          <div className="flex flex-col items-center shrink-0">
-            <span className="text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-widest">Overall Score</span>
-            <div className="relative w-[70px] h-[70px]">
-              <svg className="w-full h-full -rotate-90">
-                <circle cx="35" cy="35" r="30" fill="none" stroke="#F1F5F9" strokeWidth="6" />
-                <circle
-                  cx="35"
-                  cy="35"
-                  r="30"
-                  fill="none"
-                  stroke={getScoreColor(interaction.overallScore)}
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(interaction.overallScore / 100) * 188.5} 188.5`}
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[18px] font-extrabold" style={{ color: getScoreColor(interaction.overallScore) }}>
-                  {interaction.overallScore}
-                </span>
-              </div>
+      <div className="overflow-hidden rounded-[28px] border border-border bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.98),rgba(241,245,249,0.98))] p-8 shadow-sm dark:border-slate-700 dark:bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_30%),linear-gradient(135deg,#0f172a,#111827)]">
+        <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.22em] text-primary">
+              Session review
+            </div>
+            <h2 className="mb-2 text-[30px] font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+              {interaction.agentName}
+            </h2>
+            <div className="flex flex-wrap items-center gap-3 text-[13px] font-medium text-slate-500 dark:text-slate-300">
+              <span>{interaction.date}</span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              <span>{interaction.time}</span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              <span>{interaction.duration}</span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              <span className="uppercase">{interaction.language}</span>
+            </div>
+            <p className="mt-4 max-w-2xl text-[14px] leading-6 text-slate-600 dark:text-slate-300">
+              {sessionNarrative}
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {reviewSignals.map((signal) => (
+                <div key={signal.label} className="rounded-2xl border border-slate-200/80 bg-white/75 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{signal.label}</div>
+                  <div className="mt-1 text-[22px] font-extrabold text-slate-900 dark:text-slate-100">{signal.value}</div>
+                </div>
+              ))}
             </div>
           </div>
-          
-          <div className="w-px h-16 bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
 
-          <div className="flex items-center gap-8 xl:gap-12">
-            {[
-              { label: "Empathy", score: interaction.empathyScore, color: "#3B82F6", unit: "%" },
-              { label: "Policy", score: interaction.policyScore, color: "#10B981", unit: "%" },
-              { label: "Resolution", score: interaction.resolutionScore, color: "#8B5CF6", unit: "%" },
-              { label: "Response Time", score: responseTimeText, color: "#334155", unit: "" },
-            ].map((s) => (
-              <div key={s.label} className="text-center flex flex-col items-center">
-                <div className="text-[10px] text-slate-400 mb-2 uppercase font-extrabold tracking-wider whitespace-nowrap">{s.label}</div>
-                <div className="text-[20px] font-extrabold" style={{ color: s.color }}>
-                  {s.score}{s.unit}
+          <div className="flex w-full flex-col gap-4 xl:w-auto">
+            <div className="flex items-center gap-8 overflow-x-auto pb-2 xl:justify-end">
+              <div className="flex shrink-0 flex-col items-center">
+                <span className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Overall Score</span>
+                <div className="relative h-[74px] w-[74px]">
+                  <svg className="h-full w-full -rotate-90">
+                    <circle cx="37" cy="37" r="31" fill="none" stroke="#E2E8F0" strokeWidth="6" />
+                    <circle
+                      cx="37"
+                      cy="37"
+                      r="31"
+                      fill="none"
+                      stroke={getScoreColor(interaction.overallScore)}
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(interaction.overallScore / 100) * 194.7} 194.7`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[18px] font-extrabold" style={{ color: getScoreColor(interaction.overallScore) }}>
+                      {interaction.overallScore}
+                    </span>
+                  </div>
                 </div>
               </div>
-            ))}
+
+              <div className="hidden h-16 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+
+              <div className="flex items-center gap-8 xl:gap-10">
+                {[
+                  { label: "Empathy", score: interaction.empathyScore, color: "#3B82F6", unit: "%" },
+                  { label: "Policy", score: interaction.policyScore, color: "#10B981", unit: "%" },
+                  { label: "Resolution", score: interaction.resolutionScore, color: "#8B5CF6", unit: "%" },
+                  { label: "Response Time", score: responseTimeText, color: "#334155", unit: "" },
+                ].map((s) => (
+                  <div key={s.label} className="flex flex-col items-center text-center">
+                    <div className="mb-2 whitespace-nowrap text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{s.label}</div>
+                    <div className="text-[20px] font-extrabold" style={{ color: s.color }}>
+                      {s.score}{s.unit}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {isProcessing && (
+              <div className="rounded-2xl border border-amber-200/60 bg-amber-50/80 px-4 py-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">Processing state</div>
+                    <div className="mt-1 text-[13px] font-medium text-amber-900 dark:text-amber-100">
+                      Auto-refresh is on while new transcript and evaluation artifacts arrive.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {processingSteps.map((step) => (
+                      <div
+                        key={step.label}
+                        className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] ${
+                          step.done
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300"
+                            : "border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300"
+                        }`}
+                      >
+                        {step.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Content Columns */}
-      <div className="flex flex-col xl:flex-row gap-6">
-        {/* Left Column: Player, Transcript & Graph */}
-        <div className="flex flex-col gap-6 w-full xl:w-[60%] 2xl:w-[65%] shrink-0">
+      {/* Main Content */}
+      <div className="space-y-6">
+        {/* Primary Review Surface: Player, Transcript, and Emotion Graph */}
+        <div className="space-y-6">
           
           {/* New Audio Player Layout */}
-          <div className="bg-white dark:bg-slate-900 rounded-[24px] p-6 pr-8 border border-border dark:border-slate-700 shadow-sm flex items-center gap-6">
+          <div className="rounded-[24px] border border-border bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(239,246,255,0.96))] p-6 pr-8 shadow-sm dark:border-slate-700 dark:bg-[linear-gradient(135deg,#0f172a,#172554)]">
             <audio 
               ref={audioRef} 
               src={getAudioUrl(interaction.id)} 
               preload="metadata"
             />
-            <button 
-              onClick={() => {
-                if (audioRef.current) {
-                  isPlaying ? audioRef.current.pause() : audioRef.current.play();
-                }
-              }}
-              className="w-14 h-14 flex shrink-0 items-center justify-center rounded-full bg-[#3B82F6] text-white hover:bg-blue-600 transition-colors shadow-[0_8px_16px_rgba(59,130,246,0.3)]"
-            >
-              {isPlaying ? (
-                <div className="w-4 h-4 flex justify-between">
-                  <div className="w-1.5 bg-white rounded-sm"></div>
-                  <div className="w-1.5 bg-white rounded-sm"></div>
-                </div>
-              ) : (
-                <Play className="w-6 h-6 ml-1.5 fill-current" />
-              )}
-            </button>
-            
-            <div className="flex-1 flex flex-col justify-center pt-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-bold text-slate-500">{formatClock(currentTimeSeconds)}</span>
-                <span className="text-[12px] font-bold text-slate-400">{formatClock(totalDurationSeconds)}</span>
+            <div className="flex items-center gap-6">
+              <button 
+                onClick={() => {
+                  if (audioRef.current) {
+                    isPlaying ? audioRef.current.pause() : audioRef.current.play();
+                  }
+                }}
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#3B82F6] text-white shadow-[0_8px_16px_rgba(59,130,246,0.3)] transition-colors hover:bg-blue-600"
+              >
+                {isPlaying ? (
+                  <div className="flex h-4 w-4 justify-between">
+                    <div className="w-1.5 rounded-sm bg-white"></div>
+                    <div className="w-1.5 rounded-sm bg-white"></div>
+                  </div>
+                ) : (
+                  <Play className="ml-1.5 h-6 w-6 fill-current" />
+                )}
+              </button>
+
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                  Auto-sync transcript
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
+                  {utterances.length} utterances
+                </span>
               </div>
-              <div className="group relative w-full h-[6px] rounded-full bg-slate-100 mb-1">
+            </div>
+
+            <div className="mt-5 flex flex-1 flex-col justify-center pt-2">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300">{formatClock(currentTimeSeconds)}</span>
+                <span className="text-[12px] font-bold text-slate-400 dark:text-slate-400">{formatClock(totalDurationSeconds)}</span>
+              </div>
+              <div className="group relative mb-1 h-[6px] w-full rounded-full bg-slate-100 dark:bg-slate-800">
                 <input
                   type="range"
                   min={0}
@@ -639,20 +726,24 @@ export function SessionDetail() {
                   step={0.1}
                   value={progressPercent || 0}
                   onChange={(event) => handleProgressChange(Number(event.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                   aria-label="Audio seek"
                 />
-                <div className="absolute left-0 top-0 bottom-0 bg-[#3B82F6] rounded-full pointer-events-none" style={{ width: `${progressPercent}%` }} />
+                <div className="pointer-events-none absolute bottom-0 left-0 top-0 rounded-full bg-[#3B82F6]" style={{ width: `${progressPercent}%` }} />
                 <div 
-                  className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-[#3B82F6] rounded-full shadow border-2 border-white pointer-events-none z-0 transition-transform group-hover:scale-125" 
+                  className="pointer-events-none absolute top-1/2 z-0 h-3.5 w-3.5 -translate-y-1/2 rounded-full border-2 border-white bg-[#3B82F6] shadow transition-transform group-hover:scale-125 dark:border-slate-950" 
                   style={{ left: `calc(${progressPercent}% - 6px)` }} 
                 />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[12px] text-slate-500 dark:text-slate-300">
+                <span>Click any transcript span or evidence card to jump playback.</span>
+                <span className="font-semibold">{isProcessing ? "Playback available while analysis finishes" : "Playback synced with transcript view"}</span>
               </div>
             </div>
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-[24px] border border-border dark:border-slate-700 overflow-hidden shadow-sm flex flex-col">
-            <div className="p-6 pb-4 border-b border-slate-100 flexitems-center gap-3">
+            <div className="flex items-center gap-3 border-b border-slate-100 p-6 pb-4">
               <h3 className="text-[18px] font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 Session Transcript
@@ -833,9 +924,12 @@ export function SessionDetail() {
           </div>
         </div>
 
-        {/* Right Column: Cards */}
-        <div className="flex-1 space-y-6 min-w-0">
-          
+        {/* Secondary Review Surface: Evidence and Evaluation Cards */}
+        <div className="space-y-6">
+
+          <EvidenceAnchoredExplainabilityPanel explainability={explainability} onJumpTo={handleJumpTo} />
+
+          <div className="grid gap-6 xl:grid-cols-2 items-start">
           {/* Automated Evaluation Card (RAG Compliance + Policy) */}
           <div className="bg-white dark:bg-slate-900 rounded-[24px] border border-border dark:border-slate-700 shadow-sm flex flex-col overflow-hidden">
             <div className="p-6 bg-slate-900 flex items-start justify-between">
@@ -853,10 +947,33 @@ export function SessionDetail() {
             
             <div className="p-6 space-y-8">
               {!ragCompliance?.available ? (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 text-[13px] text-slate-500 dark:text-slate-300 font-medium">
-                  {isProcessing
-                    ? "Processing audio. RAG compliance will appear once transcription completes."
-                    : `RAG compliance analysis unavailable.${ragCompliance?.error ? ` ${ragCompliance.error}` : ""}`}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800">
+                  {isProcessing ? (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-[13px] font-semibold text-slate-700 dark:text-slate-100">
+                          Policy and SOP checks are still being assembled.
+                        </p>
+                        <p className="mt-1 text-[13px] leading-6 text-slate-500 dark:text-slate-300">
+                          Retrieval provenance will appear here once transcription completes and policy chunks are scored.
+                        </p>
+                      </div>
+                      <div className="grid gap-3">
+                        {processingSteps.map((step) => (
+                          <div key={`rag-${step.label}`} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900/70">
+                            <span className="text-[12px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">{step.label}</span>
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${step.done ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"}`}>
+                              {step.done ? "Ready" : "Queued"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[13px] font-medium text-slate-500 dark:text-slate-300">
+                      {`RAG compliance analysis unavailable.${ragCompliance?.error ? ` ${ragCompliance.error}` : ""}`}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <>
@@ -944,10 +1061,32 @@ export function SessionDetail() {
               </div>
               <div className="p-6">
                 {!emotionTriggers.available ? (
-                  <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-[13px] text-destructive font-medium">
-                    {isProcessing
-                      ? "Processing audio. Emotion reasoning will appear once transcription completes."
-                      : `Emotion trigger analysis unavailable.${emotionTriggers.error ? ` ${emotionTriggers.error}` : ""}`}
+                  <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-5 dark:border-purple-900/40 dark:bg-purple-950/20">
+                    {isProcessing ? (
+                      <div className="space-y-3">
+                        <p className="text-[13px] font-semibold text-purple-800 dark:text-purple-200">
+                          Emotion reasoning is waiting on transcript-aligned cues.
+                        </p>
+                        <p className="text-[13px] leading-6 text-purple-700/80 dark:text-purple-200/80">
+                          Once the call is transcribed, this card will anchor acoustic or transcript mismatches to exact utterance spans.
+                        </p>
+                        <div className="grid gap-2">
+                          {[
+                            "Customer emotion summary",
+                            "Trigger reasoning",
+                            "Counterfactual coaching",
+                          ].map((item) => (
+                            <div key={item} className="rounded-xl border border-purple-200/80 bg-white/80 px-4 py-3 text-[12px] font-medium text-purple-700 dark:border-purple-900/40 dark:bg-slate-900/70 dark:text-purple-200">
+                              {item}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[13px] font-medium text-destructive">
+                        {`Emotion trigger analysis unavailable.${emotionTriggers.error ? ` ${emotionTriggers.error}` : ""}`}
+                      </p>
+                    )}
                   </div>
                 ) : emotionTriggers.emotionShift && (
                   <div className="space-y-6">
@@ -965,7 +1104,9 @@ export function SessionDetail() {
                     {/* Dissonance Detection */}
                     <div className="flex items-center gap-3">
                       <span className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider border ${emotionTriggers.emotionShift.isDissonanceDetected ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800" : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"}`}>
-                        {emotionTriggers.emotionShift.isDissonanceDetected ? `⚡ ${emotionTriggers.emotionShift.dissonanceType || "Dissonance"}` : "✓ No Dissonance"}
+                        {emotionTriggers.emotionShift.isDissonanceDetected
+                          ? `Alert: ${emotionTriggers.emotionShift.dissonanceType || "Dissonance"}`
+                          : "No Dissonance"}
                       </span>
                       {emotionTriggers.emotionShift.insufficientEvidence && (
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
@@ -1020,6 +1161,8 @@ export function SessionDetail() {
               </div>
             </div>
           )}
+
+          </div>
 
         </div>
       </div>

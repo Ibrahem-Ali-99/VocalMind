@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -24,6 +25,7 @@ from app.models.emotion_event import EmotionEvent
 from app.models.enums import JobStage, JobStatus, ProcessingStatus, SpeakerRole
 from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
+from app.models.llm_trigger_cache import InteractionLLMTriggerCache
 from app.models.organization import Organization
 from app.models.policy import CompanyPolicy, OrganizationPolicy, PolicyCompliance
 from app.models.processing import ProcessingJob
@@ -57,6 +59,68 @@ def _storage_root() -> Path:
 def _sanitize_filename(filename: str) -> str:
     cleaned = Path(filename or "").name.strip()
     return cleaned or f"audio_{datetime.now(timezone.utc).timestamp():.0f}.wav"
+
+
+def _normalize_lookup_text(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+async def _resolve_policy_record_for_report(
+    session: AsyncSession,
+    organization_id: UUID,
+    report,
+) -> CompanyPolicy | None:
+    policies_result = await session.exec(
+        select(CompanyPolicy)
+        .join(OrganizationPolicy, OrganizationPolicy.policy_id == CompanyPolicy.id)
+        .where(
+            OrganizationPolicy.organization_id == organization_id,
+            OrganizationPolicy.is_active.is_(True),
+            CompanyPolicy.is_active.is_(True),
+        )
+    )
+    policies = list(policies_result.all())
+    if not policies:
+        return None
+
+    policy_quotes = [
+        _normalize_lookup_text(citation.quote)
+        for citation in report.nli_policy.citations
+        if citation.source == "policy" and (citation.quote or "").strip()
+    ]
+    reference_hints: list[str] = []
+    for claim in report.explainability.claim_provenance:
+        if not claim.retrieved_policy:
+            continue
+        reference_hints.append(_normalize_lookup_text(claim.retrieved_policy.reference))
+        if claim.retrieved_policy.provenance:
+            reference_hints.append(_normalize_lookup_text(claim.retrieved_policy.provenance))
+
+    best_policy: CompanyPolicy | None = None
+    best_score = -1
+    for policy in policies:
+        title_norm = _normalize_lookup_text(policy.policy_title)
+        text_norm = _normalize_lookup_text(policy.policy_text)
+        title_tokens = set(title_norm.split())
+        score = 0
+
+        for quote in policy_quotes:
+            if quote and quote in text_norm:
+                score += 8
+
+        for hint in reference_hints:
+            if not hint:
+                continue
+            hint_tokens = set(hint.split())
+            score += len(hint_tokens.intersection(title_tokens)) * 2
+            if hint in title_norm or title_norm in hint:
+                score += 4
+
+        if score > best_score:
+            best_score = score
+            best_policy = policy
+
+    return best_policy or policies[0]
 
 
 def build_audio_storage_path(organization_slug: str, interaction_id: UUID, filename: str) -> Path:
@@ -196,6 +260,7 @@ async def reset_interaction_for_reprocess(session: AsyncSession, interaction_id:
     await session.exec(delete(Utterance).where(Utterance.interaction_id == interaction_id))
     await session.exec(delete(PolicyCompliance).where(PolicyCompliance.interaction_id == interaction_id))
     await session.exec(delete(InteractionScore).where(InteractionScore.interaction_id == interaction_id))
+    await session.exec(delete(InteractionLLMTriggerCache).where(InteractionLLMTriggerCache.interaction_id == interaction_id))
 
     transcript_result = await session.exec(
         select(Transcript).where(Transcript.interaction_id == interaction_id)
@@ -280,6 +345,7 @@ async def process_interaction(interaction_id: UUID) -> None:
         await session.exec(delete(Utterance).where(Utterance.interaction_id == interaction_id))
         await session.exec(delete(PolicyCompliance).where(PolicyCompliance.interaction_id == interaction_id))
         await session.exec(delete(InteractionScore).where(InteractionScore.interaction_id == interaction_id))
+        await session.exec(delete(InteractionLLMTriggerCache).where(InteractionLLMTriggerCache.interaction_id == interaction_id))
 
         transcript_result = await session.exec(
             select(Transcript).where(Transcript.interaction_id == interaction_id)
@@ -350,37 +416,46 @@ async def process_interaction(interaction_id: UUID) -> None:
         )
         organization = organization_result.first()
 
-        policy_result = await session.exec(
-            select(CompanyPolicy)
-            .join(OrganizationPolicy, OrganizationPolicy.policy_id == CompanyPolicy.id)
-            .where(
-                OrganizationPolicy.organization_id == interaction.organization_id,
-                OrganizationPolicy.is_active.is_(True),
-                CompanyPolicy.is_active.is_(True),
-            )
-            .order_by(OrganizationPolicy.assigned_at.desc())
-        )
-        policy = policy_result.first()
-
         report = None
         if organization:
             try:
                 report = await evaluate_interaction_triggers(
                     session=session,
                     interaction_id=interaction_id,
-                    ground_truth_policy=policy.policy_text if policy else transcript_text,
                     org_filter=organization.slug,
+                    force_rerun=True,
                 )
             except Exception:
                 logger.exception("LLM trigger evaluation failed for interaction %s", interaction_id)
 
-        if report and policy:
+        if report:
+            policy = await _resolve_policy_record_for_report(
+                session=session,
+                organization_id=interaction.organization_id,
+                report=report,
+            )
             compliance_score = max(0.0, min(1.0, float(report.process_adherence.efficiency_score) / 10.0))
-            policy_score = compliance_score
-            empathy_score = 0.6 if report.emotion_shift.is_dissonance_detected else 0.9
-            resolution_score = 0.9 if report.process_adherence.is_resolved else 0.6
-            overall_score = round((empathy_score + policy_score + resolution_score) / 3, 4)
-            is_compliant = report.nli_policy.nli_category in {"Entailment", "Benign Deviation"}
+            policy_alignment = report.nli_policy.policy_alignment_score
+            if policy_alignment is None:
+                policy_alignment = 1.0 if report.nli_policy.nli_category in {"Entailment", "Benign Deviation"} else 0.35
+            policy_score = max(0.0, min(1.0, (compliance_score * 0.55) + (float(policy_alignment) * 0.45)))
+
+            if report.emotion_shift.is_dissonance_detected:
+                empathy_score = 0.55
+            elif report.emotion_shift.insufficient_evidence:
+                empathy_score = 0.82
+            else:
+                empathy_score = 0.95
+
+            if report.process_adherence.is_resolved:
+                resolution_score = 0.94 if not report.process_adherence.missing_sop_steps else 0.84
+            else:
+                resolution_score = 0.42
+
+            overall_score = round(
+                (empathy_score * 0.3) + (policy_score * 0.4) + (resolution_score * 0.3),
+                4,
+            )
             evidence_text = "; ".join(
                 quote for quote in (
                     report.process_adherence.evidence_quotes[:1] + report.nli_policy.evidence_quotes[:1]
@@ -388,17 +463,19 @@ async def process_interaction(interaction_id: UUID) -> None:
                 if quote
             ) or transcript_text[:250]
 
-            session.add(
-                PolicyCompliance(
-                    interaction_id=interaction_id,
-                    policy_id=policy.id,
-                    is_compliant=is_compliant,
-                    compliance_score=compliance_score,
-                    llm_reasoning=report.nli_policy.justification or report.process_adherence.justification,
-                    evidence_text=evidence_text,
-                    retrieved_policy_text=policy.policy_text,
+            if policy:
+                is_compliant = report.nli_policy.nli_category in {"Entailment", "Benign Deviation"}
+                session.add(
+                    PolicyCompliance(
+                        interaction_id=interaction_id,
+                        policy_id=policy.id,
+                        is_compliant=is_compliant,
+                        compliance_score=compliance_score,
+                        llm_reasoning=report.nli_policy.justification or report.process_adherence.justification,
+                        evidence_text=evidence_text,
+                        retrieved_policy_text=policy.policy_text,
+                    )
                 )
-            )
 
             session.add(
                 InteractionScore(

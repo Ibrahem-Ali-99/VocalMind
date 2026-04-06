@@ -35,3 +35,9 @@ uv run uvicorn main:app --reload
   ```bash
   uv run pytest
   ```
+
+## Related Documentation
+
+- `docs/explainability/EVIDENCE_ANCHORED_EXPLAINABILITY_LAYER.md`
+- `docs/llm_trigger/LLM_TRIGGER_FEATURE_GUIDE.md`
+- `docs/rag/RAG_OVERVIEW.md`

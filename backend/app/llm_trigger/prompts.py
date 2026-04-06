@@ -10,6 +10,7 @@ Output style:
 - is_dissonance_detected: true
 - dissonance_type: "Sarcasm"
 - root_cause: references lexical positivity with angry prosody
+- confidence_score: float between 0 and 1
 - counterfactual_correction: starts with "If the agent had..."
 - evidence_quotes: includes at least one verbatim quote from customer_text
 - citations: includes structured quote entries with source="transcript"
@@ -22,6 +23,7 @@ Output style:
 - is_dissonance_detected: true
 - dissonance_type: "Passive-Aggression"
 - root_cause: references resignation language with hostile tone
+- confidence_score: float between 0 and 1
 - counterfactual_correction: starts with "If the agent had..."
 - evidence_quotes: includes at least one verbatim quote from customer_text
 - citations: includes structured quote entries with source="transcript"
@@ -33,24 +35,32 @@ Example A:
 - ground_truth_policy: "Refunds are allowed only within 30 days."
 - agent_statement: "I can help process a refund if your purchase is within 30 days."
 - nli_category: "Entailment"
+- confidence_score: 0.94
+- policy_alignment_score: 0.96
 - evidence_quotes: includes one quote from policy and one from agent statement
 
 Example B:
 - ground_truth_policy: "Refunds are allowed only within 30 days."
 - agent_statement: "No worries, I totally understand your frustration. Let me check your purchase date first."
 - nli_category: "Benign Deviation"
+- confidence_score: 0.72
+- policy_alignment_score: 0.51
 - evidence_quotes: includes one quote from policy and one from agent statement
 
 Example C:
 - ground_truth_policy: "Refunds are allowed only within 30 days."
 - agent_statement: "We always allow refunds up to 90 days."
 - nli_category: "Contradiction"
+- confidence_score: 0.95
+- policy_alignment_score: 0.08
 - evidence_quotes: includes one quote from policy and one from agent statement
 
 Example D:
 - ground_truth_policy: "Refunds are allowed only within 30 days."
 - agent_statement: "Policy says refunds require manager approval plus a processing fee."
 - nli_category: "Policy Hallucination"
+- confidence_score: 0.9
+- policy_alignment_score: 0.05
 - evidence_quotes: includes one quote from policy and one from agent statement
 """.strip()
 
@@ -85,8 +95,9 @@ def build_emotion_shift_prompt() -> ChatPromptTemplate:
                 "2) If dissonant, classify type (e.g., Sarcasm, Passive-Aggression).\n"
                 "3) Explain root cause grounded in transcript text. If no clear cause, return 'insufficient evidence'.\n"
                 "4) Provide a correction sentence that starts exactly with 'If the agent had...'.\n"
-                "5) Include evidence_quotes as verbatim excerpts from customer text.\n"
-                "6) Include citations with source, speaker, quote, and utterance_index when known.",
+                "5) Include a confidence_score between 0 and 1 for how certain you are in the dissonance verdict.\n"
+                "6) Include evidence_quotes as verbatim excerpts from customer text.\n"
+                "7) Include citations with source, speaker, quote, and utterance_index when known.",
             ),
         ]
     )
@@ -122,6 +133,7 @@ def build_process_adherence_prompt() -> ChatPromptTemplate:
                 "- Write a short justification paragraph explicitly referencing the transcript evidence.\n"
                 "- Compare transcript trajectory against expected graph/SOP and list missing steps.\n"
                 "- List missed SOP steps precisely as short bullet-style strings.\n"
+                "- Include a confidence_score between 0 and 1 for how certain you are in the process adherence verdict.\n"
                 "- Provide evidence_quotes using exact transcript snippets in double quotes.\n"
                 "- Provide citations with transcript/SOP quote provenance.",
             ),
@@ -154,6 +166,8 @@ def build_nli_policy_prompt() -> ChatPromptTemplate:
                 "Ground truth policy:\n{ground_truth_policy}\n\n"
                 "Agent statement:\n{agent_statement}\n\n"
                 "Classify into one category and justify with textual evidence.\n"
+                "Include confidence_score between 0 and 1 for the final category.\n"
+                "Include policy_alignment_score between 0 and 1 for how strongly policy supports the statement.\n"
                 "Include at least one policy quote and one agent quote in evidence_quotes and citations.",
             ),
         ]

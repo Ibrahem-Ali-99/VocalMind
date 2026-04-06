@@ -57,6 +57,10 @@ class InteractionTriggerRequest(BaseModel):
         default=None,
         description="Optional org metadata filter used during Qdrant retrieval.",
     )
+    force_rerun: bool = Field(
+        default=False,
+        description="When true, ignore any saved report and recompute triggers.",
+    )
 
 
 @router.post(
@@ -114,6 +118,8 @@ async def run_interaction_trigger_endpoint(
             retrieved_sop_from_pinecone=payload.retrieved_sop_from_pinecone,
             ground_truth_policy=payload.ground_truth_policy,
             org_filter=payload.org_filter,
+            force_rerun=payload.force_rerun,
+            commit_cache=True,
         )
     except ValueError as exc:
         message = str(exc)

@@ -5,7 +5,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import select, func
+from typing import Any, Literal
 from uuid import UUID
 import httpx
 import io
@@ -36,6 +38,236 @@ from app.models.user import User as UserModel
 from app.models.enums import ProcessingStatus, UserRole
 
 router = APIRouter()
+
+
+class APIModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class ExplainabilitySpanResponse(APIModel):
+    utteranceIndex: int | None = None
+    speaker: str | None = None
+    quote: str
+    timestamp: str | None = None
+    startSeconds: float | None = None
+    endSeconds: float | None = None
+
+
+class ExplainabilityPolicyReferenceResponse(APIModel):
+    source: Literal["policy", "sop"]
+    reference: str
+    clause: str
+    version: str | None = None
+    category: str | None = None
+    provenance: str | None = None
+
+
+class TriggerAttributionResponse(APIModel):
+    attributionId: str
+    family: Literal["emotion", "sop", "policy"]
+    triggerType: str
+    title: str
+    verdict: str
+    confidence: float | None = None
+    evidenceSpan: ExplainabilitySpanResponse | None = None
+    policyReference: ExplainabilityPolicyReferenceResponse | None = None
+    reasoning: str
+    evidenceChain: list[str]
+    supportingQuotes: list[str]
+
+
+class ClaimProvenanceResponse(APIModel):
+    claimId: str
+    claimText: str
+    claimSpan: ExplainabilitySpanResponse | None = None
+    retrievedPolicy: ExplainabilityPolicyReferenceResponse | None = None
+    semanticSimilarity: float | None = None
+    nliVerdict: str
+    confidence: float | None = None
+    reasoning: str
+    provenance: str
+    supportingQuotes: list[str]
+
+
+class EvidenceAnchoredExplainabilityResponse(APIModel):
+    triggerAttributions: list[TriggerAttributionResponse] = []
+    claimProvenance: list[ClaimProvenanceResponse] = []
+
+
+class LLMEvidenceCitationResponse(APIModel):
+    source: str
+    speaker: str | None = None
+    quote: str
+    utteranceIndex: int | None = None
+
+
+class LLMEmotionShiftResponse(APIModel):
+    isDissonanceDetected: bool
+    dissonanceType: str
+    rootCause: str
+    currentCustomerEmotion: str | None = None
+    currentEmotionReasoning: str | None = None
+    counterfactualCorrection: str
+    evidenceQuotes: list[str]
+    citations: list[LLMEvidenceCitationResponse]
+    insufficientEvidence: bool | None = None
+    confidenceScore: float | None = None
+
+
+class LLMProcessAdherenceResponse(APIModel):
+    detectedTopic: str
+    isResolved: bool
+    efficiencyScore: int
+    justification: str
+    missingSopSteps: list[str]
+    evidenceQuotes: list[str]
+    citations: list[LLMEvidenceCitationResponse]
+    insufficientEvidence: bool | None = None
+    confidenceScore: float | None = None
+
+
+class LLMNliPolicyResponse(APIModel):
+    nliCategory: str
+    justification: str
+    evidenceQuotes: list[str]
+    citations: list[LLMEvidenceCitationResponse]
+    policyVersion: str | None = None
+    policyEffectiveAt: str | None = None
+    policyCategory: str | None = None
+    conflictResolutionApplied: bool | None = None
+    insufficientEvidence: bool | None = None
+    confidenceScore: float | None = None
+    policyAlignmentScore: float | None = None
+
+
+class LLMDerivedSignalsResponse(APIModel):
+    customerText: str
+    acousticEmotion: str
+    fusedEmotion: str
+    agentStatement: str
+
+
+class EmotionTriggerReportResponse(APIModel):
+    available: bool
+    error: str | None = None
+    orgFilter: str | None = None
+    forcedRerun: bool | None = None
+    interactionId: str | None = None
+    emotionShift: LLMEmotionShiftResponse | None = None
+    explainability: EvidenceAnchoredExplainabilityResponse | None = None
+    derived: LLMDerivedSignalsResponse | None = None
+
+
+class RagComplianceReportResponse(APIModel):
+    available: bool
+    error: str | None = None
+    orgFilter: str | None = None
+    forcedRerun: bool | None = None
+    interactionId: str | None = None
+    processAdherence: LLMProcessAdherenceResponse | None = None
+    nliPolicy: LLMNliPolicyResponse | None = None
+    explainability: EvidenceAnchoredExplainabilityResponse | None = None
+    policyViolations: list["PolicyViolationResponse"] | None = None
+
+
+class LLMTriggerReportResponse(APIModel):
+    available: bool
+    error: str | None = None
+    orgFilter: str | None = None
+    forcedRerun: bool | None = None
+    interactionId: str | None = None
+    emotionShift: LLMEmotionShiftResponse | None = None
+    processAdherence: LLMProcessAdherenceResponse | None = None
+    nliPolicy: LLMNliPolicyResponse | None = None
+    explainability: EvidenceAnchoredExplainabilityResponse | None = None
+    derived: LLMDerivedSignalsResponse | None = None
+
+
+class InteractionDetailSummaryResponse(APIModel):
+    id: str
+    agentName: str
+    agentId: str
+    date: str
+    time: str
+    duration: str
+    language: str
+    overallScore: float
+    empathyScore: float
+    policyScore: float
+    resolutionScore: float
+    resolved: bool
+    hasViolation: bool
+    hasOverlap: bool
+    responseTime: str
+    status: str
+    audioFilePath: str | None = None
+
+
+class UtteranceResponse(APIModel):
+    id: str
+    interactionId: str
+    speaker: str
+    sequenceIndex: int | None = None
+    text: str
+    startTime: float
+    endTime: float
+    timestamp: str
+    emotion: str
+    confidence: float
+    textEmotion: str | None = None
+    textConfidence: float | None = None
+    fusedEmotion: str | None = None
+    fusedConfidence: float | None = None
+    fusionModel: str | None = None
+
+
+class EmotionEventResponse(APIModel):
+    id: str
+    interactionId: str
+    previousEmotion: str
+    newEmotion: str
+    fromEmotion: str
+    toEmotion: str
+    jumpToSeconds: float
+    timestamp: str
+    confidenceScore: float
+    delta: float
+    speaker: str
+    llmJustification: str
+    justification: str
+
+
+class PolicyViolationResponse(APIModel):
+    id: str
+    interactionId: str
+    policyName: str
+    policyTitle: str
+    category: str
+    description: str
+    reasoning: str
+    severity: str
+    score: float
+
+
+class EmotionComparisonResponse(APIModel):
+    totalUtterances: int
+    distributions: dict[str, Any]
+    quality: dict[str, Any]
+    evidence: dict[str, Any] | None = None
+
+
+class InteractionDetailResponse(APIModel):
+    interaction: InteractionDetailSummaryResponse
+    utterances: list[UtteranceResponse]
+    emotionComparison: EmotionComparisonResponse
+    ragCompliance: RagComplianceReportResponse | None = None
+    emotionTriggers: EmotionTriggerReportResponse | None = None
+    llmTriggers: LLMTriggerReportResponse | None = None
+    emotionEvents: list[EmotionEventResponse]
+    policyViolations: list[PolicyViolationResponse]
+
+
+RagComplianceReportResponse.model_rebuild()
 
 
 @router.post("")
@@ -321,6 +553,54 @@ def _map_emotion_trigger_report(report) -> dict:
             "utteranceIndex": citation.utterance_index,
         }
 
+    def _span_to_dict(span) -> dict | None:
+        if not span:
+            return None
+        return {
+            "utteranceIndex": span.utterance_index,
+            "speaker": span.speaker,
+            "quote": span.quote,
+            "timestamp": span.timestamp,
+            "startSeconds": span.start_seconds,
+            "endSeconds": span.end_seconds,
+        }
+
+    def _policy_reference_to_dict(reference) -> dict | None:
+        if not reference:
+            return None
+        return {
+            "source": reference.source,
+            "reference": reference.reference,
+            "clause": reference.clause,
+            "version": reference.version,
+            "category": reference.category,
+            "provenance": reference.provenance,
+        }
+
+    def _trigger_attribution_to_dict(attribution) -> dict:
+        return {
+            "attributionId": attribution.attribution_id,
+            "family": attribution.family,
+            "triggerType": attribution.trigger_type,
+            "title": attribution.title,
+            "verdict": attribution.verdict,
+            "confidence": attribution.confidence,
+            "evidenceSpan": _span_to_dict(attribution.evidence_span),
+            "policyReference": _policy_reference_to_dict(attribution.policy_reference),
+            "reasoning": attribution.reasoning,
+            "evidenceChain": attribution.evidence_chain,
+            "supportingQuotes": attribution.supporting_quotes,
+        }
+
+    explainability = {
+        "triggerAttributions": [
+            _trigger_attribution_to_dict(attribution)
+            for attribution in report.explainability.trigger_attributions
+            if attribution.family == "emotion"
+        ],
+        "claimProvenance": [],
+    }
+
     return {
         "available": True,
         "interactionId": str(report.interaction_id),
@@ -334,7 +614,9 @@ def _map_emotion_trigger_report(report) -> dict:
             "evidenceQuotes": report.emotion_shift.evidence_quotes,
             "citations": [_citation_to_dict(c) for c in report.emotion_shift.citations],
             "insufficientEvidence": report.emotion_shift.insufficient_evidence,
+            "confidenceScore": report.emotion_shift.confidence_score,
         },
+        "explainability": explainability,
         "derived": {
             "customerText": report.derived_customer_text,
             "acousticEmotion": report.derived_acoustic_emotion,
@@ -353,6 +635,71 @@ def _map_rag_compliance_report(report) -> dict:
             "utteranceIndex": citation.utterance_index,
         }
 
+    def _span_to_dict(span) -> dict | None:
+        if not span:
+            return None
+        return {
+            "utteranceIndex": span.utterance_index,
+            "speaker": span.speaker,
+            "quote": span.quote,
+            "timestamp": span.timestamp,
+            "startSeconds": span.start_seconds,
+            "endSeconds": span.end_seconds,
+        }
+
+    def _policy_reference_to_dict(reference) -> dict | None:
+        if not reference:
+            return None
+        return {
+            "source": reference.source,
+            "reference": reference.reference,
+            "clause": reference.clause,
+            "version": reference.version,
+            "category": reference.category,
+            "provenance": reference.provenance,
+        }
+
+    def _trigger_attribution_to_dict(attribution) -> dict:
+        return {
+            "attributionId": attribution.attribution_id,
+            "family": attribution.family,
+            "triggerType": attribution.trigger_type,
+            "title": attribution.title,
+            "verdict": attribution.verdict,
+            "confidence": attribution.confidence,
+            "evidenceSpan": _span_to_dict(attribution.evidence_span),
+            "policyReference": _policy_reference_to_dict(attribution.policy_reference),
+            "reasoning": attribution.reasoning,
+            "evidenceChain": attribution.evidence_chain,
+            "supportingQuotes": attribution.supporting_quotes,
+        }
+
+    def _claim_provenance_to_dict(provenance) -> dict:
+        return {
+            "claimId": provenance.claim_id,
+            "claimText": provenance.claim_text,
+            "claimSpan": _span_to_dict(provenance.claim_span),
+            "retrievedPolicy": _policy_reference_to_dict(provenance.retrieved_policy),
+            "semanticSimilarity": provenance.semantic_similarity,
+            "nliVerdict": provenance.nli_verdict,
+            "confidence": provenance.confidence,
+            "reasoning": provenance.reasoning,
+            "provenance": provenance.provenance,
+            "supportingQuotes": provenance.supporting_quotes,
+        }
+
+    explainability = {
+        "triggerAttributions": [
+            _trigger_attribution_to_dict(attribution)
+            for attribution in report.explainability.trigger_attributions
+            if attribution.family in {"sop", "policy"}
+        ],
+        "claimProvenance": [
+            _claim_provenance_to_dict(provenance)
+            for provenance in report.explainability.claim_provenance
+        ],
+    }
+
     return {
         "available": True,
         "interactionId": str(report.interaction_id),
@@ -365,6 +712,7 @@ def _map_rag_compliance_report(report) -> dict:
             "evidenceQuotes": report.process_adherence.evidence_quotes,
             "citations": [_citation_to_dict(c) for c in report.process_adherence.citations],
             "insufficientEvidence": report.process_adherence.insufficient_evidence,
+            "confidenceScore": report.process_adherence.confidence_score,
         },
         "nliPolicy": {
             "nliCategory": report.nli_policy.nli_category,
@@ -376,7 +724,10 @@ def _map_rag_compliance_report(report) -> dict:
             "policyCategory": report.nli_policy.policy_category,
             "conflictResolutionApplied": report.nli_policy.conflict_resolution_applied,
             "insufficientEvidence": report.nli_policy.insufficient_evidence,
+            "confidenceScore": report.nli_policy.confidence_score,
+            "policyAlignmentScore": report.nli_policy.policy_alignment_score,
         },
+        "explainability": explainability,
     }
 
 
@@ -390,6 +741,13 @@ def _map_llm_trigger_report(report) -> dict:
         "emotionShift": emotion_payload["emotionShift"],
         "processAdherence": rag_payload["processAdherence"],
         "nliPolicy": rag_payload["nliPolicy"],
+        "explainability": {
+            "triggerAttributions": [
+                *emotion_payload["explainability"]["triggerAttributions"],
+                *rag_payload["explainability"]["triggerAttributions"],
+            ],
+            "claimProvenance": rag_payload["explainability"]["claimProvenance"],
+        },
         "derived": emotion_payload["derived"],
     }
 
@@ -468,10 +826,10 @@ async def list_interactions(session: SessionDep, current_user: CurrentUser):
             "time": row.interaction_date.strftime("%I:%M %p") if row.interaction_date else "",
             "duration": f"{mins}:{secs:02d}",
             "language": row.language_detected or "Unknown",
-            "overallScore": round(row.overall_score * 10, 0) if row.overall_score else 0,
-            "empathyScore": round(row.empathy_score * 10, 0) if row.empathy_score else 0,
-            "policyScore": round(row.policy_score * 10, 0) if row.policy_score else 0,
-            "resolutionScore": round(row.resolution_score * 10, 0) if row.resolution_score else 0,
+            "overallScore": round(row.overall_score * 100, 0) if row.overall_score else 0,
+            "empathyScore": round(row.empathy_score * 100, 0) if row.empathy_score else 0,
+            "policyScore": round(row.policy_score * 100, 0) if row.policy_score else 0,
+            "resolutionScore": round(row.resolution_score * 100, 0) if row.resolution_score else 0,
             "resolved": row.was_resolved or False,
             "hasViolation": row.viol_count > 0,
             "hasOverlap": row.has_overlap,
@@ -483,7 +841,7 @@ async def list_interactions(session: SessionDep, current_user: CurrentUser):
     return interactions
 
 
-@router.get("/{interaction_id}")
+@router.get("/{interaction_id}", response_model=InteractionDetailResponse)
 async def get_interaction_detail(
     interaction_id: UUID,
     session: SessionDep,
@@ -555,6 +913,7 @@ async def get_interaction_detail(
                 "id": str(u.id),
                 "interactionId": str(u.interaction_id),
                 "speaker": u.speaker_role.value if u.speaker_role else "unknown",
+                "sequenceIndex": u.sequence_index,
                 "text": u.text or "",
                 "startTime": u.start_time_seconds,
                 "endTime": u.end_time_seconds,
@@ -662,6 +1021,8 @@ async def get_interaction_detail(
                 session=session,
                 interaction_id=interaction_id,
                 org_filter=resolved_org_filter,
+                force_rerun=llm_force_rerun,
+                commit_cache=True,
             )
             emotion_triggers = _map_emotion_trigger_report(report)
             rag_compliance = _map_rag_compliance_report(report)
@@ -710,10 +1071,10 @@ async def get_interaction_detail(
             "time": row.interaction_date.strftime("%I:%M %p") if row.interaction_date else "",
             "duration": f"{mins}:{secs:02d}",
             "language": row.language_detected or "Unknown",
-            "overallScore": round(row.overall_score * 10, 0) if row.overall_score else 0,
-            "empathyScore": round(row.empathy_score * 10, 0) if row.empathy_score else 0,
-            "policyScore": round(row.policy_score * 10, 0) if row.policy_score else 0,
-            "resolutionScore": round(row.resolution_score * 10, 0) if row.resolution_score else 0,
+            "overallScore": round(row.overall_score * 100, 0) if row.overall_score else 0,
+            "empathyScore": round(row.empathy_score * 100, 0) if row.empathy_score else 0,
+            "policyScore": round(row.policy_score * 100, 0) if row.policy_score else 0,
+            "resolutionScore": round(row.resolution_score * 100, 0) if row.resolution_score else 0,
             "resolved": row.was_resolved or False,
             "hasViolation": len(policy_violations) > 0,
             "hasOverlap": row.has_overlap,
