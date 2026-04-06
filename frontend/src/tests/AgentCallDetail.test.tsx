@@ -259,62 +259,32 @@ describe('AgentCallDetail', () => {
         expect(screen.getByText('Neutral 53%')).toBeInTheDocument()
     })
 
-    it('reruns llm insights with forced refresh after the button is pressed', async () => {
-        let resolveRefresh: ((value: ReturnType<typeof makeDetail>) => void) | undefined
-        const refreshPromise = new Promise<ReturnType<typeof makeDetail>>((resolve) => {
-            resolveRefresh = resolve
-        })
-
-        getInteractionDetailMock
-            .mockResolvedValueOnce(
-                makeDetail({
-                    id: 'int-007',
-                    llmTriggers: {
-                        available: true,
-                        processAdherence: {
-                            detectedTopic: 'billing_issue',
-                            isResolved: false,
-                            efficiencyScore: 6,
-                            justification: 'Initial pass.',
-                            missingSopSteps: [],
-                        },
-                    },
-                })
-            )
-            .mockReturnValueOnce(refreshPromise)
-
-        renderWithId('int-007')
-
-        expect(await screen.findByText('LLM Coaching Insights')).toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: 'Refresh LLM' }))
-
-        await waitFor(() => {
-            expect(getInteractionDetailMock).toHaveBeenNthCalledWith(2, 'int-007', {
-                includeLLMTriggers: true,
-                llmForceRerun: true,
-            })
-        })
-        expect(screen.getByRole('button', { name: 'Refreshing...' })).toBeInTheDocument()
-
-        resolveRefresh?.(
+    it('uses cached llm insights without offering a force refresh action', async () => {
+        getInteractionDetailMock.mockResolvedValue(
             makeDetail({
                 id: 'int-007',
                 llmTriggers: {
                     available: true,
                     processAdherence: {
                         detectedTopic: 'billing_issue',
-                        isResolved: true,
-                        efficiencyScore: 8,
-                        justification: 'Re-evaluated after refresh.',
+                        isResolved: false,
+                        efficiencyScore: 6,
+                        justification: 'Initial pass.',
                         missingSopSteps: [],
                     },
                 },
             })
         )
 
-        expect(await screen.findByText('Resolved')).toBeInTheDocument()
+        renderWithId('int-007')
+
+        expect(await screen.findByText('LLM Coaching Insights')).toBeInTheDocument()
+
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: 'Refresh LLM' })).toBeInTheDocument()
+            expect(getInteractionDetailMock).toHaveBeenCalledWith('int-007', {
+                includeLLMTriggers: true,
+            })
         })
+        expect(screen.queryByRole('button', { name: /Refresh LLM/i })).not.toBeInTheDocument()
     })
 })

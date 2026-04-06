@@ -40,6 +40,13 @@ from app.models.enums import ProcessingStatus, UserRole
 router = APIRouter()
 
 
+def _interaction_scope_filters(current_user: CurrentUser) -> list:
+    filters = [Interaction.organization_id == current_user.organization_id]
+    if current_user.role == UserRole.agent:
+        filters.append(Interaction.agent_id == current_user.id)
+    return filters
+
+
 class APIModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -363,7 +370,7 @@ async def get_interaction_processing_status(
     interaction_result = await session.exec(
         select(Interaction).where(
             Interaction.id == interaction_id,
-            Interaction.organization_id == current_user.organization_id,
+            *_interaction_scope_filters(current_user),
         )
     )
     interaction = interaction_result.first()
@@ -401,7 +408,7 @@ async def reprocess_interaction(
     interaction_result = await session.exec(
         select(Interaction).where(
             Interaction.id == interaction_id,
-            Interaction.organization_id == current_user.organization_id,
+            *_interaction_scope_filters(current_user),
         )
     )
     interaction = interaction_result.first()
@@ -807,7 +814,7 @@ async def list_interactions(session: SessionDep, current_user: CurrentUser):
         .join(UserModel, UserModel.id == Interaction.agent_id)
         .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
         .outerjoin(violation_subq, violation_subq.c.interaction_id == Interaction.id)
-        .where(Interaction.organization_id == current_user.organization_id)
+        .where(*_interaction_scope_filters(current_user))
         .order_by(Interaction.interaction_date.desc())
     )
     result = await session.exec(stmt)
@@ -875,7 +882,7 @@ async def get_interaction_detail(
         .outerjoin(InteractionScore, InteractionScore.interaction_id == Interaction.id)
         .where(
             Interaction.id == interaction_id,
-            Interaction.organization_id == current_user.organization_id
+            *_interaction_scope_filters(current_user),
         )
     )
     result = await session.exec(stmt)
@@ -893,7 +900,7 @@ async def get_interaction_detail(
         .join(Interaction, Utterance.interaction_id == Interaction.id)
         .where(
             Utterance.interaction_id == interaction_id,
-            Interaction.organization_id == current_user.organization_id
+            *_interaction_scope_filters(current_user),
         )
         .order_by(Utterance.start_time_seconds)
     )
@@ -1098,7 +1105,7 @@ async def get_interaction_emotion_comparison(interaction_id: UUID, session: Sess
     interaction_result = await session.exec(
         select(Interaction.id).where(
             Interaction.id == interaction_id,
-            Interaction.organization_id == current_user.organization_id
+            *_interaction_scope_filters(current_user),
         )
     )
     if not interaction_result.first():
@@ -1139,7 +1146,7 @@ async def get_interaction_audio(interaction_id: UUID, session: SessionDep, curre
     result = await session.exec(
         select(Interaction.audio_file_path, Interaction.duration_seconds).where(
             Interaction.id == interaction_id,
-            Interaction.organization_id == current_user.organization_id
+            *_interaction_scope_filters(current_user),
         )
     )
     row = result.first()

@@ -1,7 +1,7 @@
 describe('Agent Dashboard', () => {
   beforeEach(() => {
     cy.loginAs('agent');
-    cy.wait('@getAgents');
+    cy.wait('@getUserMe');
     cy.wait('@getAgentProfile');
   });
 

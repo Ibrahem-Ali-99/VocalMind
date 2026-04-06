@@ -5,24 +5,27 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 
 import { AgentDashboard } from '../app/components/agent/AgentDashboard'
 
-const { getAgentsMock, getAgentProfileMock } = vi.hoisted(() => ({
+const { getAgentsMock, getAgentProfileMock, getUserMeMock } = vi.hoisted(() => ({
     getAgentsMock: vi.fn(),
     getAgentProfileMock: vi.fn(),
+    getUserMeMock: vi.fn(),
 }))
 
 vi.mock('../app/services/api', () => ({
     getAgents: getAgentsMock,
     getAgentProfile: getAgentProfileMock,
+    getUserMe: getUserMeMock,
 }))
 
 describe('AgentDashboard', () => {
     beforeEach(() => {
         getAgentsMock.mockReset()
         getAgentProfileMock.mockReset()
+        getUserMeMock.mockReset()
     })
 
-    it('loads the first available agent profile when no route param is present', async () => {
-        getAgentsMock.mockResolvedValue([{ id: 'agent-1', name: 'Agent A', role: 'Support Agent' }])
+    it('loads the authenticated agent profile when no route param is present', async () => {
+        getUserMeMock.mockResolvedValue({ id: 'agent-1', role: 'agent' })
         getAgentProfileMock.mockResolvedValue({
             id: 'agent-1',
             name: 'Agent A',
@@ -51,10 +54,12 @@ describe('AgentDashboard', () => {
         await waitFor(() => {
             expect(getAgentProfileMock).toHaveBeenCalledWith('agent-1')
         })
+        expect(getAgentsMock).not.toHaveBeenCalled()
         expect(await screen.findByText('1.1s')).toBeInTheDocument()
     })
 
     it('shows a clear error when there are no agents to load', async () => {
+        getUserMeMock.mockRejectedValue(new Error('no session'))
         getAgentsMock.mockResolvedValue([])
 
         render(
@@ -68,7 +73,7 @@ describe('AgentDashboard', () => {
     })
 
     it('renders recent calls from the loaded agent profile', async () => {
-        getAgentsMock.mockResolvedValue([{ id: 'agent-1', name: 'Agent A', role: 'Support Agent' }])
+        getUserMeMock.mockResolvedValue({ id: 'agent-1', role: 'agent' })
         getAgentProfileMock.mockResolvedValue({
             id: 'agent-1',
             name: 'Agent A',
@@ -110,6 +115,7 @@ describe('AgentDashboard', () => {
     })
 
     it('uses the route agent id directly when one is present', async () => {
+        getUserMeMock.mockResolvedValue({ id: 'agent-self', role: 'agent' })
         getAgentProfileMock.mockResolvedValue({
             id: 'agent-99',
             name: 'Agent Route',
@@ -145,6 +151,7 @@ describe('AgentDashboard', () => {
     })
 
     it('shows an error state when the profile request fails', async () => {
+        getUserMeMock.mockResolvedValue({ id: 'agent-self', role: 'agent' })
         getAgentProfileMock.mockRejectedValue(new Error('profile unavailable'))
 
         render(

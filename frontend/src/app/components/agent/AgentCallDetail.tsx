@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Target, Play, Headphones, Loader2, AlertTriangle } from "lucide-react";
 import { getInteractionDetail, getAudioUrl, type InteractionDetail } from "../../services/api";
@@ -9,15 +9,13 @@ export function AgentCallDetail() {
   const { id } = useParams();
   const [data, setData] = useState<InteractionDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshingLLM, setRefreshingLLM] = useState(false);
-  const [llmRefreshTick, setLlmRefreshTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const handleJumpTo = (seconds: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = seconds;
-      audioRef.current.play().catch(e => console.error("Playback failed:", e));
+      audioRef.current.play().catch((e) => console.error("Playback failed:", e));
     }
   };
 
@@ -25,15 +23,13 @@ export function AgentCallDetail() {
     if (!id) return;
     getInteractionDetail(id, {
       includeLLMTriggers: true,
-      llmForceRerun: llmRefreshTick > 0,
     })
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => {
         setLoading(false);
-        setRefreshingLLM(false);
       });
-  }, [id, llmRefreshTick]);
+  }, [id]);
 
   if (loading) {
     return (
@@ -97,32 +93,28 @@ export function AgentCallDetail() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Back Button */}
       <Link
-        to="/agent"
+        to="/agent/calls"
         className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#10B981] hover:underline"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to My Calls
       </Link>
 
-      {/* Call Header Card */}
       <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
         <div className="flex items-start justify-between mb-6">
-          {/* Left: Info */}
           <div>
             <div className="text-label mb-2">
               CALL DETAIL
             </div>
             <h2 className="text-[22px] font-bold text-foreground mb-2">
-              {callData.date} · {callData.time}
+              {callData.date} • {callData.time}
             </h2>
             <div className="text-[13px] text-muted-foreground mb-2">
-              {callData.duration} · {callData.language}
+              {callData.duration} • {callData.language}
             </div>
           </div>
 
-          {/* Right: Score Ring */}
           <div className="flex flex-col items-center">
             <div className="relative w-[90px] h-[90px]">
               <svg className="w-full h-full -rotate-90">
@@ -146,7 +138,7 @@ export function AgentCallDetail() {
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[20px] font-normal" style={{ fontFamily: 'var(--font-serif)', color: getScoreColor(callData.overallScore) }}>
+                <span className="text-[20px] font-normal" style={{ fontFamily: "var(--font-serif)", color: getScoreColor(callData.overallScore) }}>
                   {callData.overallScore}%
                 </span>
               </div>
@@ -154,10 +146,8 @@ export function AgentCallDetail() {
           </div>
         </div>
 
-        {/* Divider */}
         <div className="h-px bg-border mb-4" />
 
-        {/* Audio Player (if available) */}
         {interaction.audioFilePath && (
           <div className="bg-muted/30 border border-border rounded-2xl p-4 flex items-center gap-4 mb-6 transition-all shadow-inner">
             <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
@@ -165,10 +155,10 @@ export function AgentCallDetail() {
             </div>
             <div className="flex-1">
               <p className="text-[14px] font-semibold text-foreground mb-2">Session Recording</p>
-              <audio 
+              <audio
                 ref={audioRef}
-                controls 
-                className="w-full h-8" 
+                controls
+                className="w-full h-8"
                 src={getAudioUrl(interaction.id)}
                 preload="metadata"
               >
@@ -178,7 +168,6 @@ export function AgentCallDetail() {
           </div>
         )}
 
-        {/* Score Grid */}
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-primary/10 rounded-lg p-3 text-center">
             <div className="text-[11px] text-muted-foreground mb-1">Empathy</div>
@@ -207,7 +196,6 @@ export function AgentCallDetail() {
         </div>
       </div>
 
-      {/* Coaching Points Card (only if violations exist) */}
       {policyViolations.length > 0 && (
         <div className="bg-warning/5 border border-warning/20 rounded-[14px] p-6 transition-all">
           <div className="flex items-center gap-2 mb-1">
@@ -217,7 +205,7 @@ export function AgentCallDetail() {
             </h3>
           </div>
           <p className="text-[11px] italic text-muted-foreground mb-4">
-            Areas to focus on — sourced from policy_compliance WHERE is_compliant = FALSE
+            Areas to focus on from saved policy compliance findings.
           </p>
 
           <div className="space-y-3">
@@ -230,7 +218,7 @@ export function AgentCallDetail() {
                   {violation.reasoning}
                 </p>
                 <div className="text-[12px] font-semibold text-warning">
-                  Score: {violation.score}% — target 80%+
+                  Score: {violation.score}% • target 80%+
                 </div>
               </div>
             ))}
@@ -238,7 +226,6 @@ export function AgentCallDetail() {
         </div>
       )}
 
-      {/* Emotion Comparison Panel */}
       {data.emotionComparison && (
         <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm">
           <EmotionComparisonPanel data={data.emotionComparison} />
@@ -249,17 +236,9 @@ export function AgentCallDetail() {
         <div className="bg-white rounded-[14px] border border-[#E5E7EB] p-6 shadow-sm space-y-4">
           <div>
             <h3 className="text-[16px] font-semibold text-[#111827] mb-1">LLM Coaching Insights</h3>
-            <p className="text-[11px] italic text-[#9CA3AF]">Process and policy consistency checks</p>
-            <button
-              onClick={() => {
-                setRefreshingLLM(true);
-                setLlmRefreshTick((v) => v + 1);
-              }}
-              data-cy="llm-refresh"
-              className="mt-2 px-3 py-1.5 border border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8] rounded text-[12px] font-semibold hover:bg-[#DBEAFE] transition-colors"
-            >
-              {refreshingLLM ? "Refreshing..." : "Refresh LLM"}
-            </button>
+            <p className="text-[11px] italic text-[#9CA3AF]">
+              Cached coaching insights saved during processing. Use call reprocessing to regenerate them.
+            </p>
           </div>
 
           {!llmTriggers.available ? (
@@ -305,13 +284,12 @@ export function AgentCallDetail() {
         </div>
       )}
 
-      {/* Transcript Card */}
       <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
         <h3 className="text-[16px] font-semibold text-foreground mb-1">
           Transcript
         </h3>
         <p className="text-[11px] italic text-muted-foreground mb-4">
-          utterances ordered by sequence_index
+          Utterances ordered by sequence index.
         </p>
 
         <div className="space-y-4 max-h-[280px] overflow-y-auto">
@@ -324,25 +302,21 @@ export function AgentCallDetail() {
                 key={utterance.id}
                 className={`flex gap-3 ${isAgent ? "" : "flex-row-reverse"}`}
               >
-                {/* Avatar */}
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold flex-shrink-0 ${
                     isAgent ? "bg-primary" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {isAgent ? "M" : "C"}
+                  {isAgent ? "A" : "C"}
                 </div>
 
-                {/* Bubble */}
                 <div
                   className={`flex-1 max-w-[80%] p-3 ${
                     isAgent
                       ? "bg-success/10 rounded-[0_12px_12px_12px]"
                       : "bg-muted/50 rounded-[12px_0_12px_12px]"
                   }`}
-                  dir="rtl"
                 >
-                  {/* Header */}
                   <div className={`flex items-center gap-2 mb-1 ${isAgent ? "" : "flex-row-reverse"}`}>
                     <span className="text-[13px] font-semibold text-muted-foreground">
                       {isAgent ? "Me" : "Customer"}
@@ -358,7 +332,6 @@ export function AgentCallDetail() {
                     </span>
                   </div>
 
-                  {/* Text */}
                   <p className="text-[14px] text-foreground">
                     {utterance.text}
                   </p>
@@ -369,13 +342,12 @@ export function AgentCallDetail() {
         </div>
       </div>
 
-      {/* Customer Emotion Journey Card */}
       <div className="bg-card rounded-[14px] border border-border p-6 transition-all">
         <h3 className="text-[16px] font-semibold text-foreground mb-1">
           Customer Emotion Journey
         </h3>
         <p className="text-[11px] italic text-muted-foreground mb-4">
-          emotion_events — how customer sentiment changed during this call
+          Emotion changes across the call timeline.
         </p>
 
         <div className="space-y-4">
@@ -393,12 +365,11 @@ export function AgentCallDetail() {
                     : "bg-destructive/5 border-destructive/20"
                 }`}
               >
-                {/* Row 1: Emotion Change + Jump Button */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span
                       className="px-2.5 py-1 rounded-full text-[11px] font-bold"
-                      style={{ fontFamily: 'var(--font-mono)', backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' }}
+                      style={{ fontFamily: "var(--font-mono)", backgroundColor: "var(--muted)", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
                     >
                       {event.timestamp}
                     </span>
@@ -420,7 +391,7 @@ export function AgentCallDetail() {
                     </span>
                   </div>
 
-                  <button 
+                  <button
                     onClick={() => handleJumpTo(event.jumpToSeconds)}
                     className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary border border-primary/30 rounded-lg text-[12px] font-bold hover:bg-primary/20 transition-all shadow-sm"
                   >
@@ -429,7 +400,6 @@ export function AgentCallDetail() {
                   </button>
                 </div>
 
-                {/* Row 2: Justification */}
                 <div className="bg-background border-l-4 border-success rounded p-3 shadow-inner">
                   <p className="text-[12px] italic text-muted-foreground leading-relaxed">
                     {event.justification}

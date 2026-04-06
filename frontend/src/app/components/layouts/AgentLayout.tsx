@@ -39,6 +39,7 @@ export function AgentLayout() {
 
   const getPageTitle = () => {
     if (location.pathname === "/agent") return "My Performance";
+    if (location.pathname === "/agent/calls") return "My Calls";
     if (location.pathname.includes("calls")) return "Call Detail";
     return "My Performance";
   };

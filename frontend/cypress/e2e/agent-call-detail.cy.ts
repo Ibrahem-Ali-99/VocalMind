@@ -15,64 +15,13 @@ describe('Agent Call Detail', () => {
     cy.contains('Contradiction').should('exist');
   });
 
-  it('refreshes the llm insights with a rerun request', () => {
-    const refreshedDetail = buildInteractionDetail(
-      buildInteractionSummary({
-        id: 'int-001',
-        agentId: 'agent-001',
-        agentName: 'Sarah M.',
-      }),
-      {
-        llmTriggers: {
-          available: true,
-          interactionId: 'int-001',
-          processAdherence: {
-            detectedTopic: 'Refund follow-up',
-            isResolved: false,
-            efficiencyScore: 6,
-            justification: 'Updated rerun justification.',
-            missingSopSteps: ['Supervisor escalation'],
-            evidenceQuotes: [],
-            citations: [],
-          },
-          nliPolicy: {
-            nliCategory: 'Benign Deviation',
-            justification: 'Updated policy view.',
-            evidenceQuotes: [],
-            citations: [],
-          },
-          emotionShift: {
-            isDissonanceDetected: false,
-            dissonanceType: 'None',
-            rootCause: 'Updated emotion analysis.',
-            currentCustomerEmotion: 'calmer',
-            currentEmotionReasoning: 'Customer accepted the next step.',
-            counterfactualCorrection: 'Maintain current pacing.',
-            evidenceQuotes: [],
-            citations: [],
-          },
-        },
-      },
-    );
-
+  it('shows cached llm insights without exposing a refresh action', () => {
     cy.visitAs('agent', '/agent/calls/int-001');
     cy.wait('@getInteractionDetail');
     cy.contains('Account Login').should('be.visible');
 
-    cy.intercept(
-      'GET',
-      '**/api/v1/interactions/int-001*llm_force_rerun=true*',
-      {
-        statusCode: 200,
-        body: refreshedDetail,
-      },
-    ).as('refreshLLM');
-
-    cy.get('[data-cy="llm-refresh"]').click();
-
-    cy.wait('@refreshLLM');
-    cy.contains('Refund follow-up').should('be.visible');
-    cy.contains('Updated policy view.').should('be.visible');
+    cy.contains('LLM Coaching Insights').should('be.visible');
+    cy.get('[data-cy="llm-refresh"]').should('not.exist');
   });
 
   it('shows an unavailable state when llm insights are offline', () => {

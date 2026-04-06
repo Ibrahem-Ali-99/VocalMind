@@ -33,13 +33,15 @@ describe('Shared shell behavior', () => {
 
   it('uses the under-development back action to return to the previous screen', () => {
     cy.loginAs('agent');
-    cy.wait('@getAgents');
+    cy.wait('@getUserMe');
     cy.wait('@getAgentProfile');
 
-    cy.contains('My Calls').click();
+    cy.visit('/agent/coming-soon');
     cy.contains('Under Development').should('be.visible');
 
     cy.get('[data-cy="under-development-back"]').click();
+    cy.wait('@getUserMe');
+    cy.wait('@getAgentProfile');
 
     cy.location('pathname').should('eq', '/agent');
     cy.contains('My Performance').should('be.visible');

@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { Star, Phone, Target, Zap, Loader2, AlertTriangle } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { getAgentProfile, getAgents, type AgentProfile } from "../../services/api";
+import { getAgentProfile, getAgents, getUserMe, type AgentProfile } from "../../services/api";
 
 const MinimalTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
@@ -25,8 +25,19 @@ export function AgentDashboard() {
     const loadAgent = async () => {
       try {
         let targetId = routeAgentId;
+
         if (!targetId) {
-          // No auth — auto-select the first agent
+          try {
+            const currentUser = await getUserMe();
+            if (currentUser.role === "agent") {
+              targetId = currentUser.id;
+            }
+          } catch {
+            // Fall back to the first available agent when auth lookup is unavailable.
+          }
+        }
+
+        if (!targetId) {
           const agents = await getAgents();
           if (agents.length === 0) {
             setError("No agents found in the database");
@@ -34,6 +45,7 @@ export function AgentDashboard() {
           }
           targetId = agents[0].id;
         }
+
         const profile = await getAgentProfile(targetId);
         setData(profile);
       } catch (err: unknown) {
@@ -42,7 +54,8 @@ export function AgentDashboard() {
         setLoading(false);
       }
     };
-    loadAgent();
+
+    void loadAgent();
   }, [routeAgentId]);
 
   if (loading) {
@@ -72,28 +85,25 @@ export function AgentDashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Hero Card */}
       <div
         className="rounded-2xl p-7 text-white"
         style={{ background: "linear-gradient(135deg, #064E3B 0%, #0F766E 100%)" }}
       >
         <div className="flex items-start justify-between mb-6">
-          {/* Left */}
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-white/60 mb-2">
               MY PERFORMANCE
             </div>
-            <h2 className="text-[28px] leading-none mb-2" style={{ fontFamily: 'var(--font-serif)' }}>
+            <h2 className="text-[28px] leading-none mb-2" style={{ fontFamily: "var(--font-serif)" }}>
               {data.name}
             </h2>
             <p className="text-[13px] text-white/60">
-              {data.role} · VocalMind Corp
+              {data.role} • VocalMind Corp
             </p>
           </div>
 
-          {/* Right */}
           <div className="text-right">
-            <div className="text-[56px] leading-none mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+            <div className="text-[56px] leading-none mb-1" style={{ fontFamily: "var(--font-serif)" }}>
               {data.overallScore}%
             </div>
             <div className="text-[11px] text-white/50">
@@ -102,13 +112,11 @@ export function AgentDashboard() {
           </div>
         </div>
 
-        {/* Divider */}
         <div className="h-px bg-primary/20 mb-5" />
 
-        {/* Stats Row */}
         <div className="grid grid-cols-3 gap-6">
           <div>
-            <div className="text-[36px] leading-none mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+            <div className="text-[36px] leading-none mb-1" style={{ fontFamily: "var(--font-serif)" }}>
               {data.callsThisWeek}
             </div>
             <div className="text-[11px] text-white/50">
@@ -116,7 +124,7 @@ export function AgentDashboard() {
             </div>
           </div>
           <div>
-            <div className="text-[36px] leading-none mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+            <div className="text-[36px] leading-none mb-1" style={{ fontFamily: "var(--font-serif)" }}>
               #{data.teamRank}
             </div>
             <div className="text-[11px] text-white/50">
@@ -124,7 +132,7 @@ export function AgentDashboard() {
             </div>
           </div>
           <div>
-            <div className="text-[36px] leading-none mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+            <div className="text-[36px] leading-none mb-1" style={{ fontFamily: "var(--font-serif)" }}>
               {data.resolutionRate}%
             </div>
             <div className="text-[11px] text-white/50">
@@ -134,9 +142,7 @@ export function AgentDashboard() {
         </div>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4">
-        {/* Avg Score */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
             <h2 className="text-[13px] font-bold text-muted-foreground">Overall Score</h2>
@@ -144,7 +150,7 @@ export function AgentDashboard() {
               <Star className="w-[18px] h-[18px] text-success" />
             </div>
           </div>
-          <div className="text-[40px] leading-none text-success mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+          <div className="text-[40px] leading-none text-success mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {data.overallScore}%
           </div>
           <div className="text-[12px] text-muted-foreground">
@@ -152,7 +158,6 @@ export function AgentDashboard() {
           </div>
         </div>
 
-        {/* Calls Today */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
             <h2 className="text-[13px] font-bold text-muted-foreground">Total Calls</h2>
@@ -160,7 +165,7 @@ export function AgentDashboard() {
               <Phone className="w-[18px] h-[18px] text-success" />
             </div>
           </div>
-          <div className="text-[40px] leading-none text-success mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+          <div className="text-[40px] leading-none text-success mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {data.totalCalls}
           </div>
           <div className="text-[12px] text-muted-foreground">
@@ -168,7 +173,6 @@ export function AgentDashboard() {
           </div>
         </div>
 
-        {/* Resolution */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
             <h2 className="text-[13px] font-bold text-muted-foreground">Resolution Rate</h2>
@@ -176,7 +180,7 @@ export function AgentDashboard() {
               <Target className="w-[18px] h-[18px] text-[#8B5CF6]" />
             </div>
           </div>
-          <div className="text-[40px] leading-none text-accent-foreground mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+          <div className="text-[40px] leading-none text-accent-foreground mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {data.resolutionRate}%
           </div>
           <div className="text-[12px] text-muted-foreground">
@@ -184,7 +188,6 @@ export function AgentDashboard() {
           </div>
         </div>
 
-        {/* Avg Response */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <div className="flex items-start justify-between mb-3">
             <h2 className="text-[13px] font-bold text-muted-foreground">Avg Response</h2>
@@ -192,7 +195,7 @@ export function AgentDashboard() {
               <Zap className="w-[18px] h-[18px] text-[#F59E0B]" />
             </div>
           </div>
-          <div className="text-[40px] leading-none text-warning mb-1" style={{ fontFamily: 'var(--font-serif)' }}>
+          <div className="text-[40px] leading-none text-warning mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {displayAvgResponseTime}
           </div>
           <div className="text-[12px] text-muted-foreground">
@@ -201,17 +204,14 @@ export function AgentDashboard() {
         </div>
       </div>
 
-      {/* Two Column Row */}
       <div className="grid grid-cols-2 gap-6">
-        {/* My Score Breakdown */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <h2 className="text-[15px] font-bold text-foreground mb-1">My Score Breakdown</h2>
           <p className="text-[11px] italic text-muted-foreground mb-5">
-            averaged for my calls — empathy, policy, resolution
+            Averaged across my calls: empathy, policy, and resolution.
           </p>
 
           <div className="space-y-4">
-            {/* Empathy Score */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[13px] text-foreground">Empathy Score</span>
@@ -225,7 +225,6 @@ export function AgentDashboard() {
               </div>
             </div>
 
-            {/* Policy Adherence */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[13px] text-foreground">Policy Adherence</span>
@@ -239,7 +238,6 @@ export function AgentDashboard() {
               </div>
             </div>
 
-            {/* Resolution */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[13px] text-foreground">Resolution</span>
@@ -255,49 +253,47 @@ export function AgentDashboard() {
           </div>
         </div>
 
-        {/* My Weekly Trend */}
         <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
           <h2 className="text-[15px] font-bold text-foreground mb-1">My Weekly Trend</h2>
           <p className="text-[11px] italic text-muted-foreground mb-4">
-            interaction_scores for my calls this week — overall score trend
+            Interaction score trend for my calls this week.
           </p>
           <ResponsiveContainer width="100%" height={190}>
             <LineChart data={data.weeklyTrend}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} opacity={0.5} />
-              <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
-              <YAxis domain={[70, 100]} tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
-            <Tooltip content={<MinimalTooltip />} cursor={{ stroke: 'var(--success)', strokeWidth: 1 }} />
-            <Line
-              type="monotone"
-              dataKey="score"
-              stroke="var(--success)"
-              strokeWidth={3}
-              dot={{ fill: 'var(--card)', stroke: 'var(--success)', strokeWidth: 2, r: 5 }}
-              activeDot={{ r: 7, strokeWidth: 0 }}
-            />
-          </LineChart>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} opacity={0.5} />
+              <XAxis dataKey="day" tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} axisLine={{ stroke: "var(--border)" }} />
+              <YAxis domain={[70, 100]} tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} axisLine={{ stroke: "var(--border)" }} />
+              <Tooltip content={<MinimalTooltip />} cursor={{ stroke: "var(--success)", strokeWidth: 1 }} />
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke="var(--success)"
+                strokeWidth={3}
+                dot={{ fill: "var(--card)", stroke: "var(--success)", strokeWidth: 2, r: 5 }}
+                activeDot={{ r: 7, strokeWidth: 0 }}
+              />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* My Recent Calls */}
       <div className="bg-card rounded-[14px] border border-border p-5 transition-all">
         <h2 className="text-[15px] font-bold text-foreground mb-1">My Recent Calls</h2>
         <p className="text-[11px] italic text-muted-foreground mb-4">
-          personal calls only, sorted by date desc
+          Personal calls only, sorted by date descending.
         </p>
 
         <div className="space-y-3">
           {data.recentCalls.map((call) => (
-              <Link
-                key={call.id}
-                to={`/agent/calls/${call.id}`}
-                className={`block border rounded-[10px] p-3.5 transition-all active:scale-[0.99] ${
-                  call.hasReview
-                    ? "bg-warning/5 border-warning/20 hover:border-warning/40"
-                    : "bg-card border-border hover:border-success/50 hover:bg-muted/10"
-                }`}
-              >
+            <Link
+              key={call.id}
+              to={`/agent/calls/${call.id}`}
+              className={`block border rounded-[10px] p-3.5 transition-all active:scale-[0.99] ${
+                call.hasReview
+                  ? "bg-warning/5 border-warning/20 hover:border-warning/40"
+                  : "bg-card border-border hover:border-success/50 hover:bg-muted/10"
+              }`}
+            >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-semibold text-foreground">
@@ -313,19 +309,19 @@ export function AgentDashboard() {
                   <div
                     className="text-[22px] leading-none mb-1"
                     style={{
-                      fontFamily: 'var(--font-serif)',
+                      fontFamily: "var(--font-serif)",
                       color: call.score >= 85 ? "var(--success)" : call.score >= 75 ? "var(--primary)" : "var(--warning)",
                     }}
                   >
                     {call.score}%
                   </div>
                   <div className={`text-[11px] font-bold ${call.resolved ? "text-success" : "text-destructive"}`}>
-                    {call.resolved ? "✓ Resolved" : "✗ Unresolved"}
+                    {call.resolved ? "Resolved" : "Unresolved"}
                   </div>
                 </div>
               </div>
               <div className="text-[12px] text-muted-foreground">
-                {call.duration} · {call.language}
+                {call.duration} • {call.language}
               </div>
             </Link>
           ))}

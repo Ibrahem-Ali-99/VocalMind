@@ -14,16 +14,23 @@ from app.core.cache import dashboard_cache
 router = APIRouter()
 
 
+def _can_access_agent_profile(current_user: CurrentUser, agent_id: UUID) -> bool:
+    if current_user.role == UserRole.agent:
+        return current_user.id == agent_id
+    return True
+
+
 @router.get("")
 async def list_agents(session: SessionDep, current_user: CurrentUser):
     """List all agents for the current organization."""
-    result = await session.exec(
-        select(UserModel).where(
-            UserModel.role == UserRole.agent, 
-            UserModel.is_active == True,  # noqa: E712
-            UserModel.organization_id == current_user.organization_id
-        )
+    stmt = select(UserModel).where(
+        UserModel.role == UserRole.agent,
+        UserModel.is_active == True,  # noqa: E712
+        UserModel.organization_id == current_user.organization_id,
     )
+    if current_user.role == UserRole.agent:
+        stmt = stmt.where(UserModel.id == current_user.id)
+    result = await session.exec(stmt)
     agents = result.all()
     return [
         {
@@ -38,6 +45,8 @@ async def list_agents(session: SessionDep, current_user: CurrentUser):
 @router.get("/{agent_id}")
 async def get_agent_profile(agent_id: UUID, session: SessionDep, current_user: CurrentUser):
     """Get agent profile with stats, weekly trend, and recent calls."""
+    if not _can_access_agent_profile(current_user, agent_id):
+        raise HTTPException(status_code=403, detail="Agents can only access their own profile")
 
     # Check cache first
     cache_key = f"agent_profile_{current_user.organization_id}_{agent_id}"

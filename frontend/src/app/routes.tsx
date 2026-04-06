@@ -7,6 +7,7 @@ import { SessionDetail } from "./components/manager/SessionDetail";
 import { ManagerAssistant } from "./components/manager/ManagerAssistant";
 import { KnowledgeBase } from "./components/manager/KnowledgeBase";
 import { AgentDashboard } from "./components/agent/AgentDashboard";
+import { AgentCalls } from "./components/agent/AgentCalls";
 import { AgentCallDetail } from "./components/agent/AgentCallDetail";
 import { LandingPage } from "./components/LandingPage";
 
@@ -52,7 +53,7 @@ export const router = createBrowserRouter([
         errorElement: <RouteErrorBoundary />,
         children: [
           { index: true, element: <AgentDashboard /> },
-          { path: "calls", element: <UnderDevelopment /> },
+          { path: "calls", element: <AgentCalls /> },
           { path: "calls/:id", element: <AgentCallDetail /> },
           { path: "settings", element: <SettingsPage /> },
           { path: "*", element: <UnderDevelopment /> },
