@@ -49,6 +49,16 @@ jobs:
       - name: Test (pytest)
         run: uv run pytest tests/ -v --tb=short
 
+      - name: Quality Benchmarks
+        run: python ../infra/scripts/eval_all.py
+
+      - name: Upload Quality Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-benchmark-reports
+          path: ../infra/benchmarks/reports/*.json
+
       - name: License Audit
         run: |
           uv run pip-licenses --format=markdown >> $GITHUB_STEP_SUMMARY
