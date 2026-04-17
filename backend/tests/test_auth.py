@@ -21,6 +21,8 @@ from app.models.user import User as UserModel
 def mock_db_session(client: TestClient):
     """Overrides get_db with an AsyncMock session."""
     session = AsyncMock()
+    session.add = MagicMock()
+    session.add_all = MagicMock()
     # Default: select().where() returns empty result
     session.exec.return_value.first.return_value = None
     

@@ -9,6 +9,32 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
+from app.api.deps import get_current_user
+from app.models.enums import UserRole
+from app.models.user import User
+
+
+@pytest.fixture(autouse=True)
+def _assistant_auth_manager(client):
+    """Assistant routes require a signed-in manager."""
+    mgr_id = UUID("b0000000-0000-0000-0000-000000000001")
+    org_id = UUID("a0000000-0000-0000-0000-000000000001")
+
+    async def _override():
+        return User(
+            id=mgr_id,
+            organization_id=org_id,
+            email="manager@test.local",
+            password_hash="x",
+            name="Test Manager",
+            role=UserRole.manager,
+            is_active=True,
+        )
+
+    client.app.dependency_overrides[get_current_user] = _override
+    yield
+    client.app.dependency_overrides.pop(get_current_user, None)
+
 
 def _post_query(client, query_text: str, mode: str = "chat"):
     return client.post(
@@ -31,6 +57,56 @@ def test_assistant_query_invalid_mode_returns_422(client):
     """Unknown mode enum value should return 422."""
     response = _post_query(client, "Hello", mode="unknown_mode")
     assert response.status_code == 422
+
+
+def test_parse_sql_extracts_from_markdown_fence():
+    from app.api.routes.assistant import _parse_sql_from_model_output
+
+    raw = "Here you go:\n```sql\nSELECT 1 AS one;\n```\n"
+    assert _parse_sql_from_model_output(raw) == "SELECT 1 AS one"
+
+
+def test_parse_sql_accepts_with_cte():
+    from app.api.routes.assistant import _parse_sql_from_model_output
+
+    sql = "WITH t AS (SELECT 1 AS n) SELECT n FROM t LIMIT 1"
+    assert _parse_sql_from_model_output(sql) == sql
+
+
+def test_parse_sql_strips_thinking_tags():
+    from app.api.routes.assistant import _parse_sql_from_model_output
+
+    raw = "<thinking>plan</thinking>\nSELECT 2 AS two"
+    assert _parse_sql_from_model_output(raw) == "SELECT 2 AS two"
+
+
+def test_ordinal_followup_offset_parses_second():
+    from app.api.routes.assistant import _ordinal_followup_offset
+
+    assert _ordinal_followup_offset("Who is the second one") == 1
+    assert _ordinal_followup_offset("show 3rd result") == 2
+    assert _ordinal_followup_offset("first one") == 0
+    assert _ordinal_followup_offset("top agents") is None
+
+
+def test_build_ordinal_followup_sql_removes_limit_and_offsets():
+    from app.api.routes.assistant import _build_ordinal_followup_sql
+
+    prev = "SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT 1"
+    sql = _build_ordinal_followup_sql(prev, 1)
+    assert sql is not None
+    assert "OFFSET 1" in sql
+    assert "LIMIT 1" in sql
+    assert "WITH prev AS (SELECT name, score FROM leaderboard ORDER BY score DESC)" in sql
+
+
+def test_deterministic_rank_answer_is_non_hallucinated():
+    from app.api.routes.assistant import _deterministic_rank_answer
+
+    answer = _deterministic_rank_answer([{"name": "Sara Agent", "avg_score": 70.0}])
+    assert "Sara Agent" in answer
+    assert "70.0" in answer
+    assert "only agent" not in answer.lower()
 
 
 # ---------------------------------------------------------------------------

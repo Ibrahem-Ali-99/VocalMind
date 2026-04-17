@@ -2,16 +2,21 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
+import os
+
 from app.core.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=True,
+    echo=os.getenv("SQLALCHEMY_ECHO", "").lower() in ("1", "true", "yes"),
     future=True,
+    pool_pre_ping=True,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "15")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
     connect_args={
         "prepared_statement_cache_size": 0,
-        "statement_cache_size": 0
-    }
+        "statement_cache_size": 0,
+    },
 )
 
 

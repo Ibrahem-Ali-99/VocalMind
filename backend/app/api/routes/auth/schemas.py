@@ -2,7 +2,7 @@
 # Logic: Colocated schemas prevent jumping between schema/models/routes folders.
 
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 
 
@@ -31,8 +31,7 @@ class UserCreate(UserBase):
 class User(UserBase):
     id: Optional[UUID] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GoogleUser(BaseModel):

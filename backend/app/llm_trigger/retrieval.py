@@ -122,7 +122,7 @@ class QdrantRetriever:
     """Shared Qdrant retriever used by llm_trigger explainability paths."""
 
     def __init__(self) -> None:
-        self._qdrant = QdrantClient(url=settings.QDRANT_URL)
+        self._qdrant = QdrantClient(url=settings.QDRANT_URL, check_compatibility=False)
 
     def _embed_query(self, text: str) -> list[float]:
         payloads = (

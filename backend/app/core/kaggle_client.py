@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, UploadFile
@@ -10,6 +11,12 @@ from app.core.inference_contracts import audio_content_type, is_supported_audio_
 
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_SERVICE_FALLBACK_PORTS = {
+    "whisperx": 8003,
+    "emotion": 8001,
+    "vad": 8002,
+}
 
 
 class BaseKaggleClient:
@@ -83,30 +90,58 @@ class BaseKaggleClient:
         )
 
     async def _post(self, filename: str, content: bytes, content_type: str) -> dict[str, Any]:
+        urls_to_try = [self.url, *self._fallback_urls(self.url)]
         timeout = httpx.Timeout(300.0, connect=10.0)
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    self.url,
-                    files={"file": (filename, content, content_type)},
-                    headers=self.headers(),
-                )
-        except httpx.TimeoutException as exc:
-            logger.error("%s timed out: %s", self.endpoint, exc)
-            raise HTTPException(status_code=504, detail=f"{self.endpoint} service timed out.") from exc
-        except httpx.RequestError as exc:
-            logger.error("%s unreachable: %s", self.endpoint, exc)
-            target = "local service" if settings.IS_LOCAL else "Kaggle server"
-            raise HTTPException(
-                status_code=503,
-                detail=f"{self.endpoint} service unreachable ({target}).",
-            ) from exc
+        last_error: Exception | None = None
+        response: httpx.Response | None = None
 
-        if response.status_code != 200:
-            logger.error("%s API error %s: %s", self.endpoint, response.status_code, response.text)
+        for url in urls_to_try:
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        url,
+                        files={"file": (filename, content, content_type)},
+                        headers=self.headers(),
+                    )
+            except httpx.TimeoutException as exc:
+                last_error = exc
+                logger.warning("%s timed out at %s: %s", self.endpoint, url, exc)
+                continue
+            except httpx.RequestError as exc:
+                last_error = exc
+                logger.warning("%s unreachable at %s: %s", self.endpoint, url, exc)
+                continue
+
+            if response.status_code == 200:
+                return self.normalize_response(response.json())
+
+            logger.error("%s API error %s at %s: %s", self.endpoint, response.status_code, url, response.text)
             raise HTTPException(
                 status_code=502,
                 detail=f"{self.endpoint} service error: {response.text}",
             )
 
-        return self.normalize_response(response.json())
+        if isinstance(last_error, httpx.TimeoutException):
+            raise HTTPException(status_code=504, detail=f"{self.endpoint} service timed out.") from last_error
+
+        target = "local service" if settings.IS_LOCAL else "Kaggle server"
+        raise HTTPException(
+            status_code=503,
+            detail=f"{self.endpoint} service unreachable ({target}).",
+        ) from last_error
+
+    def _fallback_urls(self, primary_url: str) -> list[str]:
+        if not settings.IS_LOCAL:
+            return []
+
+        parsed = urlparse(primary_url)
+        host = (parsed.hostname or "").lower()
+        fallback_port = _LOCAL_SERVICE_FALLBACK_PORTS.get(host)
+        if fallback_port is None:
+            return []
+
+        path = parsed.path or self.endpoint
+        fallback = urlunparse((parsed.scheme or "http", f"localhost:{fallback_port}", path, "", "", ""))
+        if fallback == primary_url:
+            return []
+        return [fallback]

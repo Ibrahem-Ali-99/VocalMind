@@ -11,6 +11,7 @@ import importlib
 from typing import Generator
 from unittest.mock import AsyncMock, MagicMock
 from app.api.deps import get_session, get_supabase, get_db
+from app.core.config import settings
 from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, SQLModel
 
@@ -22,6 +23,7 @@ app_main.seed_nexalink_main = AsyncMock(return_value=None)
 app_main.start_processing_worker = AsyncMock(return_value=None)
 app_main.stop_processing_worker = AsyncMock(return_value=None)
 app = app_main.app
+settings.SECRET_KEY = "test-secret-key-minimum-32-bytes-long"
 
 # --- Fixtures ---
 

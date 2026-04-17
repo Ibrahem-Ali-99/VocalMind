@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Security
-    SECRET_KEY: str = "CHANGE_THIS_TO_A_STRONG_SECRET_KEY"
+    SECRET_KEY: str = "CHANGE_THIS_TO_A_STRONG_SECRET_KEY_32B"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
     GOOGLE_API_KEY: str = ""
+    # Manager Assistant text-to-SQL (Gemini). Comma-separated fallbacks if a model ID is unavailable.
+    # Prefer 2.0-flash first for broad API availability; 2.5 when your project supports it.
+    ASSISTANT_GEMINI_MODEL: str = "gemini-2.0-flash,gemini-2.5-flash,gemini-1.5-flash"
+    # gemini | ollama | auto — auto uses Gemini when GOOGLE_API_KEY is set, then falls back to Ollama.
+    ASSISTANT_LLM_PROVIDER: str = "auto"
+    ASSISTANT_OLLAMA_MODEL: str = "qwen2.5:7b"
+    ASSISTANT_OLLAMA_TIMEOUT_SECONDS: float = 120.0
 
     # Database (Docker Postgres)
     DATABASE_URL: str = "postgresql+asyncpg://vocalmind:vocalmind_dev@localhost:5432/vocalmind"
@@ -31,6 +38,12 @@ class Settings(BaseSettings):
     EMOTION_API_URL: str = "http://localhost:8001"
     VAD_API_URL: str = "http://localhost:8002"
     WHISPERX_API_URL: str = "http://localhost:8003"
+
+    # Optional: Hugging Face export dir for DistilBERT agent/customer classifier (same bundle as WhisperX).
+    # When set, the backend relabels transcript segments after full analysis.
+    SPEAKER_ROLE_MODEL_DIR: str = ""
+    # Keep backend relabeling disabled by default to avoid double relabeling with WhisperX.
+    BACKEND_SPEAKER_RELABEL_ENABLED: bool = False
 
     # Kaggle inference server (used when IS_LOCAL=false)
     KAGGLE_SERVER_URL: str = ""
@@ -73,7 +86,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-if settings.SECRET_KEY == "CHANGE_THIS_TO_A_STRONG_SECRET_KEY":
+if settings.SECRET_KEY == "CHANGE_THIS_TO_A_STRONG_SECRET_KEY_32B":
     warnings.warn(
         "SECRET_KEY is using the default value! Set a strong secret via .env "
         "(openssl rand -hex 32). This is insecure for production.",

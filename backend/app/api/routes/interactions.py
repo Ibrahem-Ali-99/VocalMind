@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import select, func
 from typing import Any, Literal
 from uuid import UUID
@@ -14,8 +14,13 @@ import io
 import wave
 
 from app.api.deps import SessionDep, CurrentUser
-from app.core.config import settings
+from app.core.audio_resolver import (
+    audio_media_type_from_path,
+    fetch_audio_bytes,
+    supabase_object_exists,
+)
 from app.core.emotion_fusion import fuse_emotion_signals
+from app.core.score_utils import to_percentage
 from pathlib import Path
 from app.core.inference_contracts import is_supported_audio_filename
 from app.core.interaction_processing import (
@@ -35,7 +40,7 @@ from app.models.utterance import Utterance
 from app.models.emotion_event import EmotionEvent
 from app.models.policy import CompanyPolicy, PolicyCompliance
 from app.models.user import User as UserModel
-from app.models.enums import ProcessingStatus, UserRole
+from app.models.enums import JobStatus, ProcessingStatus, UserRole
 
 router = APIRouter()
 
@@ -45,6 +50,30 @@ def _interaction_scope_filters(current_user: CurrentUser) -> list:
     if current_user.role == UserRole.agent:
         filters.append(Interaction.agent_id == current_user.id)
     return filters
+
+
+async def _failed_jobs_by_interaction(session: SessionDep, interaction_ids: list[UUID]) -> dict[UUID, list[dict[str, Any]]]:
+    """Map interaction id → failed processing_jobs rows (stage + error_message)."""
+    if not interaction_ids:
+        return {}
+    stmt = (
+        select(ProcessingJob.interaction_id, ProcessingJob.stage, ProcessingJob.error_message)
+        .where(
+            ProcessingJob.interaction_id.in_(interaction_ids),
+            ProcessingJob.status == JobStatus.failed,
+        )
+        .order_by(ProcessingJob.completed_at.desc())
+    )
+    rows = (await session.exec(stmt)).all()
+    out: dict[UUID, list[dict[str, Any]]] = {}
+    for iid, stage, err in rows:
+        out.setdefault(iid, []).append(
+            {
+                "stage": stage.value if hasattr(stage, "value") else str(stage),
+                "errorMessage": err,
+            }
+        )
+    return out
 
 
 class APIModel(BaseModel):
@@ -263,6 +292,11 @@ class EmotionComparisonResponse(APIModel):
     evidence: dict[str, Any] | None = None
 
 
+class ProcessingFailureBriefResponse(APIModel):
+    stage: str
+    errorMessage: str | None = None
+
+
 class InteractionDetailResponse(APIModel):
     interaction: InteractionDetailSummaryResponse
     utterances: list[UtteranceResponse]
@@ -272,9 +306,38 @@ class InteractionDetailResponse(APIModel):
     llmTriggers: LLMTriggerReportResponse | None = None
     emotionEvents: list[EmotionEventResponse]
     policyViolations: list[PolicyViolationResponse]
+    processingFailures: list[ProcessingFailureBriefResponse] = Field(default_factory=list)
 
 
 RagComplianceReportResponse.model_rebuild()
+
+
+class InteractionFromStorageRequest(APIModel):
+    storage_path: str = Field(min_length=3, max_length=512)
+    agent_id: UUID | None = None
+    file_size_bytes: int | None = Field(default=None, ge=0)
+    duration_seconds: int | None = Field(default=None, ge=0)
+    interaction_date: datetime | None = None
+    verify_exists: bool = False
+
+
+async def _resolve_interaction_agent(
+    session: SessionDep,
+    current_user: CurrentUser,
+    agent_id: UUID | None,
+) -> UserModel:
+    agent_query = select(UserModel).where(
+        UserModel.organization_id == current_user.organization_id,
+        UserModel.role == UserRole.agent,
+        UserModel.is_active.is_(True),
+    )
+    if agent_id:
+        agent_query = agent_query.where(UserModel.id == agent_id)
+    agent_result = await session.exec(agent_query)
+    agent = agent_result.first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found for current organization")
+    return agent
 
 
 @router.post("")
@@ -288,17 +351,7 @@ async def create_interaction(
     if not is_supported_audio_filename(file.filename):
         raise HTTPException(status_code=400, detail="Only .wav and .mp3 files are supported.")
 
-    agent_query = select(UserModel).where(
-        UserModel.organization_id == current_user.organization_id,
-        UserModel.role == UserRole.agent,
-        UserModel.is_active.is_(True),
-    )
-    if agent_id:
-        agent_query = agent_query.where(UserModel.id == agent_id)
-    agent_result = await session.exec(agent_query)
-    agent = agent_result.first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found for current organization")
+    agent = await _resolve_interaction_agent(session, current_user, agent_id)
 
     org_result = await session.exec(select(Organization).where(Organization.id == current_user.organization_id))
     organization = org_result.first()
@@ -332,6 +385,73 @@ async def create_interaction(
 
     transcript = Transcript(interaction_id=interaction.id, full_text="", overall_confidence=None)
     session.add(transcript)
+    await create_processing_jobs(session, interaction.id)
+    await session.commit()
+    await session.refresh(interaction)
+
+    await enqueue_interaction_processing(interaction.id)
+
+    jobs_result = await session.exec(
+        select(ProcessingJob).where(ProcessingJob.interaction_id == interaction.id)
+    )
+    jobs = [
+        {
+            "stage": job.stage.value,
+            "status": job.status.value,
+            "retryCount": job.retry_count,
+            "errorMessage": job.error_message,
+        }
+        for job in jobs_result.all()
+    ]
+
+    return {
+        "interactionId": str(interaction.id),
+        "status": interaction.processing_status.value,
+        "audioFilePath": interaction.audio_file_path,
+        "agentId": str(agent.id),
+        "uploadedBy": str(current_user.id),
+        "processingJobs": jobs,
+    }
+
+
+@router.post("/from-storage")
+async def create_interaction_from_storage(
+    payload: InteractionFromStorageRequest,
+    session: SessionDep,
+    current_user: CurrentUser,
+):
+    filename = Path(payload.storage_path).name
+    if not is_supported_audio_filename(filename):
+        raise HTTPException(status_code=400, detail="Only .wav and .mp3 files are supported.")
+    storage_path = payload.storage_path.strip()
+    if payload.verify_exists:
+        exists = await supabase_object_exists(storage_path)
+        if not exists:
+            raise HTTPException(
+                status_code=404,
+                detail="Supabase storage object not found or inaccessible",
+            )
+
+    agent = await _resolve_interaction_agent(session, current_user, payload.agent_id)
+
+    interaction = Interaction(
+        organization_id=current_user.organization_id,
+        agent_id=agent.id,
+        uploaded_by=current_user.id,
+        audio_file_path=storage_path,
+        file_size_bytes=payload.file_size_bytes or 0,
+        duration_seconds=payload.duration_seconds or 0,
+        file_format=Path(filename).suffix.lstrip(".").lower() or "wav",
+        interaction_date=(payload.interaction_date or datetime.now(timezone.utc)).replace(tzinfo=None),
+        processing_status=ProcessingStatus.pending,
+        language_detected=None,
+        has_overlap=False,
+        channel_count=1,
+    )
+    session.add(interaction)
+    await session.flush()
+
+    session.add(Transcript(interaction_id=interaction.id, full_text="", overall_confidence=None))
     await create_processing_jobs(session, interaction.id)
     await session.commit()
     await session.refresh(interaction)
@@ -820,6 +940,8 @@ async def list_interactions(session: SessionDep, current_user: CurrentUser):
     result = await session.exec(stmt)
     rows = result.all()
 
+    fail_map = await _failed_jobs_by_interaction(session, [row.id for row in rows])
+
     interactions = []
     for row in rows:
         mins = row.duration_seconds // 60
@@ -833,16 +955,17 @@ async def list_interactions(session: SessionDep, current_user: CurrentUser):
             "time": row.interaction_date.strftime("%I:%M %p") if row.interaction_date else "",
             "duration": f"{mins}:{secs:02d}",
             "language": row.language_detected or "Unknown",
-            "overallScore": round(row.overall_score * 100, 0) if row.overall_score else 0,
-            "empathyScore": round(row.empathy_score * 100, 0) if row.empathy_score else 0,
-            "policyScore": round(row.policy_score * 100, 0) if row.policy_score else 0,
-            "resolutionScore": round(row.resolution_score * 100, 0) if row.resolution_score else 0,
+            "overallScore": round(to_percentage(row.overall_score), 0),
+            "empathyScore": round(to_percentage(row.empathy_score), 0),
+            "policyScore": round(to_percentage(row.policy_score), 0),
+            "resolutionScore": round(to_percentage(row.resolution_score), 0),
             "resolved": row.was_resolved or False,
             "hasViolation": row.viol_count > 0,
             "hasOverlap": row.has_overlap,
             "responseTime": f"{row.avg_response_time_seconds:.1f}s" if row.avg_response_time_seconds else "N/A",
             "status": str(row.processing_status.value) if row.processing_status else "pending",
             "audioFilePath": row.audio_file_path or None,
+            "processingFailures": fail_map.get(row.id, []),
         })
 
     return interactions
@@ -998,7 +1121,7 @@ async def get_interaction_detail(
             "description": v.evidence_text or "",
             "reasoning": v.llm_reasoning or "",
             "severity": "high" if v.compliance_score < 0.3 else ("medium" if v.compliance_score < 0.6 else "low"),
-            "score": round(v.compliance_score * 100, 0),
+            "score": round(to_percentage(v.compliance_score), 0),
         }
         for v in viol_rows
     ]
@@ -1069,6 +1192,8 @@ async def get_interaction_detail(
             "error": processing_message,
         }
 
+    proc_fail_map = await _failed_jobs_by_interaction(session, [interaction_id])
+
     return {
         "interaction": {
             "id": str(row.id),
@@ -1078,10 +1203,10 @@ async def get_interaction_detail(
             "time": row.interaction_date.strftime("%I:%M %p") if row.interaction_date else "",
             "duration": f"{mins}:{secs:02d}",
             "language": row.language_detected or "Unknown",
-            "overallScore": round(row.overall_score * 100, 0) if row.overall_score else 0,
-            "empathyScore": round(row.empathy_score * 100, 0) if row.empathy_score else 0,
-            "policyScore": round(row.policy_score * 100, 0) if row.policy_score else 0,
-            "resolutionScore": round(row.resolution_score * 100, 0) if row.resolution_score else 0,
+            "overallScore": round(to_percentage(row.overall_score), 0),
+            "empathyScore": round(to_percentage(row.empathy_score), 0),
+            "policyScore": round(to_percentage(row.policy_score), 0),
+            "resolutionScore": round(to_percentage(row.resolution_score), 0),
             "resolved": row.was_resolved or False,
             "hasViolation": len(policy_violations) > 0,
             "hasOverlap": row.has_overlap,
@@ -1096,6 +1221,7 @@ async def get_interaction_detail(
         "llmTriggers": llm_triggers,
         "emotionEvents": emotion_events,
         "policyViolations": policy_violations,
+        "processingFailures": proc_fail_map.get(interaction_id, []),
     }
 
 
@@ -1156,26 +1282,8 @@ async def get_interaction_audio(interaction_id: UUID, session: SessionDep, curre
 
     audio_path, duration = row
 
-    # Prefer local audio when a filesystem path was seeded (e.g. ../AudioData/nexalink/*.mp3).
-    backend_dir = Path(__file__).resolve().parents[3]
-    candidates = [Path(audio_path), backend_dir / audio_path]
-    for candidate in candidates:
-        resolved = candidate.resolve(strict=False)
-        if resolved.exists() and resolved.is_file():
-            ext = resolved.suffix.lower()
-            media_type = "audio/mpeg" if ext == ".mp3" else "audio/wav"
-            content = resolved.read_bytes()
-            return StreamingResponse(
-                iter([content]),
-                media_type=media_type,
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Content-Length": str(len(content)),
-                },
-            )
-
-    # Fallback to dummy generated audio if Supabase is not configured yet
-    if not settings.SUPABASE_URL or not audio_path:
+    # Fallback to dummy generated audio if no path is available yet.
+    if not audio_path:
         dummy_wav = generate_dummy_wav(duration or 180)
         return StreamingResponse(
             iter([dummy_wav]),
@@ -1186,55 +1294,28 @@ async def get_interaction_audio(interaction_id: UUID, session: SessionDep, curre
             },
         )
 
-    # Build Supabase Storage URL
-    # audio_file_path is typically: "bucket_name/path/to/file.wav"
-    # Supabase Storage URL: {SUPABASE_URL}/storage/v1/object/{path}
-    storage_url = f"{settings.SUPABASE_URL}/storage/v1/object/{audio_path}"
-
-    # Stream from Supabase Storage
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                storage_url,
-                headers={
-                    "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
-                    "apikey": settings.SUPABASE_SERVICE_KEY,
-                },
-                timeout=30.0,
-            )
-
-        if response.status_code != 200:
-            # Fallback to dummy if backend storage fails (e.g., file deleted)
-            dummy_wav = generate_dummy_wav(duration or 180)
-            return StreamingResponse(
-                iter([dummy_wav]),
-                media_type="audio/wav",
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Content-Length": str(len(dummy_wav)),
-                },
-            )
-
-        # Determine content type from file extension
-        ext = audio_path.rsplit(".", 1)[-1].lower() if "." in audio_path else "wav"
-        content_types = {
-            "wav": "audio/wav",
-            "mp3": "audio/mpeg",
-            "ogg": "audio/ogg",
-            "flac": "audio/flac",
-            "m4a": "audio/mp4",
-        }
-        content_type = content_types.get(ext, "audio/wav")
+        content, _ = await fetch_audio_bytes(audio_path, timeout_seconds=30.0)
+        content_type = audio_media_type_from_path(audio_path)
 
         return StreamingResponse(
-            iter([response.content]),
+            iter([content]),
             media_type=content_type,
             headers={
                 "Accept-Ranges": "bytes",
-                "Content-Length": str(len(response.content)),
+                "Content-Length": str(len(content)),
             },
         )
-
+    except FileNotFoundError:
+        dummy_wav = generate_dummy_wav(duration or 180)
+        return StreamingResponse(
+            iter([dummy_wav]),
+            media_type="audio/wav",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(len(dummy_wav)),
+            },
+        )
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Audio fetch timed out")
     except httpx.ConnectError:

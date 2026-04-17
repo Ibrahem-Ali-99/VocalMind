@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.routes.full.service import full_client
 from app.api.routes.transcription.service import transcription_client
+from app.core.audio_resolver import fetch_audio_bytes
 from app.core.config import settings
 from app.core.database import engine
 from app.core.emotion_fusion import build_deterministic_emotion_analysis
@@ -20,6 +22,7 @@ from app.core.inference_contracts import (
     build_local_full_response,
     is_supported_audio_filename,
 )
+from app.core.speaker_role_infer import relabel_segments_with_speaker_model
 from app.llm_trigger.service import evaluate_interaction_triggers
 from app.models.emotion_event import EmotionEvent
 from app.models.enums import JobStage, JobStatus, ProcessingStatus, SpeakerRole
@@ -63,6 +66,14 @@ def _sanitize_filename(filename: str) -> str:
 
 def _normalize_lookup_text(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+def _format_processing_exception(exc: Exception) -> str:
+    detail = str(exc).strip()
+    name = exc.__class__.__name__
+    if detail:
+        return f"{name}: {detail}"
+    return name
 
 
 async def _resolve_policy_record_for_report(
@@ -134,8 +145,33 @@ async def save_audio_upload(organization_slug: str, interaction_id: UUID, filena
     return target_path.resolve()
 
 
-def _speaker_role_from_label(label: str | None, index: int) -> SpeakerRole:
+_AGENT_TEXT_HINTS = (
+    "how can i help",
+    "can you provide",
+    "let me check",
+    "i can help",
+    "i can assist",
+    "please verify",
+)
+_CUSTOMER_TEXT_HINTS = (
+    "i need help",
+    "i can't",
+    "cannot access",
+    "my account",
+    "thank you",
+)
+
+
+def _speaker_role_from_label(
+    label: str | None,
+    index: int,
+    *,
+    text: str = "",
+    role_map: dict[str, SpeakerRole] | None = None,
+) -> SpeakerRole:
     normalized = (label or "").strip().lower()
+    if normalized in {"agent", "customer"}:
+        return SpeakerRole.agent if normalized == "agent" else SpeakerRole.customer
     if "agent" in normalized or normalized in {"speaker_1", "spk1", "s1"}:
         return SpeakerRole.agent
     if "customer" in normalized or normalized in {"speaker_0", "spk0", "s0"}:
@@ -144,7 +180,22 @@ def _speaker_role_from_label(label: str | None, index: int) -> SpeakerRole:
         return SpeakerRole.customer
     if normalized.endswith("01") or normalized.endswith("_1"):
         return SpeakerRole.agent
-    return SpeakerRole.customer if index % 2 == 0 else SpeakerRole.agent
+
+    text_norm = (text or "").strip().lower()
+    if any(hint in text_norm for hint in _AGENT_TEXT_HINTS):
+        return SpeakerRole.agent
+    if any(hint in text_norm for hint in _CUSTOMER_TEXT_HINTS):
+        return SpeakerRole.customer
+
+    if normalized and role_map is not None and normalized != "unknown":
+        existing = role_map.get(normalized)
+        if existing is not None:
+            return existing
+        assigned = SpeakerRole.customer if SpeakerRole.customer not in role_map.values() else SpeakerRole.agent
+        role_map[normalized] = assigned
+        return assigned
+
+    return SpeakerRole.customer if index == 0 else SpeakerRole.agent
 
 
 async def create_processing_jobs(session: AsyncSession, interaction_id: UUID) -> None:
@@ -205,12 +256,28 @@ async def enqueue_interaction_processing(interaction_id: UUID) -> None:
     await _processing_queue.put(interaction_id)
 
 
+async def _enqueue_pending_interactions_backlog() -> None:
+    """Put every DB-pending interaction on the in-memory queue (e.g. after a restart)."""
+    if _processing_queue is None:
+        return
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        res = await session.exec(
+            select(Interaction.id).where(Interaction.processing_status == ProcessingStatus.pending)
+        )
+        pending_ids = list(res.all())
+    for iid in pending_ids:
+        await enqueue_interaction_processing(iid)
+    if pending_ids:
+        logger.info("Enqueued %d pending interaction(s) for processing backlog", len(pending_ids))
+
+
 async def start_processing_worker() -> None:
     global _worker_task, _processing_queue
     if _worker_task and not _worker_task.done():
         return
     _processing_queue = asyncio.Queue()
     _worker_task = asyncio.create_task(_worker_loop(), name="interaction-processing-worker")
+    await _enqueue_pending_interactions_backlog()
 
 
 async def stop_processing_worker() -> None:
@@ -236,10 +303,10 @@ async def _worker_loop() -> None:
             if interaction_id is None:
                 return
             await process_interaction(interaction_id)
-        except Exception:
+        except Exception as exc:
             logger.exception("Interaction processing worker failed for %s", interaction_id)
             if interaction_id is not None:
-                await mark_interaction_failed(interaction_id, "Interaction processing failed")
+                await mark_interaction_failed(interaction_id, _format_processing_exception(exc))
         finally:
             _processing_queue.task_done()
 
@@ -298,48 +365,88 @@ async def reset_interaction_for_reprocess(session: AsyncSession, interaction_id:
     await session.commit()
 
 
+async def _analyze_audio_for_interaction(
+    interaction_id: UUID,
+    audio_bytes: bytes,
+    filename: str,
+) -> dict:
+    try:
+        return await full_client.analyze_bytes(
+            audio_bytes,
+            filename,
+            audio_content_type(filename),
+        )
+    except Exception:
+        if not settings.IS_LOCAL:
+            raise
+        logger.exception(
+            "Full analysis failed for %s; using transcription-only fallback",
+            interaction_id,
+        )
+        try:
+            transcription = await transcription_client.analyze_bytes(
+                audio_bytes,
+                filename,
+                audio_content_type(filename),
+            )
+        except Exception:
+            logger.exception(
+                "Transcription fallback failed for %s; using deterministic minimal transcript",
+                interaction_id,
+            )
+            transcription = {
+                "language": "en",
+                "text": "",
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "text": "",
+                        "speaker": "customer",
+                        "overlap": False,
+                    }
+                ],
+                "processing_time_s": 0.0,
+            }
+        return build_local_full_response(
+            transcription,
+            _deterministic_emotion_analysis(transcription.get("text") or ""),
+        )
+
+
 async def process_interaction(interaction_id: UUID) -> None:
+    """Run pipeline: short DB claim → release pool during slow I/O → persist."""
+    audio_path: str
     async with AsyncSession(engine, expire_on_commit=False) as session:
         interaction = await session.get(Interaction, interaction_id)
         if not interaction:
             logger.warning("Skipping missing interaction %s", interaction_id)
             return
 
+        if interaction.processing_status == ProcessingStatus.completed:
+            logger.info("Skipping interaction %s (already completed)", interaction_id)
+            return
+
         await _set_job_status(session, interaction_id, JobStage.diarization, JobStatus.running)
         await _set_job_status(session, interaction_id, JobStage.stt, JobStatus.running)
         await _set_job_status(session, interaction_id, JobStage.emotion, JobStatus.running)
+        await _set_interaction_status(session, interaction_id, ProcessingStatus.processing)
+        audio_path = interaction.audio_file_path
 
-        audio_path = Path(interaction.audio_file_path)
-        if not audio_path.exists():
-            raise FileNotFoundError(f"Audio file not found: {interaction.audio_file_path}")
+    audio_bytes, filename = await fetch_audio_bytes(audio_path)
+    if not is_supported_audio_filename(filename):
+        raise ValueError(f"Unsupported audio file: {filename}")
 
-        audio_bytes = audio_path.read_bytes()
-        if not is_supported_audio_filename(audio_path.name):
-            raise ValueError(f"Unsupported audio file: {audio_path.name}")
+    analysis = await _analyze_audio_for_interaction(interaction_id, audio_bytes, filename)
 
-        try:
-            analysis = await full_client.analyze_bytes(
-                audio_bytes,
-                audio_path.name,
-                audio_content_type(audio_path.name),
-            )
-        except Exception:
-            # Keep processing alive when local inference services are temporarily unavailable.
-            if not settings.IS_LOCAL:
-                raise
-            logger.exception(
-                "Full analysis failed for %s; using transcription-only fallback",
-                interaction_id,
-            )
-            transcription = await transcription_client.analyze_bytes(
-                audio_bytes,
-                audio_path.name,
-                audio_content_type(audio_path.name),
-            )
-            analysis = build_local_full_response(
-                transcription,
-                _deterministic_emotion_analysis(transcription.get("text") or ""),
-            )
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        interaction = await session.get(Interaction, interaction_id)
+        if not interaction:
+            logger.warning("Interaction %s removed during processing", interaction_id)
+            return
+        if interaction.processing_status == ProcessingStatus.completed:
+            logger.info("Skipping interaction %s (completed concurrently)", interaction_id)
+            return
 
         await session.exec(delete(EmotionEvent).where(EmotionEvent.interaction_id == interaction_id))
         await session.exec(delete(Utterance).where(Utterance.interaction_id == interaction_id))
@@ -352,7 +459,9 @@ async def process_interaction(interaction_id: UUID) -> None:
         )
         transcript = transcript_result.first() or Transcript(interaction_id=interaction_id)
 
-        segments = analysis.get("segments", [])
+        segments = analysis.get("segments", []) or []
+        segments = relabel_segments_with_speaker_model([dict(s) for s in segments])
+        diarization_role_map: dict[str, SpeakerRole] = {}
         transcript_text = (analysis.get("text") or "").strip()
         if not transcript_text:
             transcript_text = " ".join((segment.get("text") or "").strip() for segment in segments).strip()
@@ -364,7 +473,12 @@ async def process_interaction(interaction_id: UUID) -> None:
 
         utterances: list[Utterance] = []
         for index, segment in enumerate(segments):
-            speaker_role = _speaker_role_from_label(segment.get("speaker"), index)
+            speaker_role = _speaker_role_from_label(
+                segment.get("speaker"),
+                index,
+                text=(segment.get("text") or ""),
+                role_map=diarization_role_map,
+            )
             emotion_scores = segment.get("emotion_scores") or []
             emotion_confidence = 0.0
             if emotion_scores:
@@ -419,11 +533,20 @@ async def process_interaction(interaction_id: UUID) -> None:
         report = None
         if organization:
             try:
-                report = await evaluate_interaction_triggers(
-                    session=session,
-                    interaction_id=interaction_id,
-                    org_filter=organization.slug,
-                    force_rerun=True,
+                report = await asyncio.wait_for(
+                    evaluate_interaction_triggers(
+                        session=session,
+                        interaction_id=interaction_id,
+                        org_filter=organization.slug,
+                        force_rerun=True,
+                    ),
+                    timeout=float(os.getenv("LLM_TRIGGER_EVAL_TIMEOUT_SECONDS", "600")),
+                )
+            except TimeoutError:
+                logger.error(
+                    "LLM trigger evaluation timed out after %ss for interaction %s",
+                    os.getenv("LLM_TRIGGER_EVAL_TIMEOUT_SECONDS", "600"),
+                    interaction_id,
                 )
             except Exception:
                 logger.exception("LLM trigger evaluation failed for interaction %s", interaction_id)

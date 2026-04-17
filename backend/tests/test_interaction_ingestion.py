@@ -281,3 +281,78 @@ def test_reprocess_resets_artifacts_and_jobs(client, seed_org_and_auth):
     ).all()
     assert len(updated_jobs) == 6
     assert all(job.status.value == "pending" for job in updated_jobs)
+
+
+def test_create_interaction_from_storage_creates_pending_job_rows(client, seed_org_and_auth):
+    response = client.post(
+        "/api/v1/interactions/from-storage",
+        json={
+            "storage_path": "recordings/nexalink/2026/04/call-001.wav",
+            "agent_id": str(TEST_AGENT_ID),
+            "file_size_bytes": 4321000,
+            "duration_seconds": 245,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    interaction_id = UUID(payload["interactionId"])
+    session = seed_org_and_auth
+    interaction = session.get(Interaction, interaction_id)
+    transcript = session.exec(
+        select(Transcript).where(Transcript.interaction_id == interaction_id)
+    ).first()
+    jobs = session.exec(
+        select(ProcessingJob).where(ProcessingJob.interaction_id == interaction_id)
+    ).all()
+
+    assert interaction is not None
+    assert interaction.organization_id == TEST_ORG_ID
+    assert interaction.agent_id == TEST_AGENT_ID
+    assert interaction.uploaded_by == TEST_MANAGER_ID
+    assert interaction.processing_status == ProcessingStatus.pending
+    assert interaction.audio_file_path == "recordings/nexalink/2026/04/call-001.wav"
+    assert interaction.file_size_bytes == 4321000
+    assert interaction.duration_seconds == 245
+    assert interaction.file_format == "wav"
+
+    assert transcript is not None
+    assert transcript.full_text == ""
+    assert len(jobs) == 6
+    assert all(job.status.value == "pending" for job in jobs)
+
+
+def test_create_interaction_from_storage_verify_exists_success(client, seed_org_and_auth, monkeypatch):
+    async def _exists(_storage_path: str, timeout_seconds: float = 10.0):  # noqa: ARG001
+        return True
+
+    monkeypatch.setattr("app.api.routes.interactions.supabase_object_exists", _exists)
+
+    response = client.post(
+        "/api/v1/interactions/from-storage",
+        json={
+            "storage_path": "recordings/nexalink/2026/04/call-002.wav",
+            "agent_id": str(TEST_AGENT_ID),
+            "verify_exists": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_create_interaction_from_storage_verify_exists_missing(client, monkeypatch):
+    async def _missing(_storage_path: str, timeout_seconds: float = 10.0):  # noqa: ARG001
+        return False
+
+    monkeypatch.setattr("app.api.routes.interactions.supabase_object_exists", _missing)
+
+    response = client.post(
+        "/api/v1/interactions/from-storage",
+        json={
+            "storage_path": "recordings/nexalink/2026/04/missing.wav",
+            "agent_id": str(TEST_AGENT_ID),
+            "verify_exists": True,
+        },
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()

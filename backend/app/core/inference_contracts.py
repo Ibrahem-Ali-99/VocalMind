@@ -152,6 +152,8 @@ def normalize_transcription_response(data: dict[str, Any]) -> dict[str, Any]:
             segment["speaker"] = item.get("speaker") or "UNKNOWN"
         if "overlap" in item:
             segment["overlap"] = bool(item.get("overlap"))
+        if "speaker_meta" in item and isinstance(item.get("speaker_meta"), dict):
+            segment["speaker_meta"] = dict(item.get("speaker_meta") or {})
         segments.append(segment)
 
     text = (data.get("text") or "").strip()
@@ -222,6 +224,8 @@ def normalize_full_response(data: dict[str, Any]) -> dict[str, Any]:
             "emotion": emotion,
             "emotion_scores": emotion_scores,
         }
+        if isinstance(item.get("speaker_meta"), dict):
+            segment["speaker_meta"] = dict(item.get("speaker_meta") or {})
         segments.append(segment)
 
     text = (data.get("text") or "").strip()
@@ -273,6 +277,7 @@ def build_local_full_response(
                 "end": item["end"],
                 "text": item["text"],
                 "speaker": item.get("speaker", "UNKNOWN"),
+                "speaker_meta": dict(item.get("speaker_meta") or {}),
                 "emotion": segment_emotion,
                 "emotion_scores": segment_scores,
             }

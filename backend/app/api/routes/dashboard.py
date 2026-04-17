@@ -15,6 +15,7 @@ from app.models.policy import CompanyPolicy, PolicyCompliance
 from app.models.user import User as UserModel
 from app.models.enums import UserRole, ProcessingStatus
 from app.core.cache import dashboard_cache
+from app.core.score_utils import to_percentage
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -64,7 +65,7 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
             )
             kpi_result = await s.exec(kpi_stmt)
             kpi_row = kpi_result.one()
-            avg_score = round(kpi_row.avg_score, 1) if kpi_row.avg_score else 0
+            avg_score = round(to_percentage(kpi_row.avg_score), 1)
             total_scored = kpi_row.total_scored or 0
             total_resolved = kpi_row.total_resolved or 0
             resolution_rate = round((total_resolved / total_scored) * 100, 0) if total_scored else 0
@@ -113,7 +114,7 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
                 day_label = day_names[day_index] if 0 <= day_index < 7 else f"Day{dow}"
                 weekly_trend.append({
                     "day": day_label,
-                    "score": round(row.avg_score, 0) if row.avg_score else 0,
+                    "score": round(to_percentage(row.avg_score), 0) if row.avg_score is not None else 0,
                 })
             return weekly_trend
 
@@ -160,8 +161,8 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
             return [
                 {
                     "category": row.policy_category,
-                    "rate": round(row.avg_rate * 100, 0) if row.avg_rate else 0,
-                    "color": _compliance_color(round(row.avg_rate * 100, 0) if row.avg_rate else 0),
+                    "rate": round(to_percentage(row.avg_rate), 0),
+                    "color": _compliance_color(round(to_percentage(row.avg_rate), 0)),
                 }
                 for row in compliance_result.all()
             ]
@@ -189,10 +190,10 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
             return [
                 {
                     "name": row.name,
-                    "empathy": round(row.empathy * 100, 0) if row.empathy else 0,
-                    "policy": round(row.policy * 100, 0) if row.policy else 0,
-                    "resolution": round(row.resolution * 100, 0) if row.resolution else 0,
-                    "overallScore": round(row.overall * 100, 0) if row.overall else 0,
+                    "empathy": round(to_percentage(row.empathy), 0),
+                    "policy": round(to_percentage(row.policy), 0),
+                    "resolution": round(to_percentage(row.resolution), 0),
+                    "overallScore": round(to_percentage(row.overall), 0),
                     "trend": "up",
                 }
                 for row in agent_perf_result.all()
@@ -243,10 +244,10 @@ async def get_dashboard_stats(session: SessionDep, current_user: CurrentUser):
                     "time": row.interaction_date.strftime("%I:%M %p") if row.interaction_date else "",
                     "duration": f"{mins}:{secs:02d}",
                     "language": row.language_detected or "Unknown",
-                    "overallScore": round(row.overall_score * 100, 0) if row.overall_score else 0,
-                    "empathyScore": round(row.empathy_score * 100, 0) if row.empathy_score else 0,
-                    "policyScore": round(row.policy_score * 100, 0) if row.policy_score else 0,
-                    "resolutionScore": round(row.resolution_score * 100, 0) if row.resolution_score else 0,
+                    "overallScore": round(to_percentage(row.overall_score), 0),
+                    "empathyScore": round(to_percentage(row.empathy_score), 0),
+                    "policyScore": round(to_percentage(row.policy_score), 0),
+                    "resolutionScore": round(to_percentage(row.resolution_score), 0),
                     "resolved": row.was_resolved or False,
                     "hasViolation": row.viol_count > 0,
                     "hasOverlap": row.has_overlap,

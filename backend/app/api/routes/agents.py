@@ -10,6 +10,7 @@ from app.models.interaction import Interaction
 from app.models.interaction_score import InteractionScore
 from app.models.enums import UserRole
 from app.core.cache import dashboard_cache
+from app.core.score_utils import to_percentage
 
 router = APIRouter()
 
@@ -83,10 +84,10 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep, current_user: C
     stats = scores_result.first()
 
     total_calls = stats.total_calls if stats and stats.total_calls else 0
-    avg_overall = round(stats.avg_overall * 100, 0) if stats and stats.avg_overall else 0
-    avg_empathy = round(stats.avg_empathy * 100, 0) if stats and stats.avg_empathy else 0
-    avg_policy = round(stats.avg_policy * 100, 0) if stats and stats.avg_policy else 0
-    avg_resolution = round(stats.avg_resolution * 100, 0) if stats and stats.avg_resolution else 0
+    avg_overall = round(to_percentage(stats.avg_overall if stats else None), 0)
+    avg_empathy = round(to_percentage(stats.avg_empathy if stats else None), 0)
+    avg_policy = round(to_percentage(stats.avg_policy if stats else None), 0)
+    avg_resolution = round(to_percentage(stats.avg_resolution if stats else None), 0)
     avg_response = f"{stats.avg_response:.1f}s" if stats and stats.avg_response else "N/A"
 
     # 3. Resolution rate
@@ -119,7 +120,7 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep, current_user: C
             "id": str(r.id),
             "date": r.interaction_date.strftime("%Y-%m-%d") if r.interaction_date else "",
             "time": r.interaction_date.strftime("%I:%M %p") if r.interaction_date else "",
-            "score": round(r.overall_score * 100, 0) if r.overall_score else 0,
+            "score": round(to_percentage(r.overall_score), 0),
             "duration": f"{r.duration_seconds // 60}:{r.duration_seconds % 60:02d}",
             "language": r.language_detected or "Unknown",
             "resolved": r.was_resolved or False,
@@ -145,7 +146,7 @@ async def get_agent_profile(agent_id: UUID, session: SessionDep, current_user: C
     weekly_trend = [
         {
             "day": day_names[(int(r.dow) - 1) % 7],
-            "score": round(r.avg_score * 100, 0) if r.avg_score else 0,
+            "score": round(to_percentage(r.avg_score), 0),
         }
         for r in weekly_result.all()
     ]

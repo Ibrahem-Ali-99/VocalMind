@@ -9,9 +9,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency files first for caching
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies
+# Install dependencies (torch installed separately so uv.lock stays stable without a huge lock refresh)
 RUN uv sync --no-dev --locked \
-	&& uv pip install --python /app/.venv/bin/python pypdf
+	&& uv pip install --python /app/.venv/bin/python pypdf \
+	&& uv pip install --python /app/.venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM python:3.13-slim

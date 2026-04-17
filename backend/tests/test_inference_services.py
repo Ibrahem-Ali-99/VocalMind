@@ -33,6 +33,34 @@ async def test_transcription_service_normalizes_segments_without_top_level_text(
 
 
 @pytest.mark.asyncio
+async def test_transcription_service_preserves_speaker_metadata():
+    with patch("app.api.routes.transcription.service.settings") as service_settings, patch(
+        "app.core.kaggle_client.settings"
+    ) as client_settings:
+        service_settings.WHISPERX_API_URL = "http://whisperx:8000"
+        client_settings.IS_LOCAL = True
+        api = TranscriptionAPIClient()
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {
+            "language": "en",
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "hello",
+                    "speaker": "SPEAKER_00",
+                    "speaker_meta": {"source": "diarization", "confidence": 1.0},
+                }
+            ],
+        }
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=resp):
+            result = await api.analyze_bytes(b"audio", "clip.wav")
+
+    assert result["segments"][0]["speaker_meta"]["source"] == "diarization"
+
+
+@pytest.mark.asyncio
 async def test_vad_service_normalizes_local_split_payload():
     with patch("app.api.routes.vad.service.settings") as service_settings, patch(
         "app.core.kaggle_client.settings"
