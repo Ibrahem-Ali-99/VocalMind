@@ -30,6 +30,14 @@ load_dotenv(env_path)
 
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "large-v2")
+SPEAKER_ROLE_MODEL_ENABLED = os.getenv("SPEAKER_ROLE_MODEL_ENABLED", "true").lower() == "true"
+STRICT_DIARIZATION = os.getenv("STRICT_DIARIZATION", "false").lower() == "true"
+SPEAKER_ROLE_MODEL_DIR = Path(
+    os.getenv(
+        "SPEAKER_ROLE_MODEL_DIR",
+        str(Path(__file__).resolve().parent / "models" / "speaker_role" / "distilbert"),
+    )
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Compatibility patches — MUST run BEFORE importing whisperx / pyannote
@@ -79,17 +87,18 @@ import whisperx
 from whisperx.diarize import DiarizationPipeline
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
+from speaker_role_classifier import SpeakerRoleClassifier
 
 
 _ALIGNMENT_CHECKPOINT = Path("/root/.cache/torch/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth")
 
-if not torch.cuda.is_available():
-    raise RuntimeError(
-        "CUDA GPU is required for WhisperX. Enable NVIDIA Container Toolkit and GPU passthrough on the host."
-    )
-
-DEVICE = "cuda"
-COMPUTE_TYPE = "float16"
+if torch.cuda.is_available():
+    DEVICE = "cuda"
+    COMPUTE_TYPE = "float16"
+else:
+    # CPU mode keeps local E2E functional on machines without GPU passthrough.
+    DEVICE = "cpu"
+    COMPUTE_TYPE = "int8"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Overlap detection (from main_v5_final.py)
@@ -115,6 +124,12 @@ def detect_overlaps(segments: List[Dict], threshold: float = 0.1) -> List[Dict]:
 class Models:
     asr_model = None
     diarize_model = None
+    diarization_enabled = False
+    diarization_reason = "not_loaded"
+    speaker_role_classifier = SpeakerRoleClassifier(
+        model_dir=SPEAKER_ROLE_MODEL_DIR,
+        enabled=SPEAKER_ROLE_MODEL_ENABLED,
+    )
 
 def load_models():
     print(f"Loading WhisperX model ({WHISPER_MODEL_SIZE}) on {DEVICE} ({COMPUTE_TYPE})...")
@@ -124,7 +139,13 @@ def load_models():
     print("[OK] WhisperX ASR loaded")
 
     if not HF_TOKEN:
-        print("⚠ WARNING: HF_TOKEN not set — diarization will fail")
+        Models.diarize_model = None
+        Models.diarization_enabled = False
+        Models.diarization_reason = "hf_token_missing"
+        if STRICT_DIARIZATION:
+            raise RuntimeError("STRICT_DIARIZATION=true but HF_TOKEN is not configured")
+        print("⚠ WARNING: HF_TOKEN not set — diarization disabled")
+        return
 
     diarize_kwargs = {"device": DEVICE}
     try:
@@ -137,15 +158,28 @@ def load_models():
             elif "hf_token" in signature.parameters:
                 diarize_kwargs["hf_token"] = HF_TOKEN
 
-        Models.diarize_model = DiarizationPipeline(**diarize_kwargs)
+        try:
+            Models.diarize_model = DiarizationPipeline(**diarize_kwargs)
+        except TypeError:
+            # Some pyannote/whisperx versions reject token kwargs even when
+            # signature introspection suggests they exist.
+            Models.diarize_model = DiarizationPipeline(device=DEVICE)
+        Models.diarization_enabled = True
+        Models.diarization_reason = "ready"
         print("[OK] Diarization pipeline loaded")
     except Exception as exc:
         Models.diarize_model = None
+        Models.diarization_enabled = False
+        Models.diarization_reason = f"{exc.__class__.__name__}: {exc}"
+        if STRICT_DIARIZATION:
+            raise RuntimeError(f"STRICT_DIARIZATION=true and diarization failed: {exc}") from exc
         print(f"⚠ WARNING: diarization unavailable ({exc.__class__.__name__}: {exc})")
 
 def unload_models():
     Models.asr_model = None
     Models.diarize_model = None
+    Models.diarization_enabled = False
+    Models.diarization_reason = "not_loaded"
     gc.collect()
     if DEVICE == "cuda":
         torch.cuda.empty_cache()
@@ -175,6 +209,9 @@ def health():
         "device": DEVICE,
         "model": WHISPER_MODEL_SIZE,
         "models_loaded": Models.asr_model is not None,
+        "diarization_enabled": Models.diarization_enabled,
+        "diarization_reason": Models.diarization_reason,
+        "speaker_role_model_available": Models.speaker_role_classifier.is_available,
     }
 
 
@@ -255,11 +292,21 @@ async def transcribe(
         if Models.diarize_model is not None:
             diarize_segments = Models.diarize_model(audio)
             result = whisperx.assign_word_speakers(diarize_segments, result)
+            for segment in result["segments"]:
+                segment.setdefault("speaker_meta", {})
+                segment["speaker_meta"].setdefault("source", "diarization")
+                segment["speaker_meta"].setdefault("confidence", 1.0)
         else:
             for segment in result["segments"]:
                 segment.setdefault("speaker", "UNKNOWN")
+                segment.setdefault("speaker_meta", {})
+                segment["speaker_meta"].setdefault("source", "unknown")
+                segment["speaker_meta"].setdefault("fallback_reason", "diarization_unavailable")
 
-        # Step 4 — Overlap detection
+        # Step 4 — Optional speaker role relabeling
+        result["segments"] = Models.speaker_role_classifier.relabel_segments(result["segments"])
+
+        # Step 5 — Overlap detection
         result["segments"] = detect_overlaps(result["segments"])
 
         # Build clean response
@@ -271,6 +318,7 @@ async def transcribe(
                 "text": seg.get("text", "").strip(),
                 "speaker": seg.get("speaker", "UNKNOWN"),
                 "overlap": seg.get("overlap", False),
+                "speaker_meta": seg.get("speaker_meta") or {},
             })
 
         elapsed = time.time() - start_time

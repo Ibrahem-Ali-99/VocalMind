@@ -38,6 +38,8 @@ RUN uv sync
 
 # Copy application code after dependencies are installed
 COPY app.py .
+COPY speaker_role_classifier.py .
+COPY models ./models
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 EXPOSE 8000
