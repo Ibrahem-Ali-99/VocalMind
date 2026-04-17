@@ -1,3 +1,7 @@
+# Frontend service uses Dockerfile.dev + a bind mount so source edits show up without rebuilding.
+# Run `make prepare-speaker-model` once so ./services/whisperx/models/speaker_role/distilbert exists
+# for WhisperX and backend SPEAKER_ROLE_MODEL_DIR mounts.
+
 services:
 
   # ── Database ────────────────────────────────────────────────────────────────
@@ -27,6 +31,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: vocalmind-backend
+    env_file:
+      - ./backend/.env
     cpus: 2.0
     ports:
       - "8000:8000"
@@ -47,6 +53,9 @@ services:
       - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.0}
       - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
+      # Manager assistant: force local Ollama model
+      - ASSISTANT_LLM_PROVIDER=ollama
+      - ASSISTANT_OLLAMA_MODEL=qwen2.5:7b
       # RAG — point at Docker service names, not localhost
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION_SOP_PARENTS=${QDRANT_COLLECTION_SOP_PARENTS:-sop_parents}
@@ -56,11 +65,15 @@ services:
       # Text emotion
       - TEXT_EMOTION_PROVIDER=${TEXT_EMOTION_PROVIDER:-rule_based}
       - TEXT_EMOTION_MODEL=${TEXT_EMOTION_MODEL:-j-hartmann/emotion-english-distilroberta-base}
+      # Keep backend relabeling disabled to avoid double speaker-role assignment.
+      - SPEAKER_ROLE_MODEL_DIR=/app/models/speaker_role/distilbert
+      - BACKEND_SPEAKER_RELABEL_ENABLED=false
     volumes:
       - ./backend/app:/app/app
       - ./backend/storage:/app/storage
       - ./sop-standards:/app/sop-standards
       - ./AudioData:/AudioData
+      - ./services/whisperx/models/speaker_role/distilbert:/app/models/speaker_role/distilbert:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 10s
@@ -73,9 +86,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: http://localhost:8000
+      dockerfile: Dockerfile.dev
     container_name: vocalmind-frontend
     cpus: 1.0
     ports:
@@ -85,6 +96,10 @@ services:
         condition: service_healthy
     environment:
       - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - vocalmind_frontend_node_modules:/app/node_modules
+    command: ["sh", "-c", "if [ ! -f node_modules/.bin/vite ] || [ ! -d node_modules/@rollup/rollup-linux-x64-musl ] || [ ! -d node_modules/lightningcss-linux-x64-musl ] || [ ! -d node_modules/@tailwindcss/oxide-linux-x64-musl ]; then npm ci && npm i --no-save @rollup/rollup-linux-x64-musl lightningcss-linux-x64-musl @tailwindcss/oxide-linux-x64-musl; fi && npm run dev -- --host 0.0.0.0"]
     restart: unless-stopped
 
   # ── Ollama ──────────────────────────────────────────────────────────────────
@@ -181,16 +196,20 @@ services:
 
   # ── WhisperX ASR ───────────────────────────────────────────────────────────
   whisperx:
-    build:
-      context: ./services/whisperx
+    image: grad-whisperx:latest
     container_name: vocalmind-whisperx
     cpus: 4.0
-    gpus: all
     ports:
       - "8003:8000"
     environment:
       - HF_TOKEN=${HF_TOKEN:-}
       - WHISPER_MODEL_SIZE=tiny
+      - SPEAKER_ROLE_MODEL_ENABLED=${SPEAKER_ROLE_MODEL_ENABLED:-true}
+      - SPEAKER_ROLE_MODEL_DIR=/app/models/speaker_role/distilbert
+    volumes:
+      - ./services/whisperx/app.py:/app/app.py
+      - ./services/whisperx/speaker_role_classifier.py:/app/speaker_role_classifier.py
+      - ./services/whisperx/models/speaker_role/distilbert:/app/models/speaker_role/distilbert:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 10s
@@ -203,3 +222,4 @@ volumes:
   vocalmind_data:
   ollama_data:
   qdrant_data:
+  vocalmind_frontend_node_modules:

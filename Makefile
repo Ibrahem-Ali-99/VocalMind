@@ -1,4 +1,4 @@
-.PHONY: help up down build build-retry logs support-up support-down be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install llm-trigger-test seed migrate clean test-all
+.PHONY: help up down build build-retry logs support-up support-down be-dev be-test be-test-cov be-lint be-install fe-dev fe-build fe-lint fe-test fe-e2e-summary fe-e2e-cov fe-test-cov fe-install rag-lint rag-test rag-install llm-trigger-test quality-eval-transcript quality-eval-emotion quality-eval-policy quality-eval-rag quality-eval-resolution quality-eval-all e2e-local-audio seed-manager-supabase-audio seed migrate prepare-speaker-model clean test-all
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -89,10 +89,34 @@ llm-trigger-test: ## Run full LLM-trigger validation (backend + RAG + frontend)
 	cd services/rag && uv run pytest tests/test_ingest.py -q
 	cd frontend && npm run test -- --run src/tests/AgentCallDetail.test.tsx
 
+quality-eval-transcript: ## Run transcript quality benchmark
+	python infra/scripts/eval_transcript.py
+
+quality-eval-emotion: ## Run emotion quality benchmark
+	python infra/scripts/eval_emotion.py
+
+quality-eval-policy: ## Run policy quality benchmark
+	python infra/scripts/eval_policy.py
+
+quality-eval-rag: ## Run RAG quality benchmark
+	python infra/scripts/eval_rag.py
+
+quality-eval-resolution: ## Run resolution quality benchmark
+	python infra/scripts/eval_resolution.py
+
+quality-eval-all: ## Run all component quality benchmarks (fails on regression)
+	python infra/scripts/eval_all.py
+
+e2e-local-audio: ## Full local E2E on default mounted audio (login, ingest, poll, assert)
+	python infra/scripts/e2e_local_audio.py --include-llm
+
+seed-manager-supabase-audio: ## Clear manager org via Supabase, upload audio to Storage, POST from-storage (see supabase_seed_audio.py --help)
+	cd backend && uv run python ../infra/scripts/supabase_seed_audio.py
+
 # ── CI/CD ─────────────────────────────────────────────────────────────────
 
 test-all: ## Run all tests required for CI/CD and clean up
-	$(MAKE) -j test-backend test-frontend test-rag
+	$(MAKE) -j test-backend test-frontend test-rag quality-eval-all
 	$(MAKE) clean
 
 test-backend: be-lint be-test
@@ -111,6 +135,9 @@ seed: ## Seed the database
 
 migrate: ## Run database migrations
 	cd backend && uv run python ../infra/scripts/migrate.py
+
+prepare-speaker-model: ## Extract speaker-role DistilBERT for WhisperX + backend (docker-compose mounts this path)
+	python infra/scripts/prepare_speaker_role_model.py --delete-zip
 
 # ── Utilities ─────────────────────────────────────────────────────────────
 

@@ -56,3 +56,13 @@ curl -X POST https://etta-cleistogamous-untangentially.ngrok-free.dev/full \
 - **Auto-Processing:** Stereo files are automatically mixed down to mono for Diarization processing to ensure high accuracy.
 - **Concurrency:** The server uses an internal GPU lock and `asyncio.to_thread` to ensure stable processing and non-blocking health checks.
 - **Detailed Schema:** See [api_response_schema.json](api_response_schema.json) for raw response objects.
+
+---
+
+## Smoke Test Script
+
+Run the repo-level smoke test helper from project root:
+
+```bash
+python kaggle/scripts/kaggle_api_smoke_test.py --audio-file AudioData/nexalink/sample.wav
+```

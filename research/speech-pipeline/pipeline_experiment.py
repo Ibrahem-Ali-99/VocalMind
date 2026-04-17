@@ -93,7 +93,7 @@ except (ImportError, AttributeError):
 # 1. SETUP & CONFIGURATION
 # ==============================================================================
 
-DEFAULT_AUDIO_FILE = "Experiments/Voice-Generation/generated_audio/medium_overlap.mp3"
+DEFAULT_AUDIO_FILE = "research/voice-gen/generated_audio/medium_overlap.mp3"
 
 from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent.parent / ".env"

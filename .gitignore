@@ -128,6 +128,8 @@ frontend/.pytest_cache/
 *.bin
 *.onnx
 *.h5
+speaker_classifier_export.zip
+services/whisperx/models/speaker_role/distilbert/
 
 # ── Audio & Media Files ─────────────────────────────────────────────────
 *.flac

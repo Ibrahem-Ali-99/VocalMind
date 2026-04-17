@@ -131,7 +131,20 @@ make support-down     # Stop supporting services only
 ### General
 ```bash
 make clean            # Remove caches and build artifacts
+make prepare-speaker-model  # Extract speaker-role classifier for WhisperX
 ```
+
+### Utility Scripts
+```bash
+python infra/scripts/measure_dashboard_baseline.py --api-base http://localhost:8000/api/v1
+python kaggle/scripts/kaggle_api_smoke_test.py --audio-file AudioData/nexalink/sample.wav
+```
+
+### Speaker Classifier Artifact
+
+`speaker_classifier_export.zip` is treated as a one-time import artifact.  
+Run `make prepare-speaker-model` to extract only the `distilbert/` model into
+`services/whisperx/models/speaker_role/distilbert`, then remove the zip.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
