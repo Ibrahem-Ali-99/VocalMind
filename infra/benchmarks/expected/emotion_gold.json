@@ -1,0 +1,12 @@
+{
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "turn_emotions": ["neutral", "neutral", "frustrated", "neutral", "neutral", "happy"]
+    },
+    {
+      "id": "billing_dispute_call",
+      "turn_emotions": ["neutral", "angry", "neutral"]
+    }
+  ]
+}

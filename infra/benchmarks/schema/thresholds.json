@@ -1,0 +1,23 @@
+{
+  "transcript": {
+    "max_wer": 0.25,
+    "min_speaker_accuracy": 0.8
+  },
+  "emotion": {
+    "min_label_f1": 0.75,
+    "min_shift_f1": 0.7
+  },
+  "policy": {
+    "min_violation_precision": 0.7,
+    "min_violation_recall": 0.7,
+    "min_policy_attribution_accuracy": 0.7
+  },
+  "rag": {
+    "min_correctness_accuracy": 0.75,
+    "min_evidence_coverage": 0.7
+  },
+  "resolution": {
+    "min_resolved_accuracy": 0.8,
+    "min_missing_step_f1": 0.7
+  }
+}

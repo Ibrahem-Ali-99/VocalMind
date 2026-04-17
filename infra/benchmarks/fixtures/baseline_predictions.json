@@ -1,0 +1,81 @@
+{
+  "transcript": {
+    "samples": [
+      {
+        "id": "account_unlock_call",
+        "text": "Hello customer support how can I help you Hi I need help with my account I cannot access my account Can you provide your account number It is 987654321Z I have reset your password",
+        "turns": [
+          {"speaker": "agent", "text": "Hello customer support how can I help you"},
+          {"speaker": "customer", "text": "Hi I need help with my account"},
+          {"speaker": "customer", "text": "I cannot access my account"},
+          {"speaker": "agent", "text": "Can you provide your account number"},
+          {"speaker": "customer", "text": "It is 987654321Z"},
+          {"speaker": "agent", "text": "I have reset your password"}
+        ]
+      },
+      {
+        "id": "billing_dispute_call",
+        "text": "Thank you for calling support My bill is incorrect I will review your account now",
+        "turns": [
+          {"speaker": "agent", "text": "Thank you for calling support"},
+          {"speaker": "customer", "text": "My bill is incorrect"},
+          {"speaker": "agent", "text": "I will review your account now"}
+        ]
+      }
+    ]
+  },
+  "emotion": {
+    "samples": [
+      {
+        "id": "account_unlock_call",
+        "turn_emotions": ["neutral", "neutral", "frustrated", "neutral", "neutral", "happy"]
+      },
+      {
+        "id": "billing_dispute_call",
+        "turn_emotions": ["neutral", "angry", "neutral"]
+      }
+    ]
+  },
+  "policy": {
+    "samples": [
+      {
+        "id": "account_unlock_call",
+        "violations": [],
+        "violated_policy_ids": []
+      },
+      {
+        "id": "billing_dispute_call",
+        "violations": ["missing_identity_verification"],
+        "violated_policy_ids": ["policy_identity_verification"]
+      }
+    ]
+  },
+  "rag": {
+    "samples": [
+      {
+        "id": "account_unlock_call",
+        "is_correct": true,
+        "evidence_ids": ["kb_reset_flow", "policy_password_reset"]
+      },
+      {
+        "id": "billing_dispute_call",
+        "is_correct": false,
+        "evidence_ids": ["policy_billing_disclosure"]
+      }
+    ]
+  },
+  "resolution": {
+    "samples": [
+      {
+        "id": "account_unlock_call",
+        "is_resolved": true,
+        "missing_steps": []
+      },
+      {
+        "id": "billing_dispute_call",
+        "is_resolved": false,
+        "missing_steps": ["verification", "billing_adjustment_confirmation"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "violations": [],
+      "violated_policy_ids": []
+    },
+    {
+      "id": "billing_dispute_call",
+      "violations": ["missing_identity_verification"],
+      "violated_policy_ids": ["policy_identity_verification"]
+    }
+  ]
+}

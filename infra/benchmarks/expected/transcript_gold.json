@@ -1,0 +1,25 @@
+{
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "text": "Hello customer support how can I help you Hi I need help with my account I cannot access my account Can you provide your account number It is 987654321Z I have reset your password",
+      "turns": [
+        {"speaker": "agent", "text": "Hello customer support how can I help you"},
+        {"speaker": "customer", "text": "Hi I need help with my account"},
+        {"speaker": "customer", "text": "I cannot access my account"},
+        {"speaker": "agent", "text": "Can you provide your account number"},
+        {"speaker": "customer", "text": "It is 987654321Z"},
+        {"speaker": "agent", "text": "I have reset your password"}
+      ]
+    },
+    {
+      "id": "billing_dispute_call",
+      "text": "Thank you for calling support My bill is incorrect I will review your account now",
+      "turns": [
+        {"speaker": "agent", "text": "Thank you for calling support"},
+        {"speaker": "customer", "text": "My bill is incorrect"},
+        {"speaker": "agent", "text": "I will review your account now"}
+      ]
+    }
+  ]
+}

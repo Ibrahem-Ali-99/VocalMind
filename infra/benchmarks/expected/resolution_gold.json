@@ -1,0 +1,14 @@
+{
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "is_resolved": true,
+      "missing_steps": []
+    },
+    {
+      "id": "billing_dispute_call",
+      "is_resolved": false,
+      "missing_steps": ["verification", "billing_adjustment_confirmation"]
+    }
+  ]
+}

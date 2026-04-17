@@ -1,0 +1,40 @@
+{
+  "component": "emotion",
+  "metrics": {
+    "label_macro_f1": 1.0,
+    "shift_event_f1": 1.0
+  },
+  "thresholds": {
+    "min_label_f1": 0.75,
+    "min_shift_f1": 0.7
+  },
+  "passed": true,
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "turn_accuracy": 1.0,
+      "gold_shift_events": [
+        2,
+        3,
+        5
+      ],
+      "pred_shift_events": [
+        2,
+        3,
+        5
+      ]
+    },
+    {
+      "id": "billing_dispute_call",
+      "turn_accuracy": 1.0,
+      "gold_shift_events": [
+        1,
+        2
+      ],
+      "pred_shift_events": [
+        1,
+        2
+      ]
+    }
+  ]
+}

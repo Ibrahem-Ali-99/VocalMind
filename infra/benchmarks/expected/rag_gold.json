@@ -1,0 +1,14 @@
+{
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "is_correct": true,
+      "evidence_ids": ["kb_reset_flow", "policy_password_reset"]
+    },
+    {
+      "id": "billing_dispute_call",
+      "is_correct": false,
+      "evidence_ids": ["policy_billing_disclosure"]
+    }
+  ]
+}

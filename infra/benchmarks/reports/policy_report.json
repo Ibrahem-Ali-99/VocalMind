@@ -1,0 +1,38 @@
+{
+  "component": "policy",
+  "metrics": {
+    "violation_precision": 1.0,
+    "violation_recall": 1.0,
+    "policy_attribution_accuracy": 1.0
+  },
+  "thresholds": {
+    "min_violation_precision": 0.7,
+    "min_violation_recall": 0.7,
+    "min_policy_attribution_accuracy": 0.7
+  },
+  "passed": true,
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "gold_violations": [],
+      "pred_violations": [],
+      "gold_policy_ids": [],
+      "pred_policy_ids": []
+    },
+    {
+      "id": "billing_dispute_call",
+      "gold_violations": [
+        "missing_identity_verification"
+      ],
+      "pred_violations": [
+        "missing_identity_verification"
+      ],
+      "gold_policy_ids": [
+        "policy_identity_verification"
+      ],
+      "pred_policy_ids": [
+        "policy_identity_verification"
+      ]
+    }
+  ]
+}

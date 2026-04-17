@@ -1,0 +1,34 @@
+{
+  "component": "transcript",
+  "metrics": {
+    "wer": 0.0,
+    "speaker_accuracy": 1.0,
+    "confusion": {
+      "agent": {
+        "agent": 5,
+        "customer": 0
+      },
+      "customer": {
+        "agent": 0,
+        "customer": 4
+      }
+    }
+  },
+  "thresholds": {
+    "max_wer": 0.25,
+    "min_speaker_accuracy": 0.8
+  },
+  "passed": true,
+  "samples": [
+    {
+      "id": "account_unlock_call",
+      "wer": 0.0,
+      "speaker_accuracy": 1.0
+    },
+    {
+      "id": "billing_dispute_call",
+      "wer": 0.0,
+      "speaker_accuracy": 1.0
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "generated_at_utc": "2026-04-15T17:02:44.413791+00:00",
+  "all_passed": true,
+  "components": {
+    "transcript": {
+      "passed": true,
+      "metrics": {
+        "wer": 0.0,
+        "speaker_accuracy": 1.0,
+        "confusion": {
+          "agent": {
+            "agent": 5,
+            "customer": 0
+          },
+          "customer": {
+            "agent": 0,
+            "customer": 4
+          }
+        }
+      }
+    },
+    "emotion": {
+      "passed": true,
+      "metrics": {
+        "label_macro_f1": 1.0,
+        "shift_event_f1": 1.0
+      }
+    },
+    "policy": {
+      "passed": true,
+      "metrics": {
+        "violation_precision": 1.0,
+        "violation_recall": 1.0,
+        "policy_attribution_accuracy": 1.0
+      }
+    },
+    "rag": {
+      "passed": true,
+      "metrics": {
+        "correctness_accuracy": 1.0,
+        "avg_evidence_coverage": 1.0
+      }
+    },
+    "resolution": {
+      "passed": true,
+      "metrics": {
+        "resolved_accuracy": 1.0,
+        "missing_step_f1": 1.0
+      }
+    }
+  }
+}
