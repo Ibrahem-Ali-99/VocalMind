@@ -279,6 +279,7 @@ CREATE TABLE assistant_queries (
     generated_sql     TEXT        NULL,
     response_text     TEXT        NULL,
     execution_time_ms INTEGER     NULL,
+    result_rows       JSONB       NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
