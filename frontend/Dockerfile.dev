@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1.4
+# Vite dev server — used by docker-compose so host edits to ./frontend apply without rebuilding.
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY . .
+
+EXPOSE 3000
+
+ENV VITE_API_URL=http://localhost:8000
+
+# Runtime command is overridden in docker-compose (bind mount + npm ci when needed).
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

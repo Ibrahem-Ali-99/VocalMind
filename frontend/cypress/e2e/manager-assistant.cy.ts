@@ -20,11 +20,12 @@ describe('Manager Assistant', () => {
     cy.contains('John D.').should('be.visible');
   });
 
-  it('submits a suggested query and exposes the generated sql details', () => {
+  it('submits a typed query and exposes the generated sql details', () => {
     cy.visitAs('manager', '/manager/assistant');
     cy.wait('@getAssistantHistory');
 
-    cy.get('[data-cy="assistant-suggestion-1"]').click();
+    cy.get('input[placeholder*="Ask about scores"]')
+      .type('List all policy violations{enter}');
 
     cy.wait('@postAssistantQuery');
     cy.contains('List all policy violations').should('be.visible');

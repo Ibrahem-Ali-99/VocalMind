@@ -15,6 +15,25 @@ vi.mock('../app/services/api', () => ({
     getAssistantHistory: getAssistantHistoryMock,
 }))
 
+vi.mock('../app/contexts/AuthContext', () => ({
+    useAuth: () => ({
+        user: {
+            id: 'b0000000-0000-0000-0000-000000000001',
+            email: 'manager@test.local',
+            name: 'Test Manager',
+            role: 'manager' as const,
+            organization_id: 'a0000000-0000-0000-0000-000000000001',
+            is_active: true,
+        },
+        token: 'cookie-based',
+        isAuthenticated: true,
+        isLoading: false,
+        login: vi.fn(),
+        googleLogin: vi.fn(),
+        logout: vi.fn(),
+    }),
+}))
+
 describe('ManagerAssistant', () => {
     beforeEach(() => {
         sendAssistantQueryMock.mockReset()
@@ -102,7 +121,7 @@ describe('ManagerAssistant', () => {
         expect(input).toHaveValue('   ')
     })
 
-    it('submits a suggested query, disables controls while loading, and then renders the reply', async () => {
+    it('disables the input while a query is in flight, then renders the reply', async () => {
         let resolveResponse: ((value: any) => void) | undefined
         sendAssistantQueryMock.mockReturnValue(
             new Promise((resolve) => {
@@ -116,11 +135,12 @@ describe('ManagerAssistant', () => {
             </MemoryRouter>
         )
 
-        fireEvent.click(screen.getByRole('button', { name: 'List all policy violations' }))
+        const input = screen.getByPlaceholderText(/Ask about scores, violations, agent trends/) as HTMLInputElement
+        fireEvent.change(input, { target: { value: 'List all policy violations' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
         expect(sendAssistantQueryMock).toHaveBeenCalledWith('List all policy violations')
-        expect(screen.getByPlaceholderText(/Ask about scores, violations, agent trends/)).toBeDisabled()
-        expect(screen.getByRole('button', { name: 'Who are the top 5 agents by overall score?' })).toBeDisabled()
+        expect(input).toBeDisabled()
 
         resolveResponse?.({
             id: 'ai-suggested',

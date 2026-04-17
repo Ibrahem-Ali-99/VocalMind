@@ -6,11 +6,36 @@
 const API_ROOT = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API_BASE = `${API_ROOT.replace(/\/$/, "")}/api/v1`;
 
+/** Mirrors HttpOnly cookie so assistant/history work if the cookie is not sent cross-origin. */
+const VM_ACCESS_TOKEN_KEY = "vm_access_token";
+
+function persistAccessToken(accessToken: string | undefined | null) {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    if (accessToken) sessionStorage.setItem(VM_ACCESS_TOKEN_KEY, accessToken);
+    else sessionStorage.removeItem(VM_ACCESS_TOKEN_KEY);
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+function clearPersistedAccessToken() {
+  persistAccessToken(null);
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
   const headers = new Headers(options?.headers || {});
   if (!isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+  if (!headers.has("Authorization") && typeof sessionStorage !== "undefined") {
+    try {
+      const t = sessionStorage.getItem(VM_ACCESS_TOKEN_KEY);
+      if (t) headers.set("Authorization", `Bearer ${t}`);
+    } catch {
+      /* ignore */
+    }
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
@@ -55,6 +80,11 @@ export function getDashboardStats(): Promise<DashboardStats> {
 
 // ── Interactions ──────────────────────────────────────────────────────────────
 
+export interface ProcessingFailureBrief {
+  stage: string;
+  errorMessage?: string | null;
+}
+
 export interface InteractionSummary {
   id: string;
   agentName: string;
@@ -73,6 +103,7 @@ export interface InteractionSummary {
   responseTime: string;
   status: string;
   audioFilePath?: string | null;
+  processingFailures?: ProcessingFailureBrief[];
 }
 
 export function getInteractions(): Promise<InteractionSummary[]> {
@@ -371,11 +402,27 @@ export interface InteractionDetail {
   ragCompliance?: RagComplianceReport | null;
   emotionTriggers?: EmotionTriggerReport | null;
   llmTriggers?: LLMTriggerReport | null;
+  processingFailures?: ProcessingFailureBrief[];
 }
+
+type InteractionDetailOptions = {
+  includeLLMTriggers?: boolean;
+  llmOrgFilter?: string;
+  llmForceRerun?: boolean;
+  skipCache?: boolean;
+};
+
+type CachedInteractionDetail = {
+  expiresAt: number;
+  data: InteractionDetail;
+};
+
+const interactionDetailCache = new Map<string, CachedInteractionDetail>();
+const INTERACTION_DETAIL_CACHE_TTL_MS = 15_000;
 
 export function getInteractionDetail(
   id: string,
-  options?: { includeLLMTriggers?: boolean; llmOrgFilter?: string; llmForceRerun?: boolean },
+  options?: InteractionDetailOptions,
 ): Promise<InteractionDetail> {
   const params = new URLSearchParams();
   if (options?.includeLLMTriggers) {
@@ -388,7 +435,24 @@ export function getInteractionDetail(
     params.set("llm_force_rerun", "true");
   }
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  return apiFetch<InteractionDetail>(`/interactions/${id}${suffix}`);
+  const cacheKey = `${id}|${suffix}`;
+
+  if (!options?.skipCache) {
+    const cached = interactionDetailCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return Promise.resolve(cached.data);
+    }
+  }
+
+  return apiFetch<InteractionDetail>(`/interactions/${id}${suffix}`).then((data) => {
+    if (!options?.skipCache) {
+      interactionDetailCache.set(cacheKey, {
+        data,
+        expiresAt: Date.now() + INTERACTION_DETAIL_CACHE_TTL_MS,
+      });
+    }
+    return data;
+  });
 }
 
 export function getAudioUrl(interactionId: string): string {
@@ -604,14 +668,24 @@ export function getAgentProfile(agentId: string): Promise<AgentProfile> {
 // ── Assistant ────────────────────────────────────────────────────────────────
 
 export interface AssistantResponse {
-  id: string;
+  id?: string;
   type: "user" | "ai";
   content: string;
   mode: string;
   sql?: string;
+  /** Backend may send camelCase; UI prefers snake_case */
   execution_time?: string;
+  executionTime?: string;
   data?: any[];
-  success: boolean;
+  success?: boolean;
+  /** ISO timestamp from server when message was persisted */
+  created_at?: string;
+}
+
+function normalizeAssistantPayload(raw: AssistantResponse): AssistantResponse {
+  const exec = raw.execution_time ?? raw.executionTime;
+  const success = typeof raw.success === "boolean" ? raw.success : true;
+  return { ...raw, execution_time: exec, executionTime: exec, success };
 }
 
 export function sendAssistantQuery(text: string, mode: "chat" | "voice" = "chat"): Promise<AssistantResponse> {
@@ -621,16 +695,17 @@ export function sendAssistantQuery(text: string, mode: "chat" | "voice" = "chat"
       query_text: text,
       mode: mode,
     }),
-  });
+  }).then(normalizeAssistantPayload);
 }
 
 export function getAssistantHistory(): Promise<AssistantResponse[]> {
-  return apiFetch<AssistantResponse[]>("/assistant/history");
+  return apiFetch<AssistantResponse[]>("/assistant/history").then((rows) => rows.map(normalizeAssistantPayload));
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-const API_BASE_ROOT = "http://localhost:8000/api/v1";
+const API_BASE_ROOT = API_BASE;
+const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK_AUTH === "true";
 
 // Mock values for demonstration
 const MOCK_MANAGER: User = {
@@ -655,8 +730,8 @@ const MOCK_AGENT: User = {
 let currentUser: User | null = null;
 
 export async function loginWithEmail(email: string, password: string): Promise<{ access_token: string }> {
-  // Simple mock logic for demonstration
-  if (password === "password") {
+  // Optional mock mode for UI demos without backend auth.
+  if (USE_MOCK_AUTH && password === "password") {
     if (email === "manager@niletech.com") {
       currentUser = MOCK_MANAGER;
       return { access_token: "mock-token-manager" };
@@ -684,20 +759,24 @@ export async function loginWithEmail(email: string, password: string): Promise<{
       throw new Error("Invalid email or password");
     }
 
-    return res.json();
+    const data = await res.json();
+    persistAccessToken(data.access_token);
+    return data;
   } catch (err) {
-    if (password === "password" && (email === "manager@niletech.com" || email === "mohsen@niletech.com")) {
-       // Fallback to mock if backend is down
-       return { access_token: "mock-token-fallback" };
+    if (USE_MOCK_AUTH && password === "password" && (email === "manager@niletech.com" || email === "mohsen@niletech.com")) {
+      // Fallback to mock only when explicitly enabled.
+      return { access_token: "mock-token-fallback" };
     }
     throw err;
   }
 }
 
 export async function loginWithGoogle(idToken: string): Promise<{ access_token: string }> {
-  return apiFetch<{ access_token: string }>(`/auth/google?token=${idToken}`, {
+  const data = await apiFetch<{ access_token: string }>(`/auth/google?token=${encodeURIComponent(idToken)}`, {
     method: "POST",
   });
+  persistAccessToken(data.access_token);
+  return data;
 }
 
 export interface User {
@@ -711,11 +790,15 @@ export interface User {
 }
 
 export async function getUserMe(): Promise<User> {
-  if (currentUser) return currentUser;
+  if (USE_MOCK_AUTH && currentUser) return currentUser;
   return apiFetch<User>("/users/me");
 }
 
 export async function logoutUser(): Promise<void> {
-  await apiFetch("/auth/logout", { method: "POST" });
+  try {
+    await apiFetch("/auth/logout", { method: "POST" });
+  } finally {
+    clearPersistedAccessToken();
+  }
 }
 

@@ -122,6 +122,7 @@ export function buildAssistantResponse(
     mode: 'chat',
     sql: 'SELECT * FROM interactions LIMIT 5',
     execution_time: '120ms',
+    executionTime: '120ms',
     data: [
       { name: 'Sarah M.', score: 92 },
       { name: 'John D.', score: 85 },

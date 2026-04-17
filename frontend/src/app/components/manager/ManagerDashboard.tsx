@@ -103,7 +103,9 @@ export function ManagerDashboard() {
         {/* Weekly Trend */}
         <div className="lg:col-span-2 bg-card rounded-[14px] border border-border p-6 transition-all">
           <h2 className="text-[16px] font-bold text-foreground mb-1">Weekly Score Trends</h2>
-          <p className="text-[11px] italic text-muted-foreground mb-6">interaction_scores.overall_score avg per day</p>
+          <p className="text-[11px] italic text-muted-foreground mb-6">
+            Average overall score by weekday (Mon–Sun), all time — only days with calls appear on the axis
+          </p>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data.weeklyTrend}>

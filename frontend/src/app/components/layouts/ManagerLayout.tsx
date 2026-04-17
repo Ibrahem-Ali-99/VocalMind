@@ -1,14 +1,11 @@
+import { Fragment, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router";
-import { useState } from "react";
-import { useAuth } from "../../contexts/AuthContext";
 import { UserNav } from "./UserNav";
 import {
-  Mic,
   LayoutDashboard,
   Search,
   MessageSquare,
   BookOpen,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Bell,
@@ -22,18 +19,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { Separator } from "../ui/separator";
 
 export function ManagerLayout() {
-  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
-
-  const getInitials = (name: string) => {
-    if (!name) return "??";
-    const parts = name.split(" ");
-    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    return name.substring(0, 2).toUpperCase();
-  };
 
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/manager" },
@@ -73,44 +63,34 @@ export function ManagerLayout() {
 
         {/* Navigation & Content Area (Flex Grow) */}
         <div className="flex-1 flex flex-col justify-between py-4">
-          {/* Top Group: Role Badge & Nav */}
-          <div className="space-y-6">
-            {!collapsed && (
-              <div className="px-4">
-                <div className="bg-primary/10 border border-primary/20 rounded-xl p-3.5 transition-all shadow-sm">
-                  <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1 opacity-80">
-                    Manager Portal
-                  </div>
-                  <div className="text-[12px] text-foreground font-semibold leading-tight">
-                    Full org access
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <nav className="px-2 space-y-1.5">
-              {navItems.map((item) => {
+          <div>
+            <nav className="px-2 flex flex-col gap-0.5" aria-label="Manager navigation">
+              {navItems.map((item, index) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path || 
-                  (item.path === "/manager/inspector" && location.pathname.includes("/manager/inspector"));
-                
+                const isActive =
+                  location.pathname === item.path ||
+                  (item.path === "/manager/inspector" &&
+                    location.pathname.includes("/manager/inspector"));
+
                 return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`flex items-center gap-3 px-3.5 h-11 rounded-xl transition-all ${
-                      isActive
-                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                        : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-                    }`}
-                  >
-                    <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-                    {!collapsed && (
-                      <span className="text-[14px] font-semibold">
-                        {item.label}
-                      </span>
+                  <Fragment key={item.path}>
+                    {index > 0 && (
+                      <Separator className="my-2 bg-sidebar-border/60" decorative />
                     )}
-                  </Link>
+                    <Link
+                      to={item.path}
+                      className={`flex items-center gap-3 px-3.5 h-11 rounded-xl transition-colors ${
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                          : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                      }`}
+                    >
+                      <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                      {!collapsed && (
+                        <span className="text-[14px] font-semibold truncate">{item.label}</span>
+                      )}
+                    </Link>
+                  </Fragment>
                 );
               })}
             </nav>
@@ -141,7 +121,7 @@ export function ManagerLayout() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top Bar */}
         <div className="h-16 bg-card border-b border-border px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -177,7 +157,7 @@ export function ManagerLayout() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-w-0">
           <Outlet />
         </div>
       </div>

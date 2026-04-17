@@ -12,6 +12,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AUTH_COOKIE_HINT_KEY = "vm_auth_cookie_hint";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
@@ -20,6 +21,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const fetchUser = async () => {
+      const hasAuthHint = localStorage.getItem(AUTH_COOKIE_HINT_KEY) === "1";
+      if (!hasAuthHint) {
+        setUser(null);
+        setToken(null);
+        setIsLoading(false);
+        return;
+      }
       try {
         const userData = await getUserMe();
         setUser(userData);
@@ -27,6 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } catch (e) {
         setUser(null);
         setToken(null);
+        localStorage.removeItem(AUTH_COOKIE_HINT_KEY);
       } finally {
         setIsLoading(false);
       }
@@ -39,6 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const userData = await getUserMe();
     setUser(userData);
     setToken("cookie-based");
+    localStorage.setItem(AUTH_COOKIE_HINT_KEY, "1");
     return userData;
   };
 
@@ -47,6 +57,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const userData = await getUserMe();
     setUser(userData);
     setToken("cookie-based");
+    localStorage.setItem(AUTH_COOKIE_HINT_KEY, "1");
   };
 
   const logout = async () => {
@@ -57,6 +68,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     setToken(null);
     setUser(null);
+    localStorage.removeItem(AUTH_COOKIE_HINT_KEY);
     window.location.href = "/login";
   };
 

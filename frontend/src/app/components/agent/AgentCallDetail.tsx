@@ -21,14 +21,38 @@ export function AgentCallDetail() {
 
   useEffect(() => {
     if (!id) return;
-    getInteractionDetail(id, {
-      includeLLMTriggers: true,
-    })
-      .then(setData)
-      .catch((err) => setError(err.message))
-      .finally(() => {
-        setLoading(false);
+    let isCancelled = false;
+
+    getInteractionDetail(id)
+      .then((baseDetail) => {
+        if (!isCancelled) {
+          setData(baseDetail);
+          setLoading(false);
+        }
+
+        return getInteractionDetail(id, {
+          includeLLMTriggers: true,
+          skipCache: true,
+        })
+          .then((detailWithLLM) => {
+            if (!isCancelled) {
+              setData(detailWithLLM);
+            }
+          })
+          .catch(() => {
+            // Keep base detail rendered even if LLM enrichment fails.
+          });
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          setError(err.message);
+          setLoading(false);
+        }
       });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [id]);
 
   if (loading) {
