@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Play, Flag, Loader2, AlertTriangle as AlertTriangleIcon, RefreshCw } from "lucide-react";
+import { ArrowLeft, Play, Flag, Loader2, AlertTriangle as AlertTriangleIcon, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { getInteractionDetail, getAudioUrl, reprocessInteraction, type InteractionDetail } from "../../services/api";
 
@@ -15,6 +15,7 @@ export function SessionDetail() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [audioEpoch, setAudioEpoch] = useState(0);
+  const [showProvenance, setShowProvenance] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioObjectUrlRef = useRef<string | null>(null);
 
@@ -132,8 +133,18 @@ export function SessionDetail() {
     return "var(--destructive)";
   };
 
+  const emotionAliases: Record<string, string> = {
+    fearful: "frustrated",
+    sad: "frustrated",
+    surprised: "neutral",
+    disgusted: "angry",
+  };
+
+  const normalizeEmotion = (raw: string) => emotionAliases[raw] ?? raw;
+
   const getEmotionStyle = (emotion: string) => {
-    switch (emotion) {
+    const e = normalizeEmotion(emotion);
+    switch (e) {
       case "neutral":
         return { bg: "var(--muted)", text: "var(--muted-foreground)", label: "Neutral" };
       case "happy":
@@ -391,6 +402,110 @@ export function SessionDetail() {
           </div>
         </div>
       </div>
+
+      {data.llmTriggers && data.llmTriggers.available && (
+        <div className="bg-card rounded-[14px] border border-border p-6 transition-all space-y-6">
+          <h3 className="text-[16px] font-bold text-foreground mb-1">Automated Evaluation</h3>
+          <p className="text-[11px] italic text-muted-foreground mb-4">LLM trigger analysis saved during processing</p>
+
+          {data.llmTriggers.emotionShift && (
+            <div className="rounded-xl border border-border p-4 space-y-2">
+              <h4 className="text-[14px] font-semibold text-foreground">Emotion Trigger Reasoning</h4>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[12px] text-muted-foreground">Dissonance:</span>
+                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-warning/10 text-warning">{data.llmTriggers.emotionShift.dissonanceType}</span>
+              </div>
+              <p className="text-[12px] text-muted-foreground">{data.llmTriggers.emotionShift.rootCause}</p>
+              {data.llmTriggers.emotionShift.counterfactualCorrection && (
+                <p className="text-[12px] text-foreground italic">Counterfactual: {data.llmTriggers.emotionShift.counterfactualCorrection}</p>
+              )}
+            </div>
+          )}
+
+          {data.llmTriggers.processAdherence && (
+            <div className="rounded-xl border border-border p-4 space-y-2">
+              <h4 className="text-[14px] font-semibold text-foreground">Process Adherence</h4>
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-muted-foreground">Topic:</span>
+                <span className="text-[12px] font-semibold text-foreground">{data.llmTriggers.processAdherence.detectedTopic}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-muted-foreground">Status:</span>
+                <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${data.llmTriggers.processAdherence.isResolved ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                  {data.llmTriggers.processAdherence.isResolved ? "Resolved" : "Needs follow-up"}
+                </span>
+              </div>
+              <p className="text-[12px] text-muted-foreground">{data.llmTriggers.processAdherence.justification}</p>
+              {data.llmTriggers.processAdherence.missingSopSteps.length > 0 && (
+                <ul className="list-disc ml-5 text-[12px] text-muted-foreground space-y-1">
+                  {data.llmTriggers.processAdherence.missingSopSteps.map((step, idx) => (
+                    <li key={idx}>{step}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {data.llmTriggers.nliPolicy && (
+            <div className="rounded-xl border border-border p-4 space-y-2">
+              <h4 className="text-[14px] font-semibold text-foreground">Policy Inference</h4>
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-muted-foreground">Category:</span>
+                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-primary/10 text-primary">{data.llmTriggers.nliPolicy.nliCategory}</span>
+              </div>
+              <p className="text-[12px] text-muted-foreground">{data.llmTriggers.nliPolicy.justification}</p>
+            </div>
+          )}
+
+          {data.llmTriggers.explainability && (
+            <div className="rounded-xl border border-border p-4 space-y-4">
+              <h4 className="text-[14px] font-semibold text-foreground">Evidence-Anchored Explainability</h4>
+              <div className="space-y-3">
+                {data.llmTriggers.explainability.triggerAttributions.map((attr) => (
+                  <div key={attr.attributionId} className="rounded-lg border border-border/50 p-3 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] font-semibold text-foreground">{attr.title}</span>
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-muted text-muted-foreground">{attr.verdict}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{attr.triggerType} — {attr.reasoning}</p>
+                    {attr.evidenceSpan && (
+                      <p className="text-[11px] italic text-foreground/80">"{attr.evidenceSpan.quote}"</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <p className="text-[11px] text-muted-foreground mb-2">Claim to evidence to verdict</p>
+                <button
+                  type="button"
+                  onClick={() => setShowProvenance((v) => !v)}
+                  className="flex items-center gap-1 text-[12px] font-semibold text-primary hover:underline"
+                >
+                  {showProvenance ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  Retrieval Provenance Scoring
+                </button>
+                {showProvenance && (
+                  <div className="mt-2 space-y-3">
+                    {data.llmTriggers!.explainability!.claimProvenance.map((claim) => (
+                      <div key={claim.claimId} className="rounded-lg border border-border/50 p-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[12px] font-semibold text-foreground">{claim.claimText}</span>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-muted text-muted-foreground">{claim.nliVerdict}</span>
+                        </div>
+                        {claim.retrievedPolicy && (
+                          <p className="text-[11px] text-muted-foreground">Policy: {claim.retrievedPolicy.clause}</p>
+                        )}
+                        <p className="text-[11px] italic text-foreground/80">{claim.reasoning}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

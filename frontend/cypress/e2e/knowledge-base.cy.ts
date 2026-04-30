@@ -1,6 +1,6 @@
 describe("Knowledge Base", () => {
   beforeEach(() => {
-    cy.visit("/manager/knowledge");
+    cy.visitAs("manager", "/manager/knowledge");
     cy.wait(["@getPolicies", "@getFaqs"]);
   });
 

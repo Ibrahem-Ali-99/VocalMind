@@ -14,6 +14,7 @@ Architecture (fully local except Groq LLM):
 
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -37,6 +38,12 @@ except ImportError:  # pragma: no cover - allows direct script/test imports
     from config import settings
 
 
+logger = logging.getLogger(__name__)
+
+VALID_DOC_TYPES = {"policy", "sop"}
+VALID_POLICY_SEVERITIES = {"critical", "major", "minor"}
+
+
 # ── Docling Singleton ─────────────────────────────────────────────────────────
 
 _docling_converter: DocumentConverter | None = None
@@ -58,6 +65,9 @@ def _get_converter() -> DocumentConverter:
 class DocumentIngestionPipeline:
     """
     Ingests PDF policy documents into Qdrant with dual-granularity chunking.
+
+    This module is retrieval infrastructure only (parsing/chunking/indexing).
+    It does not perform compliance or NLI judgment.
 
     Usage::
 
@@ -138,6 +148,7 @@ class DocumentIngestionPipeline:
             ("/api/embeddings", {"model": settings.embedding.model, "prompt": text}),
         )
         last_error: Exception | None = None
+        last_path: str | None = None
         for attempt, delay in enumerate((0.0, *retry_delays), start=1):
             if delay:
                 time.sleep(delay)
@@ -155,12 +166,15 @@ class DocumentIngestionPipeline:
                         return data["embedding"]
                 except Exception as exc:
                     last_error = exc
+                    last_path = path
+                    logger.debug("Embedding endpoint %s failed: %s", path, exc)
 
             if attempt == 1:
                 print("  Ollama embedding request failed, retrying...")
 
         raise ConnectionError(
-            f"Cannot reach Ollama embeddings API at {settings.embedding.base_url}: {last_error}"
+            f"Cannot reach Ollama embeddings API at {settings.embedding.base_url} "
+            f"(last attempted endpoint: {last_path}): {last_error}"
         )
 
     # ── PDF Parsing ───────────────────────────────────────────────────────
@@ -244,6 +258,96 @@ class DocumentIngestionPipeline:
         extracted["source_file"] = source_file
         extracted["ingested_at"] = datetime.now(timezone.utc).isoformat()
         return extracted
+
+    @staticmethod
+    def _extract_labeled_value(text: str, labels: tuple[str, ...]) -> str:
+        for label in labels:
+            pattern = (
+                r"^\s*(?:[-*]\s*)?\*{0,2}"
+                + re.escape(label)
+                + r"\*{0,2}\s*:\s*\*{0,2}(.+?)\*{0,2}\s*$"
+            )
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                return match.group(1).strip().strip('"')
+        return ""
+
+    @classmethod
+    def _extract_policy_ref(cls, text: str) -> list[str]:
+        """Extract optional SOP policy_ref values from common inline metadata forms."""
+        raw_value = cls._extract_labeled_value(
+            text,
+            ("policy_ref", "policy refs", "policy references"),
+        )
+        if not raw_value:
+            return []
+        try:
+            parsed = json.loads(raw_value)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+        return [
+            item.strip().strip('"').strip("'")
+            for item in re.split(r"[,;]", raw_value.strip("[]"))
+            if item.strip().strip('"').strip("'")
+        ]
+
+    @classmethod
+    def _extract_policy_rule_metadata(cls, text: str) -> dict[str, str]:
+        """Extract atomic policy-rule metadata when present in the source text."""
+        rule_id = cls._extract_labeled_value(text, ("rule_id", "rule id", "rule"))
+        rule_statement = cls._extract_labeled_value(
+            text,
+            ("rule_statement", "rule statement", "statement"),
+        )
+        severity = cls._extract_labeled_value(text, ("severity",)).lower()
+        metadata: dict[str, str] = {}
+        if rule_id:
+            metadata["rule_id"] = rule_id
+        if rule_statement:
+            metadata["rule_statement"] = rule_statement
+        if severity:
+            metadata["severity"] = severity
+        return metadata
+
+    @classmethod
+    def _annotate_document_metadata(cls, chunks: list, doc_type: str) -> None:
+        """Add document-type metadata required by retrieval routing."""
+        if doc_type not in VALID_DOC_TYPES:
+            raise ValueError(f"Unsupported doc_type: {doc_type}")
+        for chunk in chunks:
+            chunk.metadata["doc_type"] = doc_type
+            if doc_type == "sop":
+                extracted_policy_ref = cls._extract_policy_ref(chunk.page_content)
+                chunk.metadata["policy_ref"] = extracted_policy_ref or chunk.metadata.get("policy_ref") or []
+            if doc_type == "policy":
+                chunk.metadata.update(cls._extract_policy_rule_metadata(chunk.page_content))
+
+    @classmethod
+    def _validate_policy_chunk_schema(cls, chunks: list, label: str) -> list[str]:
+        """Warn when policy chunks do not expose atomic rule metadata."""
+        warnings: list[str] = []
+        for index, chunk in enumerate(chunks, start=1):
+            metadata = chunk.metadata
+            rule_id = str(metadata.get("rule_id") or "").strip()
+            rule_statement = str(metadata.get("rule_statement") or "").strip()
+            severity = str(metadata.get("severity") or "").strip().lower()
+            missing: list[str] = []
+            if not rule_id:
+                missing.append("rule_id")
+            if not rule_statement:
+                missing.append("rule_statement")
+            if severity not in VALID_POLICY_SEVERITIES:
+                missing.append("severity")
+            if missing:
+                warning = (
+                    f"[{label}] Policy chunk {index} missing/invalid atomic rule metadata: "
+                    f"{', '.join(missing)}"
+                )
+                warnings.append(warning)
+                logger.warning(warning)
+        return warnings
 
     # ── Chunking ──────────────────────────────────────────────────────────
 
@@ -349,8 +453,9 @@ class DocumentIngestionPipeline:
             if not content:
                 continue
 
-            # Deterministic UUID — same content always gets the same ID (upsert-safe)
-            content_hash = hashlib.md5(content.encode()).hexdigest()
+            # Deterministic UUID — includes source metadata to avoid cross-document collisions
+            source_key = f"{chunk.metadata.get('source_file', '')}:{chunk.metadata.get('org', '')}"
+            content_hash = hashlib.md5(f"{source_key}:{content}".encode()).hexdigest()
             point_id = str(uuid.UUID(content_hash))
 
             vector = self._get_embedding(content)
@@ -427,16 +532,22 @@ class DocumentIngestionPipeline:
         # Step 3 — Extract metadata
         print("\n[Step 3] Extracting document metadata...")
         doc_meta = self._extract_metadata(clean_markdown, base_name, org_name)
+        doc_type = "sop" if is_sop_document else "policy"
+        doc_meta["doc_type"] = doc_type
+        if doc_type == "sop":
+            doc_meta["policy_ref"] = []
         print(f"  {json.dumps({k: v for k, v in doc_meta.items() if k != 'ingested_at'})}")
 
         # Step 4 — Parent splitting
         print("\n[Step 4] Splitting into Parent Chunks (H1/H2/H3)...")
         parent_chunks = self._split_parents(clean_markdown, doc_meta)
+        self._annotate_document_metadata(parent_chunks, doc_type)
         print(f"  Parent chunks: {len(parent_chunks)}")
 
         # Step 5 — Child splitting
         print("\n[Step 5] Splitting into Child Chunks...")
         child_chunks = self._split_children(parent_chunks)
+        self._annotate_document_metadata(child_chunks, doc_type)
         print(f"  Child chunks: {len(child_chunks)}")
 
         # Step 6 — Validation
@@ -444,6 +555,9 @@ class DocumentIngestionPipeline:
         p_report = self._validate_chunks(parent_chunks, "PARENT")
         c_report = self._validate_chunks(child_chunks, "CHILD")
         all_warnings = p_report["warnings"] + c_report["warnings"]
+        if doc_type == "policy":
+            all_warnings.extend(self._validate_policy_chunk_schema(parent_chunks, "PARENT"))
+            all_warnings.extend(self._validate_policy_chunk_schema(child_chunks, "CHILD"))
         if c_report["total"] == p_report["total"] and len(parent_chunks) > 0:
             all_warnings.append(
                 "[PIPELINE] Parent == Child count — child splitting may not be working."

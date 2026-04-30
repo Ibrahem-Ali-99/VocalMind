@@ -283,6 +283,7 @@ describe('AgentCallDetail', () => {
         await waitFor(() => {
             expect(getInteractionDetailMock).toHaveBeenCalledWith('int-007', {
                 includeLLMTriggers: true,
+                skipCache: true,
             })
         })
         expect(screen.queryByRole('button', { name: /Refresh LLM/i })).not.toBeInTheDocument()

@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from app.llm_trigger import retrieval
 
@@ -53,6 +54,8 @@ def test_resolve_retrieved_sop_context_preserves_manual_chunk_metadata(monkeypat
     assert context.source == "manual"
     assert context.chunks
     assert context.chunks[0].metadata["source_file"] == "01-refund.pdf"
+    assert context.chunks[0].metadata["doc_type"] == "sop"
+    assert context.chunks[0].metadata["policy_ref"] == []
     assert "SOP from parsed docs" in context.text
 
 
@@ -131,3 +134,63 @@ def test_resolve_retrieved_sop_context_selects_best_matching_manual_doc(monkeypa
     assert "01-refund-request-processing.pdf" in context.text
     assert "02-billing-issue-resolution.pdf" not in context.text
     assert context.chunks[0].metadata["source_file"] == "01-refund-request-processing.pdf"
+
+
+def test_sop_retriever_filters_by_doc_type_and_falls_back_for_legacy_chunks(monkeypatch):
+    calls = []
+
+    class _FakeClient:
+        def query_points(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return SimpleNamespace(points=[])
+            return SimpleNamespace(
+                points=[
+                    SimpleNamespace(
+                        score=0.74,
+                        payload={
+                            "text": "Legacy SOP step",
+                            "source_file": "legacy.md",
+                        },
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(retrieval.QdrantRetriever, "_embed_query", lambda self, text: [0.1, 0.2])
+    retriever = retrieval.SOPRetriever(client=_FakeClient())
+
+    chunks = retriever.retrieve_sop_chunks("refund request", org_filter="nexalink")
+
+    assert chunks[0].text == "Legacy SOP step"
+    assert calls[0]["query_filter"].must[1].key == "doc_type"
+    assert calls[0]["query_filter"].must[1].match.value == "sop"
+    assert len(calls) == 2
+
+
+def test_policy_retriever_filters_by_policy_doc_type(monkeypatch):
+    calls = []
+
+    class _FakeClient:
+        def query_points(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                points=[
+                    SimpleNamespace(
+                        score=0.91,
+                        payload={
+                            "text": "Policy rule",
+                            "doc_type": "policy",
+                            "rule_id": "CS-RULE-003",
+                        },
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(retrieval.QdrantRetriever, "_embed_query", lambda self, text: [0.1, 0.2])
+    retriever = retrieval.PolicyRetriever(client=_FakeClient())
+
+    chunks = retriever.retrieve_policy_chunks("refund claim", org_filter="nexalink")
+
+    assert chunks[0].metadata["doc_type"] == "policy"
+    assert calls[0]["query_filter"].must[1].key == "doc_type"
+    assert calls[0]["query_filter"].must[1].match.value == "policy"

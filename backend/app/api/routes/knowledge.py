@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.models.organization import Organization
 from app.models.policy import CompanyPolicy, OrganizationPolicy, PolicyCompliance
 from app.models.faq import FAQArticle, OrganizationFAQArticle
+from app.llm_trigger.service import invalidate_llm_trigger_cache
 
 router = APIRouter()
 
@@ -165,6 +166,7 @@ async def create_policy(session: SessionDep, current_user: CurrentUser, data: Po
     )
     session.add(org_link)
     await session.commit()
+    await invalidate_llm_trigger_cache(session, org_filter=current_user.organization_id)
     return {"status": "success", "id": str(policy.id)}
 
 
@@ -204,6 +206,7 @@ async def upload_policy(
     )
     session.add(org_link)
     await session.commit()
+    await invalidate_llm_trigger_cache(session, org_filter=current_user.organization_id)
     return {"status": "success", "id": str(policy.id)}
 
 
@@ -260,6 +263,7 @@ async def replace_policy_upload(
     policy.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(policy)
     await session.commit()
+    await invalidate_llm_trigger_cache(session, org_filter=current_user.organization_id)
     return {"status": "success", "id": str(policy.id)}
 
 
@@ -278,6 +282,7 @@ async def toggle_policy(session: SessionDep, current_user: CurrentUser, policy_i
     org_policy.is_active = not org_policy.is_active
     session.add(org_policy)
     await session.commit()
+    await invalidate_llm_trigger_cache(session, org_filter=current_user.organization_id)
     return {"status": "success", "isActive": org_policy.is_active}
 
 
@@ -480,6 +485,7 @@ async def delete_policy(
             _delete_document_file(settings.POLICY_DOCS_ROOT, org_slug, POLICY_DOCS_FOLDER, policy_id)
             
     await session.commit()
+    await invalidate_llm_trigger_cache(session, org_filter=current_user.organization_id)
     return {"status": "success", "message": "Policy deleted"}
 
 

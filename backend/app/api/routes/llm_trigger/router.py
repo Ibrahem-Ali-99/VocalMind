@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import SessionDep
+from app.core.config import settings
 from app.llm_trigger.schemas import (
     EmotionShiftAnalysis,
     InteractionLLMTriggerReport,
@@ -40,8 +41,8 @@ class ProcessAdherenceRequest(BaseModel):
 
 
 class NLIPolicyCheckRequest(BaseModel):
-    agent_statement: str = Field(description="Single statement made by the agent.")
-    ground_truth_policy: str = Field(description="Relevant policy text used as NLI ground truth.")
+    agent_statement: str = Field(description="Single claim/statement made by the agent.")
+    ground_truth_policy: str = Field(description="Single policy context used as NLI ground truth.")
 
 
 class InteractionTriggerRequest(BaseModel):
@@ -61,6 +62,37 @@ class InteractionTriggerRequest(BaseModel):
         default=False,
         description="When true, ignore any saved report and recompute triggers.",
     )
+
+
+@router.get(
+    "/health",
+    summary="Health check for LLM trigger dependencies",
+)
+async def llm_trigger_health():
+    checks: dict[str, str] = {}
+
+    try:
+        from app.llm_trigger.retrieval import _get_shared_qdrant_client
+        client = _get_shared_qdrant_client()
+        collections = [c.name for c in client.get_collections().collections]
+        checks["qdrant"] = "ok" if collections else "empty"
+    except Exception as exc:
+        checks["qdrant"] = f"error: {exc}"
+
+    try:
+        import httpx
+        response = httpx.get(
+            f"{settings.OLLAMA_BASE_URL}/api/tags",
+            timeout=5.0,
+        )
+        checks["ollama"] = "ok" if response.status_code == 200 else f"status:{response.status_code}"
+    except Exception as exc:
+        checks["ollama"] = f"error: {exc}"
+
+    checks["groq_api_key"] = "configured" if settings.GROQ_API_KEY else "missing"
+
+    overall = "ok" if all(v == "ok" or v == "configured" for v in checks.values()) else "degraded"
+    return {"status": overall, "dependencies": checks}
 
 
 @router.post(
@@ -92,7 +124,7 @@ async def process_adherence_endpoint(payload: ProcessAdherenceRequest) -> Proces
 @router.post(
     "/nli-policy-check",
     response_model=NLIEvaluation,
-    summary="NLI-Based Policy Consistency Evaluation",
+    summary="Single-Claim NLI Policy Alignment Check",
 )
 async def nli_policy_check_endpoint(payload: NLIPolicyCheckRequest) -> NLIEvaluation:
     return await run_nli_policy_check(

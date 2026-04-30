@@ -18,7 +18,7 @@ describe('Authentication and routing', () => {
     cy.contains('button', 'Sign In').click();
 
     cy.location('pathname').should('eq', '/manager');
-    cy.contains('Manager Portal').should('be.visible');
+    cy.contains('Dashboard').should('be.visible');
     cy.contains('Average Score').should('be.visible');
   });
 

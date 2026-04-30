@@ -6,6 +6,7 @@ import pytest
 from app.llm_trigger.retrieval import RetrievedChunk
 from app.llm_trigger.schemas import EmotionShiftAnalysis, ProcessAdherenceReport
 from app.llm_trigger.service import (
+    _build_policy_reference_from_chunk,
     _build_emotion_transition_attributions,
     _build_rolling_windows,
     _detect_cross_modal_dissonance,
@@ -121,6 +122,30 @@ def test_detect_topic_from_sop_chunk_reference_prefers_matched_document():
 
     topic = _detect_topic_from_sop_chunks(chunks)
     assert topic == "refund_request"
+
+
+def test_policy_reference_preserves_doc_type_and_policy_ref_metadata():
+    chunk = RetrievedChunk(
+        text="Step 4: Confirm refund timeline.",
+        metadata={
+            "doc_type": "sop",
+            "policy_ref": ["CS-RULE-003"],
+            "source_file": "refund-sop.md",
+        },
+        source="qdrant",
+        collection="vocalmind_sop_parents",
+    )
+
+    reference = _build_policy_reference_from_chunk(
+        chunk,
+        source_kind="sop",
+        fallback_text="",
+        fallback_reference="Retrieved SOP",
+    )
+
+    assert reference is not None
+    assert reference.doc_type == "sop"
+    assert reference.policy_ref == ["CS-RULE-003"]
 
 
 @pytest.mark.asyncio

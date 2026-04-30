@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "llama-3.3-70b-versatile"
     LLM_TEMPERATURE: float = 0.0
     LLM_MAX_TOKENS: int = 1024
+    LLM_REQUEST_TIMEOUT_SECONDS: float = 60.0
 
     # Qdrant / Embeddings retrieval for SOP context
     QDRANT_URL: str = "http://localhost:6333"
@@ -67,6 +68,9 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "snowflake-arctic-embed2"
     EMBEDDING_TIMEOUT_SECONDS: float = 60.0
     SOP_RETRIEVAL_TOP_K: int = 4
+    SOP_MAX_CHUNKS: int = 2
+    RAG_SUPPORTED_THRESHOLD: float = 0.82
+    RAG_NEUTRAL_THRESHOLD: float = 0.55
     POLICY_DOCS_ROOT: str = str(Path.cwd() / "storage" / "guidelines")
     SOP_DOCS_ROOT: str = str(Path.cwd() / "sop-standards")
     KNOWLEDGE_DOCS_ROOT: str = str(Path.cwd() / "storage" / "knowledge")

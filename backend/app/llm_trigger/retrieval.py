@@ -1,20 +1,36 @@
+"""
+Retrieval adapters for the LLM trigger pipeline.
+
+This module belongs to the RAG/retrieval layer from the trigger pipeline's
+point of view: it resolves SOP and policy chunks from overrides, manual
+fallback files, and Qdrant. It intentionally returns ``RetrievedChunk`` data
+only; transcript-level compliance reports and claim-level NLI verdicts live in
+their evaluator/checker functions.
+"""
+
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from typing import Any
 import httpx
 from pathlib import Path
 import re
+import threading
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
 from app.core.config import settings
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class RetrievedChunk:
     text: str
     score: float | None = None
-    metadata: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     source: str = "qdrant"
     collection: str | None = None
 
@@ -37,7 +53,7 @@ class RetrievedChunk:
                 if self.metadata.get(key)
             ) or None,
         ]
-        return " • ".join(part for part in parts if part)
+        return " \u2022 ".join(part for part in parts if part)
 
 
 @dataclass
@@ -54,7 +70,7 @@ def _tokenize(text: str) -> set[str]:
 def _rank_manual_chunks(
     transcript_text: str,
     chunks: list[RetrievedChunk],
-    max_chunks: int = 1,
+    max_chunks: int = 2,
 ) -> list[RetrievedChunk]:
     if not chunks:
         return []
@@ -78,7 +94,7 @@ def _rank_manual_chunks(
             + (2 * len(query_tokens.intersection(source_tokens)))
             + len(query_tokens.intersection(header_tokens))
         )
-        if chunk.metadata.get("doc_type") == "sop-procedures":
+        if chunk.metadata.get("doc_type") in {"sop", "sop-procedures"}:
             overlap += 1
         score = min(1.0, overlap / max(3, len(query_tokens)))
         ranked.append((score, -index, RetrievedChunk(
@@ -118,11 +134,26 @@ def _rank_chunks_by_query(
     return [chunk for _, _, chunk in ranked[:max_chunks]]
 
 
-class QdrantRetriever:
-    """Shared Qdrant retriever used by llm_trigger explainability paths."""
+_qdrant_lock = threading.Lock()
+_shared_qdrant_client: QdrantClient | None = None
 
-    def __init__(self) -> None:
-        self._qdrant = QdrantClient(url=settings.QDRANT_URL, check_compatibility=False)
+
+def _get_shared_qdrant_client() -> QdrantClient:
+    global _shared_qdrant_client
+    if _shared_qdrant_client is not None:
+        return _shared_qdrant_client
+    with _qdrant_lock:
+        if _shared_qdrant_client is not None:
+            return _shared_qdrant_client
+        _shared_qdrant_client = QdrantClient(url=settings.QDRANT_URL, check_compatibility=False)
+        return _shared_qdrant_client
+
+
+class QdrantRetriever:
+    """Shared Qdrant retriever for grounded context, with no judgment logic."""
+
+    def __init__(self, client: QdrantClient | None = None) -> None:
+        self._qdrant = client or _get_shared_qdrant_client()
 
     def _embed_query(self, text: str) -> list[float]:
         payloads = (
@@ -130,6 +161,7 @@ class QdrantRetriever:
             ("/api/embeddings", {"model": settings.EMBEDDING_MODEL, "prompt": text}),
         )
         last_error: Exception | None = None
+        last_path: str | None = None
         for path, payload in payloads:
             try:
                 response = httpx.post(
@@ -144,8 +176,12 @@ class QdrantRetriever:
                     return vector
             except Exception as exc:
                 last_error = exc
+                last_path = path
+                logger.debug("Embedding endpoint %s failed: %s", path, exc)
 
-        raise ValueError(f"Embedding API did not return vector: {last_error}")
+        raise ValueError(
+            f"Embedding API did not return vector. Last attempt ({last_path}): {last_error}"
+        )
 
     def retrieve_chunks(
         self,
@@ -154,29 +190,44 @@ class QdrantRetriever:
         collection_name: str,
         top_k: int,
         org_filter: str | None = None,
+        doc_type: str | None = None,
     ) -> list[RetrievedChunk]:
         query_vector = self._embed_query(query_text)
 
-        query_filter = None
-        if org_filter:
-            query_filter = Filter(
-                must=[FieldCondition(key="org", match=MatchValue(value=org_filter))]
-            )
+        def _build_filter(include_doc_type: bool) -> Filter | None:
+            conditions = []
+            if org_filter:
+                conditions.append(FieldCondition(key="org", match=MatchValue(value=org_filter)))
+            if include_doc_type and doc_type:
+                conditions.append(FieldCondition(key="doc_type", match=MatchValue(value=doc_type)))
+            return Filter(must=conditions) if conditions else None
 
-        points = self._qdrant.query_points(
-            collection_name=collection_name,
-            query=query_vector,
-            limit=top_k,
-            query_filter=query_filter,
-        ).points
+        def _query(include_doc_type: bool):
+            return self._qdrant.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                limit=top_k,
+                query_filter=_build_filter(include_doc_type),
+            ).points
+
+        points = _query(include_doc_type=bool(doc_type))
+        if doc_type and not points:
+            logger.warning(
+                "No Qdrant chunks matched doc_type=%s in %s; retrying without doc_type filter for legacy data.",
+                doc_type,
+                collection_name,
+            )
+            points = _query(include_doc_type=False)
 
         snippets: list[RetrievedChunk] = []
         for point in points:
             text = ""
-            metadata: dict[str, str] = {}
+            metadata: dict[str, Any] = {}
             if isinstance(point.payload, dict):
                 text = str(point.payload.get("text", "")).strip()
-                metadata = {str(key): str(value) for key, value in point.payload.items() if key != "text" and value is not None}
+                metadata = {str(key): value for key, value in point.payload.items() if key != "text" and value is not None}
+                if metadata.get("doc_type") == "sop" and "policy_ref" not in metadata:
+                    metadata["policy_ref"] = []
             if text:
                 snippets.append(
                     RetrievedChunk(
@@ -192,7 +243,7 @@ class QdrantRetriever:
 
 
 class SOPRetriever(QdrantRetriever):
-    """Minimal Qdrant retriever for SOP snippets used by llm_trigger chains."""
+    """Retrieve SOP snippets used as process-adherence context."""
 
     def retrieve_sop_chunks(self, transcript_text: str, org_filter: str | None = None) -> list[RetrievedChunk]:
         return self.retrieve_chunks(
@@ -200,6 +251,7 @@ class SOPRetriever(QdrantRetriever):
             collection_name=settings.QDRANT_COLLECTION_SOP_PARENTS,
             top_k=settings.SOP_RETRIEVAL_TOP_K,
             org_filter=org_filter,
+            doc_type="sop",
         )
 
     def retrieve_sop(self, transcript_text: str, org_filter: str | None = None) -> str:
@@ -207,7 +259,7 @@ class SOPRetriever(QdrantRetriever):
 
 
 class PolicyRetriever(QdrantRetriever):
-    """Qdrant retriever for policy chunks used in claim provenance."""
+    """Retrieve policy chunks used as NLI context and claim provenance."""
 
     def retrieve_policy_chunks(self, query_text: str, org_filter: str | None = None, top_k: int = 3) -> list[RetrievedChunk]:
         return self.retrieve_chunks(
@@ -215,11 +267,11 @@ class PolicyRetriever(QdrantRetriever):
             collection_name=settings.QDRANT_COLLECTION_PARENTS,
             top_k=top_k,
             org_filter=org_filter,
+            doc_type="policy",
         )
 
 
 def _repo_root() -> Path:
-    # backend/app/llm_trigger/retrieval.py -> repo root is parents[3]
     return Path(__file__).resolve().parents[3]
 
 
@@ -253,8 +305,6 @@ def _read_manual_org_sop_chunks(org_filter: str | None) -> list[RetrievedChunk]:
     if not org_filter:
         return []
 
-    # SOP source of truth is PDF. We read Docling-converted markdown from
-    # sop-standards/{org}/parsed-docs by matching PDF basenames.
     parsed_docs_root = _resolve_org_parsed_docs_dir(org_filter)
     sop_dirs: list[Path] = []
     for docs_root in _resolve_sop_docs_roots():
@@ -284,10 +334,8 @@ def _read_manual_org_sop_chunks(org_filter: str | None) -> list[RetrievedChunk]:
     for pdf_path in pdf_paths:
         converted_md = parsed_docs_root / f"{pdf_path.stem}.md"
         if not converted_md.exists() or not converted_md.is_file():
-            # Backward compatibility: old shared parsed folder layout.
             converted_md = parsed_docs_root.parent / f"{pdf_path.stem}.md"
         if not converted_md.exists() or not converted_md.is_file():
-            # Backward compatibility: old shared parsed folder layout.
             legacy_converted_md = _repo_root() / "services" / "rag" / "parsed_docs" / f"{pdf_path.stem}.md"
             converted_md = legacy_converted_md
         if not converted_md.exists() or not converted_md.is_file():
@@ -304,7 +352,8 @@ def _read_manual_org_sop_chunks(org_filter: str | None) -> list[RetrievedChunk]:
                 score=None,
                 metadata={
                     "source_file": pdf_path.name,
-                    "doc_type": pdf_path.parent.name,
+                    "doc_type": "sop",
+                    "policy_ref": [],
                 },
                 source="manual",
             )
@@ -313,7 +362,6 @@ def _read_manual_org_sop_chunks(org_filter: str | None) -> list[RetrievedChunk]:
     if chunks:
         return chunks
 
-    # Backward compatibility: allow direct text SOP files if present.
     allowed_suffixes = {".md", ".txt"}
 
     for sop_dir in sop_dirs:
@@ -332,7 +380,8 @@ def _read_manual_org_sop_chunks(org_filter: str | None) -> list[RetrievedChunk]:
                     score=None,
                     metadata={
                         "source_file": path.name,
-                        "doc_type": path.parent.name,
+                        "doc_type": "sop",
+                        "policy_ref": [],
                     },
                     source="manual",
                 )
@@ -353,7 +402,16 @@ def resolve_retrieved_sop_context(
     transcript_text: str,
     retrieved_sop_from_pinecone: str | None,
     org_filter: str | None = None,
+    max_chunks: int = 2,
 ) -> ResolvedRetrievalContext:
+    """
+    Resolve SOP grounding context without scoring process adherence.
+
+    Precedence is preserved for compatibility:
+      1) caller-provided override,
+      2) org-local manual SOP files,
+      3) Qdrant SOP parent collection.
+    """
     if retrieved_sop_from_pinecone and retrieved_sop_from_pinecone.strip():
         chunk = RetrievedChunk(
             text=retrieved_sop_from_pinecone.strip(),
@@ -368,7 +426,7 @@ def resolve_retrieved_sop_context(
         ranked_manual_chunks = _rank_manual_chunks(
             transcript_text=transcript_text,
             chunks=manual_chunks,
-            max_chunks=1,
+            max_chunks=max_chunks,
         )
         return ResolvedRetrievalContext(
             text=_join_chunks(ranked_manual_chunks),
@@ -387,7 +445,7 @@ def resolve_retrieved_sop_context(
         ranked_qdrant_chunks = _rank_chunks_by_query(
             query_text=transcript_text,
             chunks=qdrant_chunks,
-            max_chunks=1,
+            max_chunks=max_chunks,
         )
         return ResolvedRetrievalContext(
             text=_join_chunks(ranked_qdrant_chunks),

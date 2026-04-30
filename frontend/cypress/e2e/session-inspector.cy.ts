@@ -1,16 +1,15 @@
 describe("Session Inspector", () => {
   beforeEach(() => {
-    cy.visit("/manager/inspector");
+    cy.visitAs("manager", "/manager/inspector");
   });
 
   it("renders the page heading and subtitle", () => {
     cy.contains("h2", "Session Inspector");
-    cy.contains(/Review live processing/i);
+    cy.contains(/sorted by score/i);
   });
 
   it("displays search input and filter controls", () => {
-    cy.get('input[placeholder="Search agent, date, ID..."]').should("exist");
-    cy.get("select").find("option").contains("All Agents");
+    cy.get('input[placeholder="Search agent, date, ID…"]').should("exist");
     cy.contains("button", /score/i);
     cy.contains("button", /date/i);
     cy.contains("button", /duration/i);
@@ -18,11 +17,14 @@ describe("Session Inspector", () => {
 
   it("renders table headers", () => {
     cy.contains("Agent");
-    cy.contains(/Date and time/i);
+    cy.contains(/Date & Time/i);
     cy.contains("Duration");
     cy.contains("Score");
-    cy.contains("Signals");
+    cy.contains("Empathy");
+    cy.contains("Policy");
+    cy.contains("Resolution");
     cy.contains("Status");
+    cy.contains("Error");
     cy.contains("Actions");
   });
 
@@ -35,8 +37,8 @@ describe("Session Inspector", () => {
   });
 
   it("displays resolved and unresolved statuses", () => {
-    cy.contains("Resolved");
-    cy.contains("Needs review");
+    cy.contains("✓ Resolved");
+    cy.contains("✗ Unresolved");
   });
 
   it("shows violation badges for flagged interactions", () => {
@@ -49,7 +51,7 @@ describe("Session Inspector", () => {
   });
 
   it("displays pagination footer", () => {
-    cy.contains(/Showing\s+\d+\s+to\s+\d+\s+of\s+\d+/);
+    cy.contains(/Showing\s+\d+–\d+\s+of\s+\d+/);
     cy.contains("button", "Prev").should("be.disabled");
     // Based on whether there's more than 10 mock interactions 
     // it could be disabled or not. Let's just check it exists.

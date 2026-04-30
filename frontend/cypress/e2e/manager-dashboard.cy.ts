@@ -18,7 +18,7 @@ describe('Manager Dashboard', () => {
 
     cy.wait('@getInteractionDetail');
     cy.location('pathname').should('match', /\/manager\/inspector\/.+/);
-    cy.contains('Back to Sessions').should('be.visible');
+    cy.contains('Back to Session Inspector').should('be.visible');
   });
 
   it('opens the full session inspector list', () => {

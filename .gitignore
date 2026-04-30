@@ -45,6 +45,8 @@ pnpm-debug.log*
 
 # ── Testing & Code Coverage ───────────────────────────────────────────────
 .pytest_cache/
+.pytest_tmp/
+.pytest-tmp/
 .coverage
 .coverage.*
 .cache
@@ -113,6 +115,8 @@ backend/app/schemas/__pycache__/
 backend/app/services/
 backend/tests/__pycache__/
 backend/startup.log
+backend/test_results.json
+backend/telecom_test_results.json
 
 # ── Frontend Local ───────────────────────────────────────────────────────
 frontend/.env.local

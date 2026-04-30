@@ -93,6 +93,8 @@ class ExplainabilityPolicyReferenceResponse(APIModel):
     source: Literal["policy", "sop"]
     reference: str
     clause: str
+    docType: Literal["policy", "sop"] | None = None
+    policyRef: list[str] = Field(default_factory=list)
     version: str | None = None
     category: str | None = None
     provenance: str | None = None
@@ -195,6 +197,14 @@ class EmotionTriggerReportResponse(APIModel):
 
 
 class RagComplianceReportResponse(APIModel):
+    """
+    Backward-compatible response envelope for grounded trigger outputs.
+
+    The public field name remains ``ragCompliance`` for existing clients, but
+    RAG itself is only the retrieval source. The payload combines SOP process
+    adherence, claim-level NLI policy alignment, and persisted policy violations.
+    """
+
     available: bool
     error: str | None = None
     orgFilter: str | None = None
@@ -699,6 +709,8 @@ def _map_emotion_trigger_report(report) -> dict:
             "source": reference.source,
             "reference": reference.reference,
             "clause": reference.clause,
+            "docType": reference.doc_type,
+            "policyRef": reference.policy_ref,
             "version": reference.version,
             "category": reference.category,
             "provenance": reference.provenance,
@@ -754,6 +766,12 @@ def _map_emotion_trigger_report(report) -> dict:
 
 
 def _map_rag_compliance_report(report) -> dict:
+    """
+    Map grounded trigger judgments into the legacy ``ragCompliance`` envelope.
+
+    Kept separate from retrieval so this mapper does not become a RAG entry
+    point for compliance decisions.
+    """
     def _citation_to_dict(citation) -> dict:
         return {
             "source": citation.source,
@@ -781,6 +799,8 @@ def _map_rag_compliance_report(report) -> dict:
             "source": reference.source,
             "reference": reference.reference,
             "clause": reference.clause,
+            "docType": reference.doc_type,
+            "policyRef": reference.policy_ref,
             "version": reference.version,
             "category": reference.category,
             "provenance": reference.provenance,
@@ -1147,6 +1167,10 @@ async def get_interaction_detail(
                 interaction_id=interaction_id,
                 llm_org_filter=llm_org_filter,
             )
+            # LLM trigger pipeline internally orchestrates:
+            # 1) RAG retrieval context resolution,
+            # 2) transcript-level policy compliance evaluation,
+            # 3) single-claim NLI policy checks.
             report = await evaluate_interaction_triggers(
                 session=session,
                 interaction_id=interaction_id,

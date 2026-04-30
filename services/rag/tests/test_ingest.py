@@ -140,6 +140,46 @@ class TestValidateChunks:
         assert report["short"] == 1
         assert len(report["warnings"]) == 1
 
+    def test_doc_type_and_sop_policy_ref_metadata(self):
+        chunks = [
+            _make_fake_chunk(
+                "Step 1: Verify account\npolicy_ref: [\"CS-RULE-003\", \"CS-RULE-007\"]"
+            )
+        ]
+
+        DocumentIngestionPipeline._annotate_document_metadata(chunks, "sop")
+
+        assert chunks[0].metadata["doc_type"] == "sop"
+        assert chunks[0].metadata["policy_ref"] == ["CS-RULE-003", "CS-RULE-007"]
+
+    def test_policy_rule_metadata_validation_warns_without_failing(self):
+        chunks = [_make_fake_chunk("Refunds must be approved by a manager.")]
+
+        warnings = DocumentIngestionPipeline._validate_policy_chunk_schema(chunks, "PARENT")
+
+        assert warnings
+        assert "rule_id" in warnings[0]
+        assert "rule_statement" in warnings[0]
+        assert "severity" in warnings[0]
+
+    def test_policy_rule_metadata_extracted_when_present(self):
+        chunks = [
+            _make_fake_chunk(
+                "rule_id: CS-RULE-003\n"
+                "rule_statement: Agents must verify identity before refunds.\n"
+                "severity: critical\n"
+            )
+        ]
+
+        DocumentIngestionPipeline._annotate_document_metadata(chunks, "policy")
+        warnings = DocumentIngestionPipeline._validate_policy_chunk_schema(chunks, "PARENT")
+
+        assert chunks[0].metadata["doc_type"] == "policy"
+        assert chunks[0].metadata["rule_id"] == "CS-RULE-003"
+        assert chunks[0].metadata["rule_statement"] == "Agents must verify identity before refunds."
+        assert chunks[0].metadata["severity"] == "critical"
+        assert warnings == []
+
     def test_duplicate_warning(self):
         chunks = [_make_fake_chunk("A" * 50), _make_fake_chunk("A" * 50)]
         report = DocumentIngestionPipeline._validate_chunks(chunks, "TEST")

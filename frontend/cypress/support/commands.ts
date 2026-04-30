@@ -17,14 +17,11 @@ Cypress.Commands.add(
       ...scenario,
       auth: { role },
     });
-    cy.visit('/');
-
-    if (path !== '/') {
-      cy.window().then((win) => {
-        win.history.pushState({}, '', path);
-        win.dispatchEvent(new win.PopStateEvent('popstate'));
-      });
-    }
+    cy.visit(path, {
+      onBeforeLoad(win) {
+        win.localStorage.setItem('vm_auth_cookie_hint', '1');
+      },
+    });
   },
 );
 

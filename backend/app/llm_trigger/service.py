@@ -3,8 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import sys
+import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from sqlmodel import select
@@ -38,6 +42,10 @@ from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
+
+CACHE_SCHEMA_VERSION = 2
+_evaluator_lock = threading.Lock()
+_policy_compliance_evaluator = None
 
 
 RESOLUTION_GRAPHS: dict[str, list[str]] = {
@@ -77,6 +85,43 @@ ROLLING_WINDOW_STRIDE = 4
 MAX_PROCESS_WINDOWS = 3
 INSUFFICIENT_EVIDENCE_LABEL = "insufficient evidence"
 POLICY_PRIORITY_BUCKETS: tuple[str, ...] = ("regulatory", "legal")
+DEGRADED_MODE_SUFFIX = " [DEGRADED: LLM unavailable — heuristic fallback used]"
+
+
+def _log_step(interaction_id: UUID | str, step: str, **kwargs) -> None:
+    extra = {"interaction_id": str(interaction_id), "pipeline_step": step, **kwargs}
+    logger.info("LLM trigger pipeline step: %s", step, extra=extra)
+
+
+def _services_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "services"
+
+
+def _get_policy_compliance_evaluator():
+    """
+    Lazily load the transcript-level PolicyComplianceEvaluator from services/rag.
+
+    This keeps the trigger pipeline explicit about layer boundaries:
+      - retrieval/context + transcript-level compliance report are handled by
+        the dedicated evaluator module,
+      - claim-level checks stay in the local NLI checker.
+    """
+    global _policy_compliance_evaluator
+    if _policy_compliance_evaluator is not None:
+        return _policy_compliance_evaluator
+    with _evaluator_lock:
+        if _policy_compliance_evaluator is not None:
+            return _policy_compliance_evaluator
+        try:
+            services_path = str(_services_path())
+            if services_path not in sys.path:
+                sys.path.append(services_path)
+            from rag.evaluator import PolicyComplianceEvaluator
+            _policy_compliance_evaluator = PolicyComplianceEvaluator()
+        except Exception as exc:
+            logger.warning("Unable to initialize PolicyComplianceEvaluator: %s", exc)
+            _policy_compliance_evaluator = None
+        return _policy_compliance_evaluator
 
 
 @dataclass
@@ -115,6 +160,16 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r"[a-zA-Z]+", text.lower())
 
 
+def _sanitize_for_prompt(text: str, max_length: int = 4000) -> str:
+    sanitized = (text or "").strip()
+    sanitized = re.sub(r"(?i)^system\s*:", "[system]:", sanitized, flags=re.MULTILINE)
+    sanitized = re.sub(r"(?i)^assistant\s*:", "[assistant]:", sanitized, flags=re.MULTILINE)
+    sanitized = re.sub(r"(?i)^human\s*:", "[human]:", sanitized, flags=re.MULTILINE)
+    sanitized = re.sub(r"(?i)^user\s*:", "[user]:", sanitized, flags=re.MULTILINE)
+    sanitized = re.sub(r"```", "` ", sanitized)
+    return _truncate_text(sanitized, max_length)
+
+
 def _normalize_acoustic_label(label: str) -> str:
     base = (label or "neutral").strip().lower()
     return EMOTION_NORMALIZATION.get(base, base or "neutral")
@@ -131,8 +186,9 @@ def _emotion_polarity(label: str) -> str:
     return "neutral"
 
 
-def _detect_cross_modal_dissonance(customer_text: str, acoustic_emotion: str) -> bool:
-    text_emotion, _ = infer_text_emotion_with_provider(customer_text)
+def _detect_cross_modal_dissonance(customer_text: str, acoustic_emotion: str, text_emotion: str | None = None) -> bool:
+    if text_emotion is None:
+        text_emotion, _ = infer_text_emotion_with_provider(customer_text)
     text_polarity = _emotion_polarity(text_emotion)
     acoustic_polarity = _emotion_polarity(acoustic_emotion)
     if "!" in customer_text and acoustic_polarity == "negative" and text_polarity != "negative":
@@ -249,18 +305,20 @@ def _merge_missing_steps(
     if not llm_missing:
         return deterministic_missing
     if not deterministic_missing:
-        return deterministic_missing
+        return llm_missing
 
     normalized_deterministic = {step.lower(): step for step in deterministic_missing}
     merged = list(deterministic_missing)
     for llm_step in llm_missing:
-      llm_keywords = _step_keywords(llm_step)
-      for expected_lower, original_step in normalized_deterministic.items():
-          expected_keywords = _step_keywords(expected_lower)
-          if llm_keywords and expected_keywords and llm_keywords.intersection(expected_keywords):
-              if original_step not in merged:
-                  merged.append(original_step)
-              break
+        llm_keywords = _step_keywords(llm_step)
+        matched = False
+        for expected_lower, original_step in normalized_deterministic.items():
+            expected_keywords = _step_keywords(expected_lower)
+            if llm_keywords and expected_keywords and llm_keywords.intersection(expected_keywords):
+                matched = True
+                break
+        if not matched and llm_step not in merged:
+            merged.append(llm_step)
     return merged
 
 
@@ -287,7 +345,8 @@ def _is_resolved_heuristic(transcript_text: str) -> bool:
 def _efficiency_score_heuristic(transcript_text: str, missing_steps: list[str], expected_steps: list[str]) -> int:
     if not expected_steps:
         return 6
-    coverage = (len(expected_steps) - len(missing_steps)) / len(expected_steps)
+    missing_ratio = min(len(missing_steps), len(expected_steps)) / len(expected_steps)
+    coverage = 1.0 - missing_ratio
     score = int(round(1 + 9 * coverage))
     turns = len([line for line in transcript_text.splitlines() if line.strip()])
     if turns > 20:
@@ -521,6 +580,13 @@ async def _resolve_active_policy_context(
     query_text: str,
     org_filter: str | None,
 ) -> ResolvedPolicyContext:
+    """
+    Resolve the single policy context used by the claim-level NLI check.
+
+    Retrieval happens here, but judgment does not: the returned text is later
+    passed to ``run_single_claim_nli_policy_check`` for entailment-style
+    classification.
+    """
     if ground_truth_policy.strip():
         return ResolvedPolicyContext(
             text=ground_truth_policy.strip(),
@@ -785,6 +851,8 @@ def _build_policy_reference(
     source_kind: str,
     source_text: str,
     fallback_reference: str,
+    doc_type: str | None = None,
+    policy_ref: list[str] | None = None,
     version: str | None = None,
     category: str | None = None,
     provenance: str | None = None,
@@ -801,6 +869,8 @@ def _build_policy_reference(
         source=source_kind,  # type: ignore[arg-type]
         reference=_clean_display_text(_extract_reference_label(source_text, fallback_reference)),
         clause=clause,
+        doc_type=doc_type if doc_type in {"policy", "sop"} else source_kind,  # type: ignore[arg-type]
+        policy_ref=policy_ref or [],
         version=version,
         category=category,
         provenance=_clean_display_text(provenance),
@@ -818,10 +888,16 @@ def _build_policy_reference_from_chunk(
 ) -> PolicyReference | None:
     if chunk and chunk.text.strip():
         clause = _extract_display_clause(chunk.text)
+        chunk_doc_type = chunk.metadata.get("doc_type")
+        policy_ref = chunk.metadata.get("policy_ref") or []
+        if isinstance(policy_ref, str):
+            policy_ref = [item.strip() for item in policy_ref.split(",") if item.strip()]
         return PolicyReference(
             source=source_kind,  # type: ignore[arg-type]
             reference=_clean_display_text(_extract_reference_label(chunk.text, chunk.reference or fallback_reference)),
             clause=clause or _truncate_text(_clean_display_text(chunk.text), 220),
+            doc_type=chunk_doc_type if chunk_doc_type in {"policy", "sop"} else source_kind,  # type: ignore[arg-type]
+            policy_ref=policy_ref if isinstance(policy_ref, list) else [],
             version=version,
             category=category,
             provenance=_clean_display_text(chunk.provenance or chunk.collection or chunk.source),
@@ -831,6 +907,8 @@ def _build_policy_reference_from_chunk(
         source_kind=source_kind,
         source_text=fallback_text,
         fallback_reference=fallback_reference,
+        doc_type=source_kind,
+        policy_ref=[],
         version=version,
         category=category,
         provenance=None,
@@ -1306,7 +1384,7 @@ async def analyze_emotion_shift(
 ) -> EmotionShiftAnalysis:
     inferred_emotion = _normalize_acoustic_label(acoustic_emotion)
     _text_emotion, text_confidence = infer_text_emotion_with_provider(customer_text)
-    if not _detect_cross_modal_dissonance(customer_text, acoustic_emotion):
+    if not _detect_cross_modal_dissonance(customer_text, acoustic_emotion, text_emotion=_text_emotion):
         quotes = _quote_candidates(customer_text, max_quotes=2, target_emotion=inferred_emotion)
         return EmotionShiftAnalysis(
             is_dissonance_detected=False,
@@ -1333,12 +1411,14 @@ async def analyze_emotion_shift(
 
     chain = build_emotion_shift_chain()
     try:
-        result = await chain.ainvoke(
+        from app.llm_trigger.chains import _invoke_chain_with_retry
+        result = await _invoke_chain_with_retry(
+            chain,
             {
-                "agent_context": agent_context,
-                "customer_text": customer_text,
+                "agent_context": _sanitize_for_prompt(agent_context),
+                "customer_text": _sanitize_for_prompt(customer_text),
                 "acoustic_emotion": acoustic_emotion,
-            }
+            },
         )
     except Exception as exc:
         logger.warning("Emotion shift LLM chain failed, using fallback: %s", exc)
@@ -1346,7 +1426,7 @@ async def analyze_emotion_shift(
         return EmotionShiftAnalysis(
             is_dissonance_detected=True,
             dissonance_type="Unknown",
-            root_cause=INSUFFICIENT_EVIDENCE_LABEL,
+            root_cause=INSUFFICIENT_EVIDENCE_LABEL + DEGRADED_MODE_SUFFIX,
             counterfactual_correction="If the agent had acknowledged the concern and confirmed a clear next action, escalation risk could have decreased.",
             evidence_quotes=quotes,
             citations=[
@@ -1427,11 +1507,13 @@ async def evaluate_process_adherence(
 
     chain = build_process_adherence_chain()
     try:
-        result = await chain.ainvoke(
+        from app.llm_trigger.chains import _invoke_chain_with_retry
+        result = await _invoke_chain_with_retry(
+            chain,
             {
                 "topic_hint": topic_hint,
-                "transcript_text": transcript_text,
-                "retrieved_sop": retrieved_sop or "No SOP context found.",
+                "transcript_text": _sanitize_for_prompt(transcript_text),
+                "retrieved_sop": _sanitize_for_prompt(retrieved_sop or "No SOP context found.", max_length=6000),
                 "expected_resolution_graph": "\n".join(
                     f"- {step}" for step in expected_steps
                 )
@@ -1456,6 +1538,7 @@ async def evaluate_process_adherence(
             justification=(
                 f"LLM analysis is temporarily unavailable because {_llm_failure_reason(exc)}. "
                 "Scores are provisional estimates from transcript and SOP keyword coverage."
+                + DEGRADED_MODE_SUFFIX
             ),
             missing_sop_steps=deterministic_missing,
             evidence_quotes=evidence_quotes,
@@ -1495,16 +1578,25 @@ async def evaluate_process_adherence(
     return result
 
 
-async def run_nli_policy_check(
+async def run_single_claim_nli_policy_check(
     agent_statement: str,
     ground_truth_policy: str,
 ) -> NLIEvaluation:
+    """
+    Single-claim NLI policy alignment check.
+
+    This function validates one agent statement against one policy context and
+    returns entailment-style categories. It is intentionally separate from
+    transcript-level compliance reporting.
+    """
     chain = build_nli_policy_chain()
     try:
-        result = await chain.ainvoke(
+        from app.llm_trigger.chains import _invoke_chain_with_retry
+        result = await _invoke_chain_with_retry(
+            chain,
             {
-                "agent_statement": agent_statement,
-                "ground_truth_policy": ground_truth_policy,
+                "agent_statement": _sanitize_for_prompt(agent_statement),
+                "ground_truth_policy": _sanitize_for_prompt(ground_truth_policy, max_length=6000),
             }
         )
     except Exception as exc:
@@ -1523,6 +1615,7 @@ async def run_nli_policy_check(
             justification=(
                 "Deterministic fallback was used because the LLM NLI service was unavailable. "
                 "This label is provisional and should be revalidated when LLM connectivity is restored."
+                + DEGRADED_MODE_SUFFIX
             ),
             evidence_quotes=evidence_quotes,
             citations=citations,
@@ -1551,12 +1644,23 @@ async def run_nli_policy_check(
     if result.policy_alignment_score is None:
         category = (result.nli_category or "").strip().lower()
         if category == "entailment":
-            result.policy_alignment_score = 1.0
+            result.policy_alignment_score = 0.85
         elif category == "benign deviation":
-            result.policy_alignment_score = 0.5
+            result.policy_alignment_score = 0.45
         elif category in {"contradiction", "policy hallucination"}:
-            result.policy_alignment_score = 0.0
+            result.policy_alignment_score = 0.1
     return result
+
+
+async def run_nli_policy_check(
+    agent_statement: str,
+    ground_truth_policy: str,
+) -> NLIEvaluation:
+    """Backward-compatible alias for single-claim NLI policy alignment checks."""
+    return await run_single_claim_nli_policy_check(
+        agent_statement=agent_statement,
+        ground_truth_policy=ground_truth_policy,
+    )
 
 
 def _derive_llm_inputs(
@@ -1634,7 +1738,7 @@ async def _evaluate_emotion_pipeline(
     )
 
 
-async def _evaluate_rag_pipeline(
+async def _evaluate_policy_and_sop_trigger_checks(
     process_context_text: str,
     sop_context: str,
     sop_chunks: list[RetrievedChunk],
@@ -1642,17 +1746,50 @@ async def _evaluate_rag_pipeline(
     agent_statement: str,
     policy_context: str,
 ) -> tuple[ProcessAdherenceReport, NLIEvaluation]:
+    """
+    Run trigger checks that consume retrieved SOP/policy context.
+
+    RAG has already retrieved the context before this function is called. This
+    helper only performs judgment:
+      - SOP process adherence for a transcript window.
+      - NLI policy alignment for one agent statement.
+    """
     process_task = evaluate_process_adherence(
         transcript_text=process_context_text,
         retrieved_sop_from_pinecone=sop_context,
         org_filter=org_filter,
         retrieved_sop_chunks=sop_chunks,
     )
-    nli_task = run_nli_policy_check(
+    nli_task = run_single_claim_nli_policy_check(
         agent_statement=agent_statement,
         ground_truth_policy=policy_context,
     )
     return await asyncio.gather(process_task, nli_task)
+
+
+async def _evaluate_transcript_policy_pipeline(
+    transcript_text: str,
+    org_filter: str | None,
+) -> Any | None:
+    """
+    Run transcript-level compliance evaluation using the dedicated evaluator.
+
+    This call is supplemental for trigger orchestration clarity and does not
+    change the public trigger response schema.
+    """
+    evaluator = _get_policy_compliance_evaluator()
+    if evaluator is None:
+        return None
+    try:
+        return await asyncio.to_thread(
+            evaluator.check,
+            transcript_text,
+            org_filter,
+            False,
+        )
+    except Exception as exc:
+        logger.warning("PolicyComplianceEvaluator failed in trigger pipeline: %s", exc)
+        return None
 
 
 async def _load_cached_trigger_report(
@@ -1667,6 +1804,15 @@ async def _load_cached_trigger_report(
     if not cached or not cached.report_payload:
         return None
     if org_filter and cached.org_filter and cached.org_filter != org_filter:
+        return None
+    payload_version = cached.report_payload.get("_schema_version", 1) if isinstance(cached.report_payload, dict) else 1
+    if payload_version < CACHE_SCHEMA_VERSION:
+        logger.info(
+            "Cached LLM trigger payload for interaction %s has schema version %d (current: %d), invalidating.",
+            interaction_id,
+            payload_version,
+            CACHE_SCHEMA_VERSION,
+        )
         return None
     try:
         return InteractionLLMTriggerReport.model_validate(cached.report_payload)
@@ -1687,13 +1833,28 @@ async def _persist_trigger_report(
     )
     cached = cached_result.first() or InteractionLLMTriggerCache(interaction_id=report.interaction_id)
     cached.org_filter = org_filter
-    cached.report_payload = report.model_dump(mode="json")
-    cached.computed_at = datetime.utcnow()
+    cached.report_payload = {**report.model_dump(mode="json"), "_schema_version": CACHE_SCHEMA_VERSION}
+    cached.computed_at = datetime.now(timezone.utc)
     session.add(cached)
     if commit:
         await session.commit()
     else:
         await session.flush()
+
+
+async def invalidate_llm_trigger_cache(
+    session: AsyncSession,
+    org_filter: str | None = None,
+) -> int:
+    from sqlalchemy import delete
+    stmt = delete(InteractionLLMTriggerCache)
+    if org_filter:
+        stmt = stmt.where(InteractionLLMTriggerCache.org_filter == org_filter)
+    result = await session.exec(stmt)
+    await session.commit()
+    count = result.rowcount if hasattr(result, 'rowcount') else 0
+    logger.info("Invalidated %d LLM trigger cache entries (org_filter=%s)", count, org_filter)
+    return count
 
 
 async def evaluate_interaction_triggers(
@@ -1705,6 +1866,14 @@ async def evaluate_interaction_triggers(
     force_rerun: bool = False,
     commit_cache: bool = False,
 ) -> InteractionLLMTriggerReport:
+    """
+    Orchestrate the interaction-level trigger pipeline with explicit layer roles:
+
+    1) RAG retrieval layer resolves SOP/policy grounding context.
+    2) PolicyComplianceEvaluator produces transcript-level compliance report.
+    3) NLI policy check validates single agent claims against policy context.
+    """
+    _log_step(interaction_id, "start", force_rerun=force_rerun, org_filter=org_filter)
     use_cached_report = (
         not force_rerun
         and not retrieved_sop_from_pinecone.strip()
@@ -1717,6 +1886,7 @@ async def evaluate_interaction_triggers(
             org_filter=org_filter,
         )
         if cached_report is not None:
+            _log_step(interaction_id, "cache_hit")
             return cached_report
 
     interaction_result = await session.exec(
@@ -1794,7 +1964,7 @@ async def evaluate_interaction_triggers(
         customer_text=customer_text,
         fused_emotion=fused_emotion,
     )
-    rag_pipeline_task = _evaluate_rag_pipeline(
+    grounded_trigger_checks_task = _evaluate_policy_and_sop_trigger_checks(
         process_context_text=process_context_text,
         sop_context=sop_context,
         sop_chunks=sop_chunks,
@@ -1802,12 +1972,25 @@ async def evaluate_interaction_triggers(
         agent_statement=agent_statement,
         policy_context=policy_context.text,
     )
-
-    emotion_shift, rag_bundle = await asyncio.gather(
-        emotion_pipeline_task,
-        rag_pipeline_task,
+    transcript_policy_task = _evaluate_transcript_policy_pipeline(
+        transcript_text=process_context_text,
+        org_filter=org_filter,
     )
-    process_adherence, nli_policy = rag_bundle
+
+    emotion_shift, grounded_trigger_checks, transcript_policy_report = await asyncio.gather(
+        emotion_pipeline_task,
+        grounded_trigger_checks_task,
+        transcript_policy_task,
+    )
+    _log_step(interaction_id, "llm_chains_complete")
+    if transcript_policy_report is not None:
+        _log_step(
+            interaction_id,
+            "transcript_policy_report_complete",
+            compliance_score=getattr(transcript_policy_report, "compliance_score", None),
+            violations=len(getattr(transcript_policy_report, "violations", []) or []),
+        )
+    process_adherence, nli_policy = grounded_trigger_checks
 
     window_citations = _window_citations(process_windows)
     if window_citations:
@@ -1890,5 +2073,7 @@ async def evaluate_interaction_triggers(
             org_filter=org_filter,
             commit=commit_cache,
         )
+        _log_step(interaction_id, "cache_persisted")
 
+    _log_step(interaction_id, "complete")
     return report

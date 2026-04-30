@@ -46,6 +46,14 @@ class PolicyReference(BaseModel):
     source: Literal["policy", "sop"] = Field(description="Whether the reference came from a policy or SOP document.")
     reference: str = Field(description="Human-readable document or section reference.")
     clause: str = Field(description="Policy or SOP clause used as evidence.")
+    doc_type: Literal["policy", "sop"] | None = Field(
+        default=None,
+        description="Document type carried from retrieval metadata.",
+    )
+    policy_ref: list[str] = Field(
+        default_factory=list,
+        description="Policy rule IDs referenced by an SOP chunk when available.",
+    )
     version: str | None = Field(default=None, description="Version or policy token when available.")
     category: str | None = Field(default=None, description="Policy category when available.")
     provenance: str | None = Field(

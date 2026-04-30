@@ -1,19 +1,16 @@
 """
-VocalMind Final RAG — Dual Evaluators.
+VocalMind evaluators (judging layer).
 
-Two evaluation modes for customer-service call analysis:
+Layer responsibility:
+  - RAG retrieval (services/rag/query_engine.py): fetches grounded chunks only.
+  - Evaluators in this module: consume retrieved context + business input and
+    generate transcript/question-level judgment reports.
 
-1. **PolicyComplianceEvaluator**
-   Retrieves full policy sections (parents) and checks whether an agent's
-   interaction complies with company policies.  Returns a compliance score
-   (0-1), list of violations, and policy references.
-
-2. **AnswerCorrectnessEvaluator**
-   Retrieves precise knowledge snippets (children) and evaluates whether
-   a specific agent answer is factually correct.  Returns a correctness
-   score (0-1), reasoning, and source references.
-
-Both evaluators use Groq LLM-as-a-Judge.
+Evaluators:
+  1) PolicyComplianceEvaluator
+     Transcript-level compliance report generator.
+  2) AnswerCorrectnessEvaluator
+     Question/answer-level factual correctness report generator.
 """
 
 import json
@@ -104,7 +101,12 @@ Respond with ONLY valid JSON — no markdown, no explanation outside JSON:
 
 
 class PolicyComplianceEvaluator:
-    """Evaluates agent transcripts against company policy (parents collection)."""
+    """
+    Transcript-level policy compliance judge/report generator.
+
+    This class does not own retrieval indexing logic. It consumes context
+    returned by the RAG retrieval layer and produces a compliance report.
+    """
 
     def __init__(self, engine: RAGQueryEngine | None = None) -> None:
         self.engine = engine or RAGQueryEngine()
@@ -125,8 +127,12 @@ class PolicyComplianceEvaluator:
         """
         import time
 
-        # 1. Retrieve relevant policy sections (parents)
-        result = self.engine.query_compliance(transcript, org_filter=org_filter, verbose=verbose)
+        # 1. Retrieve relevant policy sections (parents) via retrieval-only API.
+        result = self.engine.retrieve_policy_context(
+            transcript,
+            org_filter=org_filter,
+            verbose=verbose,
+        )
         retrieval_time = result["timing"]["retrieval"]
 
         policies_text = "\n\n---\n\n".join(
@@ -158,7 +164,18 @@ class PolicyComplianceEvaluator:
 
         # 3. Parse response
         content = response.choices[0].message.content.strip()
-        parsed = _parse_json_response(content)
+        try:
+            parsed = _parse_json_response(content)
+            if "error" in parsed:
+                raise ValueError(parsed["error"])
+        except ValueError as parse_exc:
+            return ComplianceResult(
+                transcript=transcript,
+                compliance_score=0.5,
+                reasoning=f"Failed to parse LLM evaluation response: {parse_exc}",
+                retrieval_seconds=retrieval_time,
+                evaluation_seconds=round(eval_time, 4),
+            )
 
         return ComplianceResult(
             transcript=transcript,
@@ -214,7 +231,12 @@ Respond with ONLY valid JSON — no markdown, no explanation outside JSON:
 
 
 class AnswerCorrectnessEvaluator:
-    """Evaluates agent answers against company knowledge base (children collection)."""
+    """
+    Answer correctness judge/report generator.
+
+    This class consumes retrieval context from the RAG retrieval layer and
+    evaluates factual alignment for a single question/answer pair.
+    """
 
     def __init__(self, engine: RAGQueryEngine | None = None) -> None:
         self.engine = engine or RAGQueryEngine()
@@ -237,8 +259,12 @@ class AnswerCorrectnessEvaluator:
         """
         import time
 
-        # 1. Retrieve relevant snippets (children)
-        result = self.engine.query_answer(question, org_filter=org_filter, verbose=verbose)
+        # 1. Retrieve relevant snippets (children) via retrieval-only API.
+        result = self.engine.retrieve_answer_context(
+            question,
+            org_filter=org_filter,
+            verbose=verbose,
+        )
         retrieval_time = result["timing"]["retrieval"]
 
         snippets_text = "\n\n---\n\n".join(
@@ -273,7 +299,19 @@ class AnswerCorrectnessEvaluator:
 
         # 3. Parse response
         content = response.choices[0].message.content.strip()
-        parsed = _parse_json_response(content)
+        try:
+            parsed = _parse_json_response(content)
+            if "error" in parsed:
+                raise ValueError(parsed["error"])
+        except ValueError as parse_exc:
+            return CorrectnessResult(
+                question=question,
+                agent_answer=agent_answer,
+                correctness_score=0.5,
+                reasoning=f"Failed to parse LLM evaluation response: {parse_exc}",
+                retrieval_seconds=retrieval_time,
+                evaluation_seconds=round(eval_time, 4),
+            )
 
         return CorrectnessResult(
             question=question,
@@ -365,7 +403,6 @@ def run_correctness_batch(
 
 def _parse_json_response(content: str) -> dict:
     """Extract JSON from LLM response, handling markdown code blocks."""
-    # Strip markdown code fences if present
     if "```" in content:
         parts = content.split("```")
         for part in parts:
@@ -377,7 +414,6 @@ def _parse_json_response(content: str) -> dict:
     try:
         return json.loads(content)
     except json.JSONDecodeError:
-        # Try to find embedded JSON object
         start = content.find("{")
         end = content.rfind("}") + 1
         if start >= 0 and end > start:
@@ -385,7 +421,7 @@ def _parse_json_response(content: str) -> dict:
                 return json.loads(content[start:end])
             except json.JSONDecodeError:
                 pass
-        return {"error": f"Failed to parse LLM response: {content[:200]}"}
+        return {"error": f"Failed to parse LLM response as JSON: {content[:200]}"}
 
 
 def _save_report(report: EvaluationReport, prefix: str) -> Path:

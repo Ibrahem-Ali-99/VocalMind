@@ -22,7 +22,7 @@ This project uses [uv](https://github.com/astral-sh/uv) for dependency managemen
 ### Running the Server
 
 ```bash
-uv run uvicorn main:app --reload
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### Development
@@ -33,8 +33,15 @@ uv run uvicorn main:app --reload
   ```
 - Run tests (if any):
   ```bash
-  uv run pytest
+  uv run pytest tests/ -v
   ```
+
+### Project Layout
+
+- `app/` - FastAPI application code.
+- `tests/` - automated pytest suite.
+- `scripts/` - repeatable maintenance and seed scripts.
+- `scripts/manual/` - ad hoc local probes that are not collected by pytest.
 
 ## Related Documentation
 

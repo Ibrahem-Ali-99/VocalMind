@@ -1,14 +1,20 @@
 """
-VocalMind Final RAG — Query Engine.
+VocalMind Final RAG — Retrieval + optional synthesis engine.
 
-Dual-collection retrieval from Qdrant:
-  • Parents collection  → full policy sections  (compliance checks)
-  • Children collection → precision snippets    (answer fact-checking)
+This module is the RAG retrieval layer for policy/SOP grounding.
+It owns:
+  1) embedding queries,
+  2) vector retrieval from Qdrant collections,
+  3) structured retrieval payload formatting.
 
-Synthesis via Groq LLM through LlamaIndex compact response mode.
+It may optionally synthesize a response for compatibility endpoints, but it does
+not perform compliance judging or NLI verdicting. Judging belongs to:
+  - services/rag/evaluator.py (transcript-level policy compliance reports)
+  - backend/app/llm_trigger/service.py (single-claim NLI policy checks)
 """
 
 import json
+import logging
 import time
 from datetime import datetime
 
@@ -18,7 +24,7 @@ from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.core.response_synthesizers import get_response_synthesizer
 from llama_index.llms.groq import Groq as LlamaGroq
 from qdrant_client import QdrantClient
-from qdrant_client.models import ScoredPoint
+from qdrant_client.models import FieldCondition, Filter, MatchValue, ScoredPoint
 
 try:
     from .config import settings
@@ -26,14 +32,21 @@ except ImportError:  # pragma: no cover - allows direct script/test imports
     from config import settings
 
 
+logger = logging.getLogger(__name__)
+
+
 class RAGQueryEngine:
     """
-    RAG query engine backed by Qdrant vector search + Groq LLM synthesis.
+    RAG retrieval engine backed by Qdrant vector search.
 
-    Supports two retrieval modes:
-      - ``query_compliance(text)``  → searches parent chunks (full sections)
-      - ``query_answer(question)``  → searches child chunks (precision snippets)
-      - ``query(question, collection)`` → generic search on any collection
+    Retrieval-first APIs:
+      - ``retrieve_policy_context(text)``  → parent chunks (policy context)
+      - ``retrieve_answer_context(question)`` → child chunks (answer context)
+      - ``retrieve_context(question, collection)`` → generic retrieval
+
+    Compatibility APIs with synthesis:
+      - ``query_compliance(text)`` and ``query_answer(question)``
+      - ``query(question, collection)``
     """
 
     def __init__(self) -> None:
@@ -68,6 +81,7 @@ class RAGQueryEngine:
             ("/api/embeddings", {"model": settings.embedding.model, "prompt": text}),
         )
         last_error: Exception | None = None
+        last_path: str | None = None
         for delay in (0.0, *retry_delays):
             if delay:
                 time.sleep(delay)
@@ -86,9 +100,12 @@ class RAGQueryEngine:
                         return vector
                 except Exception as exc:
                     last_error = exc
+                    last_path = path
+                    logger.debug("Embedding endpoint %s failed: %s", path, exc)
 
         raise ConnectionError(
-            f"Cannot reach Ollama embeddings API at {settings.embedding.base_url}: {last_error}"
+            f"Cannot reach Ollama embeddings API at {settings.embedding.base_url} "
+            f"(last attempted endpoint: {last_path}): {last_error}"
         )
 
     # ── Retrieval ─────────────────────────────────────────────────────────
@@ -99,6 +116,7 @@ class RAGQueryEngine:
         collection: str,
         top_k: int | None = None,
         org_filter: str | None = None,
+        doc_type: str | None = None,
     ) -> tuple[list[ScoredPoint], float]:
         """
         Embed the query and search Qdrant.
@@ -111,20 +129,33 @@ class RAGQueryEngine:
         t0 = time.perf_counter()
         query_vector = self._embed_query(query_text)
 
-        # Optional org-level filter
-        query_filter = None
-        if org_filter:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
-            query_filter = Filter(
-                must=[FieldCondition(key="org", match=MatchValue(value=org_filter))]
-            )
+        def _build_filter(include_doc_type: bool) -> Filter | None:
+            conditions = []
+            if org_filter:
+                conditions.append(FieldCondition(key="org", match=MatchValue(value=org_filter)))
+            if include_doc_type and doc_type:
+                conditions.append(FieldCondition(key="doc_type", match=MatchValue(value=doc_type)))
+            return Filter(must=conditions) if conditions else None
 
+        query_filter = _build_filter(include_doc_type=bool(doc_type))
         results = self.qdrant.query_points(
             collection_name=collection,
             query=query_vector,
             limit=top_k,
             query_filter=query_filter,
         ).points
+        if doc_type and not results:
+            logger.warning(
+                "No Qdrant chunks matched doc_type=%s in %s; retrying without doc_type filter for legacy data.",
+                doc_type,
+                collection,
+            )
+            results = self.qdrant.query_points(
+                collection_name=collection,
+                query=query_vector,
+                limit=top_k,
+                query_filter=_build_filter(include_doc_type=False),
+            ).points
         retrieval_time = time.perf_counter() - t0
         return results, retrieval_time
 
@@ -182,12 +213,102 @@ class RAGQueryEngine:
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _format_retrieved_chunks(scored_points: list[ScoredPoint]) -> list[dict]:
+        chunks: list[dict] = []
+        for i, pt in enumerate(scored_points, 1):
+            chunks.append(
+                {
+                    "rank": i,
+                    "score": float(pt.score),
+                    "metadata": {k: v for k, v in pt.payload.items() if k != "text"},
+                    "text": pt.payload.get("text", ""),
+                    "text_length": len(pt.payload.get("text", "")),
+                }
+            )
+        return chunks
+
+    def retrieve_context(
+        self,
+        question: str,
+        collection: str | None = None,
+        top_k: int | None = None,
+        org_filter: str | None = None,
+        doc_type: str | None = None,
+        verbose: bool = False,
+    ) -> dict:
+        """
+        Retrieve grounded context chunks only (no judgment, no verdicting).
+
+        Returns a retrieval payload shaped like the query payload for backward
+        compatibility: ``{"response": "", "chunks": [...], "timing": {...}}``.
+        """
+        collection = collection or settings.qdrant.collection_children
+        scored_points, retrieval_time = self._retrieve(question, collection, top_k, org_filter, doc_type)
+        chunks = self._format_retrieved_chunks(scored_points)
+
+        if verbose and chunks:
+            print(f"\n{'='*60}")
+            print(f"RETRIEVED CHUNKS ({retrieval_time:.2f}s) from [{collection}]")
+            print(f"{'='*60}")
+            for c in chunks:
+                print(f"\n  [{c['rank']}] Score: {c['score']:.4f}")
+                meta_str = " | ".join(
+                    f"{k}: {v}" for k, v in c["metadata"].items() if k not in ("text", "ingested_at")
+                )
+                print(f"      Meta: {meta_str}")
+                print(f"      Preview: {c['text'][:150]}...")
+
+        timing = {
+            "retrieval": round(retrieval_time, 4),
+            "synthesis": 0.0,
+            "total": round(retrieval_time, 4),
+        }
+        self._log_query(question, collection, chunks, "", timing)
+        return {"response": "", "chunks": chunks, "timing": timing}
+
+    def retrieve_policy_context(
+        self,
+        text: str,
+        org_filter: str | None = None,
+        top_k: int | None = None,
+        verbose: bool = False,
+    ) -> dict:
+        """Retrieve policy-grounding context from the parents collection."""
+        return self.retrieve_context(
+            question=text,
+            collection=settings.qdrant.collection_parents,
+            top_k=top_k,
+            org_filter=org_filter,
+            doc_type="policy",
+            verbose=verbose,
+        )
+
+    def retrieve_answer_context(
+        self,
+        question: str,
+        org_filter: str | None = None,
+        top_k: int | None = None,
+        doc_type: str | None = None,
+        verbose: bool = False,
+    ) -> dict:
+        """Retrieve answer-grounding context from the children collection."""
+        return self.retrieve_context(
+            question=question,
+            collection=settings.qdrant.collection_children,
+            top_k=top_k,
+            org_filter=org_filter,
+            doc_type=doc_type,
+            verbose=verbose,
+        )
+
     def query(
         self,
         question: str,
         collection: str | None = None,
         top_k: int | None = None,
         org_filter: str | None = None,
+        doc_type: str | None = None,
         verbose: bool = False,
     ) -> dict:
         """
@@ -201,26 +322,16 @@ class RAGQueryEngine:
             verbose:     Print retrieved chunks and timing.
 
         Returns:
-            dict with keys: response, chunks, timing, nodes
+            dict with keys: response, chunks, timing
         """
         collection = collection or settings.qdrant.collection_children
 
         # 1. Retrieve
-        scored_points, retrieval_time = self._retrieve(
-            question, collection, top_k, org_filter
-        )
+        scored_points, retrieval_time = self._retrieve(question, collection, top_k, org_filter, doc_type)
         nodes = self._scored_points_to_nodes(scored_points)
 
         # 2. Format chunks for display/logging
-        chunks = []
-        for i, pt in enumerate(scored_points, 1):
-            chunks.append({
-                "rank": i,
-                "score": float(pt.score),
-                "metadata": {k: v for k, v in pt.payload.items() if k != "text"},
-                "text": pt.payload.get("text", ""),
-                "text_length": len(pt.payload.get("text", "")),
-            })
+        chunks = self._format_retrieved_chunks(scored_points)
 
         if verbose and chunks:
             print(f"\n{'='*60}")
@@ -264,24 +375,28 @@ class RAGQueryEngine:
             "response": response_text,
             "chunks": chunks,
             "timing": timing,
-            "nodes": nodes,
         }
 
     def query_compliance(
         self, text: str, org_filter: str | None = None, verbose: bool = False
     ) -> dict:
-        """Query the parents collection (full policy sections) for compliance checks."""
+        """
+        Compatibility method: retrieve parents context and synthesize a response.
+
+        Policy judging belongs in ``PolicyComplianceEvaluator``.
+        """
         return self.query(
             question=text,
             collection=settings.qdrant.collection_parents,
             org_filter=org_filter,
+            doc_type="policy",
             verbose=verbose,
         )
 
     def query_answer(
         self, question: str, org_filter: str | None = None, verbose: bool = False
     ) -> dict:
-        """Query the children collection (precision snippets) for fact-checking."""
+        """Compatibility method: retrieve children context and synthesize an answer."""
         return self.query(
             question=question,
             collection=settings.qdrant.collection_children,
