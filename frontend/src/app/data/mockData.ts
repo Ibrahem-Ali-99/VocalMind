@@ -325,6 +325,16 @@ export const mockFAQs = [
   },
 ];
 
+export const mockKBArticles = [
+  {
+    id: "kb-001",
+    title: "Technical Specs V2",
+    content: "Detailed technical specifications for version 2 hardware...",
+    preview: "Detailed technical specifications for version 2 hardware...",
+    category: "Hardware",
+    isActive: true,
+  },
+];
 // ── Manager Assistant ────────────────────────────────────────────────────────
 
 export const mockAssistantMessages: Array<{

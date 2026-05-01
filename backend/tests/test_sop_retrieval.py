@@ -136,20 +136,18 @@ def test_resolve_retrieved_sop_context_selects_best_matching_manual_doc(monkeypa
     assert context.chunks[0].metadata["source_file"] == "01-refund-request-processing.pdf"
 
 
-def test_sop_retriever_filters_by_doc_type_and_falls_back_for_legacy_chunks(monkeypatch):
+def test_sop_retriever_excludes_chunks_without_doc_type(monkeypatch, caplog):
     calls = []
 
     class _FakeClient:
         def query_points(self, **kwargs):
             calls.append(kwargs)
-            if len(calls) == 1:
-                return SimpleNamespace(points=[])
             return SimpleNamespace(
                 points=[
                     SimpleNamespace(
                         score=0.74,
                         payload={
-                            "text": "Legacy SOP step",
+                            "text": "Legacy SOP step without doc type",
                             "source_file": "legacy.md",
                         },
                     )
@@ -161,10 +159,11 @@ def test_sop_retriever_filters_by_doc_type_and_falls_back_for_legacy_chunks(monk
 
     chunks = retriever.retrieve_sop_chunks("refund request", org_filter="nexalink")
 
-    assert chunks[0].text == "Legacy SOP step"
+    assert len(chunks) == 0
     assert calls[0]["query_filter"].must[1].key == "doc_type"
     assert calls[0]["query_filter"].must[1].match.value == "sop"
-    assert len(calls) == 2
+    assert len(calls) == 1
+    assert "Chunk missing doc_type metadata \u2014 excluded from results." in caplog.text
 
 
 def test_policy_retriever_filters_by_policy_doc_type(monkeypatch):

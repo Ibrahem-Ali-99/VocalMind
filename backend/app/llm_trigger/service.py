@@ -43,7 +43,7 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
 _evaluator_lock = threading.Lock()
 _policy_compliance_evaluator = None
 
@@ -852,6 +852,10 @@ def _build_policy_reference(
     source_text: str,
     fallback_reference: str,
     doc_type: str | None = None,
+    doc_id: str | None = None,
+    rule_id: str | None = None,
+    step_number: str | None = None,
+    severity: str | None = None,
     policy_ref: list[str] | None = None,
     version: str | None = None,
     category: str | None = None,
@@ -869,7 +873,11 @@ def _build_policy_reference(
         source=source_kind,  # type: ignore[arg-type]
         reference=_clean_display_text(_extract_reference_label(source_text, fallback_reference)),
         clause=clause,
-        doc_type=doc_type if doc_type in {"policy", "sop"} else source_kind,  # type: ignore[arg-type]
+        doc_type=doc_type if doc_type in {"policy", "sop", "kb"} else source_kind,  # type: ignore[arg-type]
+        doc_id=doc_id,
+        rule_id=rule_id,
+        step_number=step_number,
+        severity=severity,
         policy_ref=policy_ref or [],
         version=version,
         category=category,
@@ -896,7 +904,11 @@ def _build_policy_reference_from_chunk(
             source=source_kind,  # type: ignore[arg-type]
             reference=_clean_display_text(_extract_reference_label(chunk.text, chunk.reference or fallback_reference)),
             clause=clause or _truncate_text(_clean_display_text(chunk.text), 220),
-            doc_type=chunk_doc_type if chunk_doc_type in {"policy", "sop"} else source_kind,  # type: ignore[arg-type]
+            doc_type=chunk_doc_type if chunk_doc_type in {"policy", "sop", "kb"} else source_kind,  # type: ignore[arg-type]
+            doc_id=chunk.metadata.get("doc_id"),
+            rule_id=chunk.metadata.get("rule_id"),
+            step_number=chunk.metadata.get("step_number"),
+            severity=chunk.metadata.get("severity"),
             policy_ref=policy_ref if isinstance(policy_ref, list) else [],
             version=version,
             category=category,

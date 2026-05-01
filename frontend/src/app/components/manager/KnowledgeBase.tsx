@@ -12,7 +12,9 @@ import {
   Trash2,
   AlertTriangle,
   FileText,
-  Upload
+  Upload,
+  ClipboardList,
+  Database
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,37 +42,49 @@ import {
   replacePolicyDocument,
   uploadFaqDocument,
   replaceFaqDocument,
+  getKBArticles,
+  uploadKBDocument,
+  replaceKBDocument,
+  toggleKB,
+  deleteKB,
   type PolicyData, 
-  type FAQData 
+  type FAQData,
+  type KBData
 } from "../../services/api";
 import { toast } from "sonner";
 
 export function KnowledgeBase() {
   const [policies, setPolicies] = useState<PolicyData[]>([]);
   const [faqs, setFaqs] = useState<FAQData[]>([]);
+  const [kbArticles, setKbArticles] = useState<KBData[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("policies");
 
   // Search States
   const [policySearch, setPolicySearch] = useState("");
   const [faqSearch, setFaqSearch] = useState("");
+  const [kbSearch, setKbSearch] = useState("");
 
   // Modal States
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [isFaqModalOpen, setIsFaqModalOpen] = useState(false);
+  const [isKbModalOpen, setIsKbModalOpen] = useState(false);
 
   // Form States
   const [policyForm, setPolicyForm] = useState({ title: "", category: "" });
   const [faqForm, setFaqForm] = useState({ question: "", category: "" });
+  const [kbForm, setKbForm] = useState({ title: "", category: "" });
   const [policyFile, setPolicyFile] = useState<File | null>(null);
   const [faqFile, setFaqFile] = useState<File | null>(null);
+  const [kbFile, setKbFile] = useState<File | null>(null);
   const [policyTargetId, setPolicyTargetId] = useState<string | null>(null);
   const [faqTargetId, setFaqTargetId] = useState<string | null>(null);
+  const [kbTargetId, setKbTargetId] = useState<string | null>(null);
 
   // Detail & Delete states
-  const [selectedDoc, setSelectedDoc] = useState<PolicyData | FAQData | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<PolicyData | FAQData | KBData | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [docToDelete, setDocToDelete] = useState<{ id: string, type: 'policy' | 'faq' } | null>(null);
+  const [docToDelete, setDocToDelete] = useState<{ id: string, type: 'policy' | 'faq' | 'kb' } | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const openPolicyModal = (doc?: PolicyData) => {
@@ -93,20 +107,35 @@ export function KnowledgeBase() {
     setIsFaqModalOpen(true);
   };
 
+  const openKbModal = (doc?: KBData) => {
+    setKbTargetId(doc?.id ?? null);
+    setKbForm({
+      title: doc?.title ?? "",
+      category: doc?.category ?? "",
+    });
+    setKbFile(null);
+    setIsKbModalOpen(true);
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
 
-  const isPolicyDoc = (doc: PolicyData | FAQData | null): doc is PolicyData => {
+  const isPolicyDoc = (doc: PolicyData | FAQData | KBData | null): doc is PolicyData => {
     return doc?.documentType === "policy";
+  };
+
+  const isKBDoc = (doc: PolicyData | FAQData | KBData | null): doc is KBData => {
+    return doc?.documentType === "kb";
   };
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [p, f] = await Promise.all([getPolicies(), getFaqs()]);
+      const [p, f, k] = await Promise.all([getPolicies(), getFaqs(), getKBArticles()]);
       setPolicies(p);
       setFaqs(f);
+      setKbArticles(k);
     } catch (err: any) {
       toast.error("Failed to load knowledge base: " + err.message);
     } finally {
@@ -130,9 +159,19 @@ export function KnowledgeBase() {
     try {
       const { isActive } = await toggleFaq(id);
       setFaqs(faqs.map(f => f.id === id ? { ...f, isActive } : f));
-      toast.success(`FAQ ${isActive ? 'activated' : 'deactivated'}`);
+      toast.success(`SOP ${isActive ? 'activated' : 'deactivated'}`);
     } catch (err: any) {
-      toast.error("Failed to toggle FAQ");
+      toast.error("Failed to toggle SOP");
+    }
+  };
+
+  const handleToggleKB = async (id: string) => {
+    try {
+      const { isActive } = await toggleKB(id);
+      setKbArticles(kbArticles.map(k => k.id === id ? { ...k, isActive } : k));
+      toast.success(`KB article ${isActive ? 'activated' : 'deactivated'}`);
+    } catch (err: any) {
+      toast.error("Failed to toggle KB article");
     }
   };
 
@@ -167,30 +206,41 @@ export function KnowledgeBase() {
 
   const saveFaq = async () => {
     if (!faqFile) {
-      toast.error("Choose a PDF for the FAQ upload");
+      toast.error("Choose a PDF for the SOP upload");
       return;
     }
-
     try {
       if (faqTargetId) {
-        await replaceFaqDocument(faqTargetId, {
-          question: faqForm.question,
-          category: faqForm.category,
-          file: faqFile,
-        });
-        toast.success("FAQ replaced with newer PDF");
+        await replaceFaqDocument(faqTargetId, { question: faqForm.question, category: faqForm.category, file: faqFile });
+        toast.success("SOP replaced with newer PDF");
       } else {
-        await uploadFaqDocument({
-          question: faqForm.question,
-          category: faqForm.category,
-          file: faqFile,
-        });
-        toast.success("FAQ uploaded");
+        await uploadFaqDocument({ question: faqForm.question, category: faqForm.category, file: faqFile });
+        toast.success("SOP uploaded");
       }
       setIsFaqModalOpen(false);
       fetchData();
     } catch (err: any) {
-      toast.error("Failed to save FAQ");
+      toast.error("Failed to save SOP");
+    }
+  };
+
+  const saveKB = async () => {
+    if (!kbFile) {
+      toast.error("Choose a PDF for the KB upload");
+      return;
+    }
+    try {
+      if (kbTargetId) {
+        await replaceKBDocument(kbTargetId, { title: kbForm.title, category: kbForm.category, file: kbFile });
+        toast.success("KB article replaced with newer PDF");
+      } else {
+        await uploadKBDocument({ title: kbForm.title, category: kbForm.category, file: kbFile });
+        toast.success("KB article uploaded");
+      }
+      setIsKbModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Failed to save KB article");
     }
   };
 
@@ -199,10 +249,13 @@ export function KnowledgeBase() {
     try {
       if (docToDelete.type === 'policy') {
         await deletePolicy(docToDelete.id);
+      } else if (docToDelete.type === 'kb') {
+        await deleteKB(docToDelete.id);
       } else {
         await deleteFaq(docToDelete.id);
       }
-      toast.success(`${docToDelete.type === 'policy' ? 'Policy' : 'FAQ'} deleted successfully`);
+      const typeLabels = { policy: 'Policy', faq: 'SOP', kb: 'KB article' };
+      toast.success(`${typeLabels[docToDelete.type]} deleted successfully`);
       setIsDeleteConfirmOpen(false);
       fetchData();
     } catch (err: any) {
@@ -218,6 +271,11 @@ export function KnowledgeBase() {
   const filteredFaqs = faqs.filter(f => 
     f.question.toLowerCase().includes(faqSearch.toLowerCase()) || 
     f.category.toLowerCase().includes(faqSearch.toLowerCase())
+  );
+
+  const filteredKB = kbArticles.filter(k =>
+    k.title.toLowerCase().includes(kbSearch.toLowerCase()) ||
+    k.category.toLowerCase().includes(kbSearch.toLowerCase())
   );
 
   if (loading) {
@@ -253,21 +311,19 @@ export function KnowledgeBase() {
           <Button 
             className="rounded-xl shadow-lg shadow-primary/20 gap-2 font-bold px-6"
             onClick={() => {
-              if (activeTab === "policies") {
-                openPolicyModal();
-              } else {
-                openFaqModal();
-              }
+              if (activeTab === "policies") openPolicyModal();
+              else if (activeTab === "kb") openKbModal();
+              else openFaqModal();
             }}
           >
             <Plus className="w-4 h-4" />
-            Upload {activeTab === "policies" ? "Guideline PDF" : "FAQ PDF"}
+            Upload {activeTab === "policies" ? "Policy PDF" : activeTab === "kb" ? "KB PDF" : "SOP PDF"}
           </Button>
         </div>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-card/40 backdrop-blur-sm border border-border p-4 rounded-2xl flex items-center justify-between group hover:border-primary/30 transition-all duration-300 shadow-sm">
           <div className="space-y-1">
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Active Policies</p>
@@ -280,10 +336,19 @@ export function KnowledgeBase() {
         <div className="bg-card/40 backdrop-blur-sm border border-border p-4 rounded-2xl flex items-center justify-between group hover:border-success/30 transition-all duration-300 shadow-sm">
           <div className="space-y-1">
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">SOP Coverage</p>
-            <p className="text-2xl font-black">{faqs.length} Documents</p>
+            <p className="text-2xl font-black">{faqs.length} Docs</p>
           </div>
           <div className="p-3 bg-success/10 rounded-xl text-success group-hover:scale-110 transition-transform">
-            <HelpCircle className="w-5 h-5" />
+            <ClipboardList className="w-5 h-5" />
+          </div>
+        </div>
+        <div className="bg-card/40 backdrop-blur-sm border border-border p-4 rounded-2xl flex items-center justify-between group hover:border-blue-500/30 transition-all duration-300 shadow-sm">
+          <div className="space-y-1">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">KB Articles</p>
+            <p className="text-2xl font-black">{kbArticles.length}</p>
+          </div>
+          <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 group-hover:scale-110 transition-transform">
+            <Database className="w-5 h-5" />
           </div>
         </div>
         <div className="bg-card/40 backdrop-blur-sm border border-border p-4 rounded-2xl flex items-center justify-between group hover:border-warning/30 transition-all duration-300 shadow-sm">
@@ -302,28 +367,31 @@ export function KnowledgeBase() {
       <Tabs defaultValue="policies" onValueChange={setActiveTab} className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <TabsList className="bg-muted/50 border border-border p-1 h-12 rounded-2xl backdrop-blur-md">
-            <TabsTrigger value="policies" className="rounded-xl px-8 font-bold data-[state=active]:shadow-lg">
-              <BookOpen className="w-4 h-4 mr-2" />
-              Guidelines
+            <TabsTrigger value="policies" className="rounded-xl px-6 font-bold data-[state=active]:shadow-lg">
+              <ShieldCheck className="w-4 h-4 mr-2" />
+              Policies
             </TabsTrigger>
-            <TabsTrigger value="faqs" className="rounded-xl px-8 font-bold data-[state=active]:shadow-lg">
-              <HelpCircle className="w-4 h-4 mr-2" />
-              SOP & Knowledge
+            <TabsTrigger value="faqs" className="rounded-xl px-6 font-bold data-[state=active]:shadow-lg">
+              <ClipboardList className="w-4 h-4 mr-2" />
+              SOPs
+            </TabsTrigger>
+            <TabsTrigger value="kb" className="rounded-xl px-6 font-bold data-[state=active]:shadow-lg">
+              <Database className="w-4 h-4 mr-2" />
+              Knowledge Base
             </TabsTrigger>
           </TabsList>
+        </div>
 
+        <TabsContent value="policies" className="animate-in fade-in slide-in-from-bottom-2 duration-400 outline-none space-y-6">
           <div className="relative w-full md:w-80 group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
             <Input
-              placeholder={`Search ${activeTab === "policies" ? "guidelines" : "SOP & knowledge"}...`}
-              value={activeTab === "policies" ? policySearch : faqSearch}
-              onChange={(e) => activeTab === "policies" ? setPolicySearch(e.target.value) : setFaqSearch(e.target.value)}
+              placeholder="Search policies..."
+              value={policySearch}
+              onChange={(e) => setPolicySearch(e.target.value)}
               className="pl-10 h-12 rounded-2xl border-border bg-card/50 backdrop-blur-sm focus-visible:ring-primary/40 focus-visible:border-primary transition-all shadow-sm"
             />
           </div>
-        </div>
-
-        <TabsContent value="policies" className="animate-in fade-in slide-in-from-bottom-2 duration-400 outline-none">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredPolicies.map((p) => (
               <div 
@@ -407,7 +475,16 @@ export function KnowledgeBase() {
           )}
         </TabsContent>
 
-        <TabsContent value="faqs" className="animate-in fade-in slide-in-from-bottom-2 duration-400 outline-none">
+        <TabsContent value="faqs" className="animate-in fade-in slide-in-from-bottom-2 duration-400 outline-none space-y-6">
+          <div className="relative w-full md:w-80 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Input
+              placeholder="Search SOPs..."
+              value={faqSearch}
+              onChange={(e) => setFaqSearch(e.target.value)}
+              className="pl-10 h-12 rounded-2xl border-border bg-card/50 backdrop-blur-sm focus-visible:ring-primary/40 focus-visible:border-primary transition-all shadow-sm"
+            />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredFaqs.map((f) => (
               <div 
@@ -480,11 +557,103 @@ export function KnowledgeBase() {
           {filteredFaqs.length === 0 && (
             <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 bg-muted/20 border border-dashed border-border rounded-[32px]">
               <div className="bg-card w-16 h-16 rounded-3xl flex items-center justify-center shadow-lg">
-                <HelpCircle className="w-8 h-8 text-muted-foreground/40" />
+                <ClipboardList className="w-8 h-8 text-muted-foreground/40" />
               </div>
               <div className="space-y-1">
-                <p className="text-xl font-bold text-foreground">No SOP or knowledge documents found</p>
+                <p className="text-xl font-bold text-foreground">No SOP documents found</p>
                 <p className="text-sm text-muted-foreground max-w-xs">Standard operating procedures will help the AI evaluate customer resolutions.</p>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="kb" className="animate-in fade-in slide-in-from-bottom-2 duration-400 outline-none space-y-6">
+          <div className="relative w-full md:w-80 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Input
+              placeholder="Search knowledge base..."
+              value={kbSearch}
+              onChange={(e) => setKbSearch(e.target.value)}
+              className="pl-10 h-12 rounded-2xl border-border bg-card/50 backdrop-blur-sm focus-visible:ring-primary/40 focus-visible:border-primary transition-all shadow-sm"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredKB.map((k) => (
+              <div 
+                key={k.id} 
+                className="group relative bg-card hover:bg-card/80 border border-border hover:border-blue-500/30 rounded-[24px] p-6 transition-all duration-300 shadow-sm hover:shadow-xl hover:shadow-blue-500/5 flex flex-col justify-between overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-3xl transition-all group-hover:bg-blue-500/10" />
+                
+                <div className="relative space-y-4">
+                  <div className="flex items-start justify-between">
+                    <Badge variant="secondary" className="bg-blue-500/5 text-blue-500 border-blue-500/10 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider">
+                      {k.category}
+                    </Badge>
+                    <Switch checked={k.isActive} onCheckedChange={() => handleToggleKB(k.id)} />
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-[17px] font-black text-foreground group-hover:text-blue-500 transition-colors leading-tight mb-2 text-ellipsis overflow-hidden">
+                      {k.title}
+                    </h4>
+                    <p className="text-[13px] text-muted-foreground/80 leading-relaxed line-clamp-3 font-medium h-[60px]">
+                      {k.preview}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative pt-6 mt-6 border-t border-border flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-muted-foreground/60">
+                    <Database className="w-3.5 h-3.5" />
+                    <span className="text-[11px] font-bold uppercase tracking-widest">KB</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="ghost" 
+                      className="text-[11px] font-bold text-blue-500 hover:bg-blue-500/5 group/btn"
+                      onClick={() => openKbModal(k)}
+                    >
+                      Replace
+                      <Upload className="w-3.5 h-3.5 ml-1" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="rounded-xl hover:bg-destructive/10 hover:text-destructive transition-colors h-8 w-8"
+                      onClick={() => {
+                        setDocToDelete({ id: k.id, type: 'kb' });
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      className="text-[11px] font-bold text-blue-500 hover:bg-blue-500/5 group/btn"
+                      onClick={() => {
+                        setSelectedDoc(k);
+                        setIsDetailOpen(true);
+                      }}
+                    >
+                      Details
+                      <ArrowRight className="w-3.5 h-3.5 ml-1 transition-transform group-hover/btn:translate-x-1" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {filteredKB.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 bg-muted/20 border border-dashed border-border rounded-[32px]">
+              <div className="bg-card w-16 h-16 rounded-3xl flex items-center justify-center shadow-lg">
+                <Database className="w-8 h-8 text-muted-foreground/40" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xl font-bold text-foreground">No knowledge base articles found</p>
+                <p className="text-sm text-muted-foreground max-w-xs">Upload product and technical reference documents for claim validation.</p>
               </div>
             </div>
           )}
@@ -560,36 +729,36 @@ export function KnowledgeBase() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl" />
             <DialogHeader>
               <DialogTitle className="text-3xl font-black">
-                {faqTargetId ? "Replace SOP/Knowledge PDF" : "Upload SOP/Knowledge PDF"}
+                {faqTargetId ? "Replace SOP PDF" : "Upload SOP PDF"}
               </DialogTitle>
               <DialogDescription className="text-success-foreground/70 font-medium pt-2">
                 {faqTargetId
-                  ? "Upload a newer PDF version for the existing FAQ item."
-                  : "Upload a PDF and let the system extract the answer text."}
+                  ? "Upload a newer PDF version for the existing SOP item."
+                  : "Upload a PDF and let the system extract the procedure text."}
               </DialogDescription>
             </DialogHeader>
           </div>
 
           <div className="p-8 space-y-6">
             <div className="space-y-2">
-              <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">FAQ PDF</p>
+              <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">SOP PDF</p>
               <Input
                 type="file"
                 accept="application/pdf"
                 onChange={(event) => setFaqFile(event.target.files?.[0] ?? null)}
                 className="rounded-xl border-border bg-muted/30 focus-visible:ring-success/20 h-11 file:mr-4 file:rounded-lg file:border-0 file:bg-success file:px-4 file:py-2 file:text-white file:font-bold"
               />
-              <p className="text-[10px] text-muted-foreground pl-1">PDF only. The extracted text becomes the answer content.</p>
+              <p className="text-[10px] text-muted-foreground pl-1">PDF only. The extracted text becomes the SOP content.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">Question</p>
+                <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">Title</p>
                 <Input
                   value={faqForm.question}
                   onChange={(event) => setFaqForm({ ...faqForm, question: event.target.value })}
                   className="rounded-xl border-border bg-muted/30 focus-visible:ring-success/20 h-11"
-                  placeholder="Optional question or topic"
+                  placeholder="Optional title"
                 />
               </div>
               <div className="space-y-2">
@@ -608,7 +777,69 @@ export function KnowledgeBase() {
                 Cancel
               </Button>
               <Button onClick={saveFaq} className="rounded-xl px-10 font-bold bg-success hover:bg-success/90 text-white shadow-lg shadow-success/20">
-                {faqTargetId ? "Replace FAQ" : "Upload FAQ"}
+                {faqTargetId ? "Replace SOP" : "Upload SOP"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* KB Modal */}
+      <Dialog open={isKbModalOpen} onOpenChange={setIsKbModalOpen}>
+        <DialogContent className="sm:max-w-[640px] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden">
+          <div className="bg-blue-600 px-8 py-8 text-white relative">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl" />
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black">
+                {kbTargetId ? "Replace KB PDF" : "Upload KB PDF"}
+              </DialogTitle>
+              <DialogDescription className="text-white/70 font-medium pt-2">
+                {kbTargetId
+                  ? "Upload a newer PDF version for the existing KB article."
+                  : "Upload a product or technical reference PDF for claim validation."}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="p-8 space-y-6">
+            <div className="space-y-2">
+              <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">KB PDF</p>
+              <Input
+                type="file"
+                accept="application/pdf"
+                onChange={(event) => setKbFile(event.target.files?.[0] ?? null)}
+                className="rounded-xl border-border bg-muted/30 focus-visible:ring-blue-500/20 h-11 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white file:font-bold"
+              />
+              <p className="text-[10px] text-muted-foreground pl-1">PDF only. The extracted text becomes the KB article content.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">Title</p>
+                <Input
+                  value={kbForm.title}
+                  onChange={(event) => setKbForm({ ...kbForm, title: event.target.value })}
+                  className="rounded-xl border-border bg-muted/30 focus-visible:ring-blue-500/20 h-11"
+                  placeholder="Optional title"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-[11px] font-black uppercase text-muted-foreground tracking-widest pl-1">Category</p>
+                <Input
+                  value={kbForm.category}
+                  onChange={(event) => setKbForm({ ...kbForm, category: event.target.value })}
+                  className="rounded-xl border-border bg-muted/30 focus-visible:ring-blue-500/20 h-11"
+                  placeholder="Optional category"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button variant="ghost" className="font-bold underline text-muted-foreground" onClick={() => setIsKbModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={saveKB} className="rounded-xl px-10 font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20">
+                {kbTargetId ? "Replace KB" : "Upload KB"}
               </Button>
             </DialogFooter>
           </div>
@@ -625,7 +856,7 @@ export function KnowledgeBase() {
             <DialogHeader>
               <DialogTitle className="text-2xl font-black">Hold on!</DialogTitle>
               <DialogDescription className="text-muted-foreground font-medium pt-2">
-                Are you sure you want to delete this {docToDelete?.type === 'policy' ? 'guideline' : 'SOP/knowledge document'}? 
+                Are you sure you want to delete this {docToDelete?.type === 'policy' ? 'policy' : docToDelete?.type === 'kb' ? 'knowledge base article' : 'SOP document'}? 
                 This action will remove it from the knowledge engine immediately.
               </DialogDescription>
             </DialogHeader>
@@ -652,10 +883,10 @@ export function KnowledgeBase() {
       {/* Document Detail Modal */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
         <DialogContent className="sm:max-w-[850px] max-h-[85vh] p-0 rounded-[32px] border-none shadow-3xl overflow-hidden flex flex-col">
-          <div className={`p-8 pb-6 flex items-start justify-between ${isPolicyDoc(selectedDoc) ? 'bg-primary/5' : 'bg-success/5'}`}>
+          <div className={`p-8 pb-6 flex items-start justify-between ${isPolicyDoc(selectedDoc) ? 'bg-primary/5' : isKBDoc(selectedDoc) ? 'bg-blue-500/5' : 'bg-success/5'}`}>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <Badge className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${isPolicyDoc(selectedDoc) ? 'bg-primary/10 text-primary border-none' : 'bg-success/10 text-success border-none'}`}>
+                <Badge className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${isPolicyDoc(selectedDoc) ? 'bg-primary/10 text-primary border-none' : isKBDoc(selectedDoc) ? 'bg-blue-500/10 text-blue-500 border-none' : 'bg-success/10 text-success border-none'}`}>
                   {selectedDoc?.category}
                 </Badge>
                 {selectedDoc && !selectedDoc.isActive && (
@@ -663,7 +894,7 @@ export function KnowledgeBase() {
                 )}
               </div>
               <h3 className="text-2xl font-black tracking-tight text-foreground line-clamp-1">
-                {isPolicyDoc(selectedDoc) ? selectedDoc.title : (selectedDoc as FAQData | null)?.question}
+                {isPolicyDoc(selectedDoc) ? selectedDoc.title : isKBDoc(selectedDoc) ? selectedDoc.title : (selectedDoc as FAQData | null)?.question}
               </h3>
             </div>
             <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 -mr-2 shadow-none border-none hover:bg-muted" onClick={() => setIsDetailOpen(false)}>
@@ -685,7 +916,7 @@ export function KnowledgeBase() {
                 prose-th:bg-muted/50 prose-th:p-4 prose-th:text-[13px] prose-th:font-black prose-th:uppercase prose-th:tracking-wider
                 prose-td:p-4 prose-td:border-t prose-td:border-border prose-td:text-[14px]">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {selectedDoc ? (isPolicyDoc(selectedDoc) ? selectedDoc.content : selectedDoc.answer) : ''}
+                  {selectedDoc ? (isPolicyDoc(selectedDoc) ? selectedDoc.content : isKBDoc(selectedDoc) ? selectedDoc.content : (selectedDoc as FAQData).answer) : ''}
                 </ReactMarkdown>
               </article>
             </div>

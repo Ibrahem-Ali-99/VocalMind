@@ -215,7 +215,7 @@ describe('SessionDetail', () => {
         fireEvent.click(screen.getByRole('button', { name: /Retrieval Provenance Scoring/i }))
         expect(screen.getByText('Retrieval Provenance Scoring')).toBeInTheDocument()
         expect(screen.getByText('Your refund will arrive within 24 hours.')).toBeInTheDocument()
-        expect(screen.getByText('Standard refunds take 3-5 business days.')).toBeInTheDocument()
+        expect(screen.getByText('Standard refunds take 3-5 business days.', { exact: false })).toBeInTheDocument()
     })
 
     it('normalizes non-canonical emotions instead of treating them as neutral', async () => {

@@ -238,7 +238,7 @@ export interface EmotionComparison {
 }
 
 export interface LLMEvidenceCitation {
-  source: "transcript" | "policy" | "sop" | "acoustic";
+  source: "transcript" | "policy" | "sop" | "acoustic" | "kb";
   speaker?: "customer" | "agent" | "system" | "unknown";
   quote: string;
   utteranceIndex?: number | null;
@@ -254,9 +254,15 @@ export interface ExplainabilitySpan {
 }
 
 export interface ExplainabilityPolicyReference {
-  source: "policy" | "sop";
+  source: "policy" | "sop" | "kb";
   reference: string;
   clause: string;
+  docType?: string | null;
+  docId?: string | null;
+  ruleId?: string | null;
+  stepNumber?: string | null;
+  severity?: string | null;
+  policyRef?: string[];
   version?: string | null;
   category?: string | null;
   provenance?: string | null;
@@ -607,6 +613,60 @@ export function toggleFaq(id: string): Promise<{ isActive: boolean }> {
 
 export function deleteFaq(id: string): Promise<void> {
   return apiFetch<void>(`/knowledge/faqs/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Knowledge Base ───────────────────────────────────────────────────────────
+
+export interface KBData {
+  id: string;
+  documentType: "kb";
+  title: string;
+  category: string;
+  content: string;
+  preview: string;
+  lastUpdated: string;
+  isActive: boolean;
+  usageCount: number;
+}
+
+export function getKBArticles(): Promise<KBData[]> {
+  return apiFetch<KBData[]>("/knowledge/kb");
+}
+
+export function uploadKBDocument(data: { title?: string; category?: string; file: File }): Promise<{ id: string }> {
+  const formData = new FormData();
+  if (data.title) formData.append("title", data.title);
+  if (data.category) formData.append("category", data.category);
+  formData.append("file", data.file);
+
+  return apiFetch<{ id: string }>("/knowledge/kb/upload", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function replaceKBDocument(id: string, data: { title?: string; category?: string; file: File }): Promise<{ id: string }> {
+  const formData = new FormData();
+  if (data.title) formData.append("title", data.title);
+  if (data.category) formData.append("category", data.category);
+  formData.append("file", data.file);
+
+  return apiFetch<{ id: string }>(`/knowledge/kb/${id}/upload`, {
+    method: "PATCH",
+    body: formData,
+  });
+}
+
+export function toggleKB(id: string): Promise<{ isActive: boolean }> {
+  return apiFetch<{ isActive: boolean }>(`/knowledge/kb/${id}/toggle`, {
+    method: "POST",
+  });
+}
+
+export function deleteKB(id: string): Promise<void> {
+  return apiFetch<void>(`/knowledge/kb/${id}`, {
     method: "DELETE",
   });
 }

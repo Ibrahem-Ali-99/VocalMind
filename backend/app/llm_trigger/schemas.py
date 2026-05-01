@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 
-CitationSource = Literal["transcript", "policy", "sop", "acoustic"]
+CitationSource = Literal["transcript", "policy", "sop", "acoustic", "kb"]
 CitationSpeaker = Literal["customer", "agent", "system", "unknown"]
 ExplainabilityFamily = Literal["emotion", "sop", "policy"]
 ExplainabilityVerdict = Literal[
@@ -43,12 +43,28 @@ class EvidenceSpan(BaseModel):
 
 
 class PolicyReference(BaseModel):
-    source: Literal["policy", "sop"] = Field(description="Whether the reference came from a policy or SOP document.")
+    source: Literal["policy", "sop", "kb"] = Field(description="Whether the reference came from a policy, SOP, or KB document.")
     reference: str = Field(description="Human-readable document or section reference.")
     clause: str = Field(description="Policy or SOP clause used as evidence.")
-    doc_type: Literal["policy", "sop"] | None = Field(
+    doc_type: Literal["policy", "sop", "kb"] | None = Field(
         default=None,
         description="Document type carried from retrieval metadata.",
+    )
+    doc_id: str | None = Field(
+        default=None,
+        description="Document identifier from ingestion metadata.",
+    )
+    rule_id: str | None = Field(
+        default=None,
+        description="Policy rule ID when source is a policy chunk.",
+    )
+    step_number: str | None = Field(
+        default=None,
+        description="SOP step number when source is an SOP chunk.",
+    )
+    severity: str | None = Field(
+        default=None,
+        description="Rule severity level (critical/major/minor) when available.",
     )
     policy_ref: list[str] = Field(
         default_factory=list,

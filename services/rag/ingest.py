@@ -40,7 +40,7 @@ except ImportError:  # pragma: no cover - allows direct script/test imports
 
 logger = logging.getLogger(__name__)
 
-VALID_DOC_TYPES = {"policy", "sop"}
+VALID_DOC_TYPES = {"policy", "sop", "kb"}
 VALID_POLICY_SEVERITIES = {"critical", "major", "minor"}
 
 
@@ -323,6 +323,20 @@ class DocumentIngestionPipeline:
                 chunk.metadata["policy_ref"] = extracted_policy_ref or chunk.metadata.get("policy_ref") or []
             if doc_type == "policy":
                 chunk.metadata.update(cls._extract_policy_rule_metadata(chunk.page_content))
+            if doc_type == "kb":
+                # Derive section from header metadata for KB chunks
+                header_parts = [
+                    str(chunk.metadata.get(key, "")).strip()
+                    for key in ("Header 1", "Header 2", "Header 3")
+                    if chunk.metadata.get(key)
+                ]
+                section = " > ".join(header_parts) if header_parts else ""
+                chunk.metadata["section"] = section
+                if not section:
+                    logger.warning(
+                        "KB chunk missing section header metadata: source=%s",
+                        chunk.metadata.get("source_file", "unknown"),
+                    )
 
     @classmethod
     def _validate_policy_chunk_schema(cls, chunks: list, label: str) -> list[str]:
@@ -494,17 +508,31 @@ class DocumentIngestionPipeline:
         """Full 8-step pipeline for a single PDF file."""
         base_name = os.path.splitext(os.path.basename(pdf_path))[0]
         normalized_path = str(pdf_path).replace("\\", "/")
+        is_kb_document = any(
+            marker in normalized_path
+            for marker in ("/kb/", "/knowledge-base/")
+        )
         is_sop_document = any(
             marker in normalized_path
             for marker in ("/sop-procedures/", "/faq-docs/")
         )
-        parsed_root = settings.PARSED_SOP_DIR if is_sop_document else settings.PARSED_POLICY_DIR
-        parsed_folder = "sops" if is_sop_document else "policies"
+        if is_kb_document:
+            doc_type = "kb"
+            parsed_root = settings.PARSED_SOP_DIR
+            parsed_folder = "kb"
+        elif is_sop_document:
+            doc_type = "sop"
+            parsed_root = settings.PARSED_SOP_DIR
+            parsed_folder = "sops"
+        else:
+            doc_type = "policy"
+            parsed_root = settings.PARSED_POLICY_DIR
+            parsed_folder = "policies"
         output_dir = str(Path(parsed_root) / org_name / "parsed-docs" / parsed_folder)
         os.makedirs(output_dir, exist_ok=True)
 
         print(f"\n{'='*70}")
-        print(f"Processing: {os.path.basename(pdf_path)}  [org: {org_name}]")
+        print(f"Processing: {os.path.basename(pdf_path)}  [org: {org_name}]  [type: {doc_type}]")
         print(f"{'='*70}")
 
         # Step 1 — Parse PDF with Docling
@@ -532,7 +560,6 @@ class DocumentIngestionPipeline:
         # Step 3 — Extract metadata
         print("\n[Step 3] Extracting document metadata...")
         doc_meta = self._extract_metadata(clean_markdown, base_name, org_name)
-        doc_type = "sop" if is_sop_document else "policy"
         doc_meta["doc_type"] = doc_type
         if doc_type == "sop":
             doc_meta["policy_ref"] = []
@@ -558,6 +585,10 @@ class DocumentIngestionPipeline:
         if doc_type == "policy":
             all_warnings.extend(self._validate_policy_chunk_schema(parent_chunks, "PARENT"))
             all_warnings.extend(self._validate_policy_chunk_schema(child_chunks, "CHILD"))
+        if doc_type == "kb":
+            for idx, chunk in enumerate(parent_chunks, 1):
+                if not chunk.metadata.get("section"):
+                    all_warnings.append(f"[PARENT] KB chunk {idx} has no section header")
         if c_report["total"] == p_report["total"] and len(parent_chunks) > 0:
             all_warnings.append(
                 "[PIPELINE] Parent == Child count — child splitting may not be working."
@@ -601,8 +632,10 @@ class DocumentIngestionPipeline:
         print(f"  Saved → {val_path}")
 
         # Step 8 — Upload to Qdrant
-        if is_sop_document:
-            print("\n[Step 8] SOP Document detected. Uploading to SOP parent collection...")
+        n_children = 0
+        if doc_type in ("sop", "kb"):
+            type_label = "KB" if doc_type == "kb" else "SOP"
+            print(f"\n[Step 8] {type_label} Document detected. Uploading to SOP parent collection...")
             self._delete_document_points(settings.qdrant.collection_sop_parents, org_name, base_name)
             n_parents = self._upload_chunks(
                 parent_chunks, settings.qdrant.collection_sop_parents, "parent"
@@ -619,9 +652,10 @@ class DocumentIngestionPipeline:
             )
 
         print(f"\n{'─'*50}")
-        print(f"  DONE: {base_name}")
-        if is_sop_document:
-            print(f"  Parents  : {n_parents} → SOP Parents")
+        print(f"  DONE: {base_name}  [type: {doc_type}]")
+        if doc_type in ("sop", "kb"):
+            label = "KB Parents" if doc_type == "kb" else "SOP Parents"
+            print(f"  Parents  : {n_parents} → {label}")
         else:
             print(f"  Parents  : {n_parents} → Policy Parents")
             print(f"  Children : {n_children} → Policy Children")
@@ -697,6 +731,8 @@ class DocumentIngestionPipeline:
                     org_dir / "policy-docs",
                     org_dir / "sop-procedures",
                     org_dir / "faq-docs",
+                    org_dir / "kb",
+                    org_dir / "knowledge-base",
                 ):
                     if not candidate.is_dir():
                         continue

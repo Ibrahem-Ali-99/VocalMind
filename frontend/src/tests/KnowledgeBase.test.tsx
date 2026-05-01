@@ -4,15 +4,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { KnowledgeBase } from '../app/components/manager/KnowledgeBase'
 import { MemoryRouter } from 'react-router'
 
-const { getPoliciesMock, getFaqsMock, togglePolicyMock } = vi.hoisted(() => ({
+const { getPoliciesMock, getFaqsMock, getKBArticlesMock, togglePolicyMock } = vi.hoisted(() => ({
     getPoliciesMock: vi.fn(),
     getFaqsMock: vi.fn(),
+    getKBArticlesMock: vi.fn(),
     togglePolicyMock: vi.fn(),
 }))
 
 vi.mock('../app/services/api', () => ({
     getPolicies: getPoliciesMock,
     getFaqs: getFaqsMock,
+    getKBArticles: getKBArticlesMock,
     togglePolicy: togglePolicyMock,
 }))
 
@@ -77,6 +79,20 @@ describe('KnowledgeBase', () => {
             },
         ])
 
+        getKBArticlesMock.mockResolvedValue([
+            {
+                id: 'k1',
+                documentType: 'kb',
+                title: 'Technical Specs V2',
+                category: 'hardware',
+                content: 'content',
+                preview: 'Specs preview',
+                lastUpdated: '2026-03-01',
+                isActive: true,
+                usageCount: 0,
+            }
+        ])
+
         togglePolicyMock.mockResolvedValue({ isActive: true })
     })
 
@@ -88,8 +104,9 @@ describe('KnowledgeBase', () => {
         )
 
         expect(await screen.findByText('Knowledge Engine')).toBeInTheDocument()
-        expect(screen.getByText('Guidelines')).toBeInTheDocument()
-        expect(screen.getByText('SOP & Knowledge')).toBeInTheDocument()
+        expect(screen.getByText('Policies')).toBeInTheDocument()
+        expect(screen.getByText('SOPs')).toBeInTheDocument()
+        expect(screen.getByText('Knowledge Base')).toBeInTheDocument()
     })
 
     it('renders search placeholders', async () => {
@@ -99,7 +116,19 @@ describe('KnowledgeBase', () => {
             </MemoryRouter>
         )
 
-        expect(await screen.findByPlaceholderText('Search guidelines...')).toBeInTheDocument()
+        expect(await screen.findByPlaceholderText(/Search policies/i)).toBeInTheDocument()
+        
+        const sopTab = screen.getByRole('tab', { name: /SOPs/i })
+        fireEvent.focus(sopTab)
+        fireEvent.click(sopTab)
+        fireEvent.keyDown(sopTab, { key: ' ', code: 'Space' })
+        await waitFor(() => expect(screen.getByText(/How do I reset a customer's password/i)).toBeInTheDocument())
+
+        const kbTab = screen.getByRole('tab', { name: /Knowledge Base/i })
+        fireEvent.focus(kbTab)
+        fireEvent.click(kbTab)
+        fireEvent.keyDown(kbTab, { key: ' ', code: 'Space' })
+        await waitFor(() => expect(screen.getByText(/Technical Specs V2/i)).toBeInTheDocument())
     })
 
     it('toggles policy switch and filters policy list', async () => {
@@ -117,7 +146,7 @@ describe('KnowledgeBase', () => {
         fireEvent.click(escalationSwitch)
         await waitFor(() => expect(escalationSwitch).toBeChecked())
 
-        const policySearch = screen.getByPlaceholderText('Search guidelines...')
+        const policySearch = screen.getByPlaceholderText('Search policies...')
         fireEvent.change(policySearch, { target: { value: 'Privacy' } })
         expect(screen.getByText('Data Privacy Guidelines')).toBeInTheDocument()
         expect(screen.queryByText('Greeting Protocol')).not.toBeInTheDocument()

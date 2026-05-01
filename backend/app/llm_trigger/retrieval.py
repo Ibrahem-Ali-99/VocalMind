@@ -211,13 +211,6 @@ class QdrantRetriever:
             ).points
 
         points = _query(include_doc_type=bool(doc_type))
-        if doc_type and not points:
-            logger.warning(
-                "No Qdrant chunks matched doc_type=%s in %s; retrying without doc_type filter for legacy data.",
-                doc_type,
-                collection_name,
-            )
-            points = _query(include_doc_type=False)
 
         snippets: list[RetrievedChunk] = []
         for point in points:
@@ -239,7 +232,21 @@ class QdrantRetriever:
                     )
                 )
 
-        return snippets
+        # Strict chunk exclusion: discard chunks without doc_type metadata
+        valid_snippets: list[RetrievedChunk] = []
+        for chunk in snippets:
+            chunk_doc_type = chunk.metadata.get("doc_type")
+            if not chunk_doc_type:
+                logger.critical(
+                    "Chunk missing doc_type metadata — excluded from results. "
+                    "source=%s, collection=%s",
+                    chunk.metadata.get("source_file", "unknown"),
+                    collection_name,
+                )
+                continue
+            valid_snippets.append(chunk)
+
+        return valid_snippets
 
 
 class SOPRetriever(QdrantRetriever):
@@ -268,6 +275,21 @@ class PolicyRetriever(QdrantRetriever):
             top_k=top_k,
             org_filter=org_filter,
             doc_type="policy",
+        )
+
+
+class KBRetriever(QdrantRetriever):
+    """On-demand KB retrieval for claim validation lookups."""
+
+    def retrieve_kb_chunks(
+        self, query_text: str, org_filter: str | None = None, top_k: int = 3
+    ) -> list[RetrievedChunk]:
+        return self.retrieve_chunks(
+            query_text=query_text,
+            collection_name=settings.QDRANT_COLLECTION_SOP_PARENTS,
+            top_k=top_k,
+            org_filter=org_filter,
+            doc_type="kb",
         )
 
 
@@ -463,6 +485,59 @@ def retrieve_policy_chunks(
 ) -> list[RetrievedChunk]:
     retriever = PolicyRetriever()
     return retriever.retrieve_policy_chunks(query_text=query_text, org_filter=org_filter, top_k=top_k)
+
+
+def retrieve_kb_chunks(
+    query_text: str,
+    org_filter: str | None = None,
+    top_k: int = 3,
+) -> list[RetrievedChunk]:
+    """On-demand KB retrieval for claim validation during orchestration."""
+    return KBRetriever().retrieve_kb_chunks(
+        query_text=query_text, org_filter=org_filter, top_k=top_k
+    )
+
+
+def resolve_sop_policy_refs(
+    sop_chunks: list[RetrievedChunk],
+    org_filter: str | None = None,
+) -> None:
+    """
+    Secondary policy resolution for SOP chunks.
+
+    When SOP chunks carry ``policy_ref`` rule IDs, fetch matching policy chunks
+    and attach them as ``resolved_policy_refs`` in the SOP chunk's metadata.
+    """
+    if not sop_chunks:
+        return
+    policy_retriever = PolicyRetriever()
+    for chunk in sop_chunks:
+        refs = chunk.metadata.get("policy_ref") or []
+        if isinstance(refs, str):
+            refs = [r.strip() for r in refs.split(",") if r.strip()]
+        if not refs:
+            continue
+        resolved: list[dict] = []
+        for rule_id in refs:
+            try:
+                matched = policy_retriever.retrieve_policy_chunks(
+                    query_text=rule_id,
+                    org_filter=org_filter,
+                    top_k=1,
+                )
+                if matched:
+                    best = matched[0]
+                    resolved.append({
+                        "rule_id": rule_id,
+                        "text": best.text[:300],
+                        "score": best.score,
+                        "source": best.reference,
+                    })
+                else:
+                    logger.warning("SOP policy_ref %s could not be resolved.", rule_id)
+            except Exception:
+                logger.warning("Failed to resolve SOP policy_ref %s.", rule_id, exc_info=True)
+        chunk.metadata["resolved_policy_refs"] = resolved
 
 
 def resolve_retrieved_sop(
